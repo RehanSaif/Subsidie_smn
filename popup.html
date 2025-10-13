@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 420px;
+      max-height: 600px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica', 'Arial', sans-serif;
+      background: #f8f9fa;
+      overflow-y: auto;
+      overflow-x: hidden;
+      border-radius: 16px;
+    }
+
+    body {
+      border-radius: 16px;
+    }
+
+    .header {
+      background: white;
+      padding: 16px;
+      border-bottom: 1px solid #e9ecef;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 16px 16px 0 0;
+      position: relative;
+    }
+
+    .header-logo {
+      width: 40px;
+      height: 40px;
+      border-radius: 8px;
+    }
+
+    .settings-btn {
+      position: absolute;
+      right: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 8px;
+      transition: all 0.2s;
+      color: #868e96;
+    }
+
+    .settings-btn:hover {
+      background: #f8f9fa;
+      color: #FFC012;
+    }
+
+    .settings-btn svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .content {
+      padding: 20px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 20px;
+      padding: 24px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+
+    .field-group {
+      margin-bottom: 16px;
+    }
+
+    .field-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .field-label {
+      font-size: 12px;
+      color: #868e96;
+      margin-bottom: 6px;
+      font-weight: 600;
+      display: block;
+    }
+
+    .field-input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid #e9ecef;
+      border-radius: 10px;
+      font-size: 15px;
+      color: #212529;
+      background: white;
+      transition: all 0.2s;
+    }
+
+    .field-input:focus {
+      outline: none;
+      border-color: #FFC012;
+      box-shadow: 0 0 0 3px rgba(255, 192, 18, 0.15);
+    }
+
+    .file-upload {
+      position: relative;
+    }
+
+    .file-upload-input {
+      position: absolute;
+      opacity: 0;
+      width: 100%;
+      height: 100%;
+      cursor: pointer;
+      z-index: 10;
+    }
+
+    .file-upload-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border: 2px dashed #dee2e6;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 14px;
+      color: #868e96;
+      background: #fafafa;
+    }
+
+    .file-upload-label:hover {
+      border-color: #FFC012;
+      background: #fffbf0;
+    }
+
+    .file-name {
+      font-size: 12px;
+      color: #000;
+      margin-top: 8px;
+      padding: 6px 10px;
+      background: #fff9e6;
+      border-radius: 8px;
+      display: inline-block;
+      border: 1px solid #FFC012;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 14px 20px;
+      border: none;
+      border-radius: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: #FFC012;
+      color: white;
+      margin-bottom: 10px;
+      font-size: 16px;
+      padding: 16px 24px;
+    }
+
+    .btn-primary:hover {
+      background: #f0b200;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(255, 192, 18, 0.3);
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #868e96;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .status {
+      margin-top: 12px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      display: none;
+    }
+
+    .status.success {
+      background: #d3f9d8;
+      color: #2b8a3e;
+      display: block;
+    }
+
+    .status.error {
+      background: #ffe3e3;
+      color: #c92a2a;
+      display: block;
+    }
+
+    .status.info {
+      background: #d0ebff;
+      color: #1971c2;
+      display: block;
+    }
+
+    select.field-input {
+      cursor: pointer;
+    }
+
+    .view {
+      display: none;
+    }
+
+    .view.active {
+      display: block;
+    }
+
+    .back-btn {
+      position: absolute;
+      left: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 8px;
+      transition: all 0.2s;
+      color: #868e96;
+      display: none;
+    }
+
+    .back-btn.visible {
+      display: block;
+    }
+
+    .back-btn:hover {
+      background: #f8f9fa;
+      color: #FFC012;
+    }
+
+    .back-btn svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .field-help {
+      font-size: 11px;
+      color: #868e96;
+      margin-top: 4px;
+    }
+
+    .field-help a {
+      color: #FFC012;
+      text-decoration: none;
+    }
+
+    .field-help a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <button class="back-btn" id="backBtn">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+      </svg>
+    </button>
+    <img src="logo.png" alt="Logo" class="header-logo">
+    <button class="settings-btn" id="settingsBtn">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      </svg>
+    </button>
+  </div>
+
+  <div class="content view active" id="mainView">
+    <div class="card">
+      <div class="section-title">Machtigingsformulier (Optioneel)</div>
+
+      <div class="field-group">
+        <label class="field-label">Upload machtigingsformulier om gegevens automatisch in te vullen</label>
+        <div class="file-upload">
+          <input type="file" class="file-upload-input" id="machtigingsformulier" accept=".pdf,.jpg,.jpeg,.png">
+          <div class="file-upload-label">
+            <span>Kies machtigingsformulier...</span>
+          </div>
+        </div>
+        <div id="machtigingName" class="file-name" style="display: none;"></div>
+        <div id="extractionStatus" style="display: none; margin-top: 8px; font-size: 12px; color: #868e96;"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Benodigde Documenten</div>
+
+      <div class="field-group">
+        <label class="field-label">Betaalbewijs / Bankafschrift *</label>
+        <div class="file-upload">
+          <input type="file" class="file-upload-input" id="betaalbewijsDoc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+          <div class="file-upload-label">
+            <span>Kies betaalbewijs...</span>
+          </div>
+        </div>
+        <div id="betaalbewijsName" class="file-name" style="display: none;"></div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Factuur *</label>
+        <div class="file-upload">
+          <input type="file" class="file-upload-input" id="factuurDoc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+          <div class="file-upload-label">
+            <span>Kies factuur...</span>
+          </div>
+        </div>
+        <div id="factuurName" class="file-name" style="display: none;"></div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Machtigingsbewijs (Optioneel)</label>
+        <div class="file-upload">
+          <input type="file" class="file-upload-input" id="machtigingsbewijsDoc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+          <div class="file-upload-label">
+            <span>Kies machtigingsbewijs...</span>
+          </div>
+        </div>
+        <div id="machtigingsbewijsName" class="file-name" style="display: none;"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Persoonlijke Gegevens</div>
+
+      <div class="field-group">
+        <label class="field-label">BSN-nummer</label>
+        <input type="text" class="field-input" id="bsn" placeholder="220099212" value="220099212">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Voorletters</label>
+        <input type="text" class="field-input" id="initials" placeholder="R" value="R">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Achternaam</label>
+        <input type="text" class="field-input" id="lastName" placeholder="Achternaam" value="Saif">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Geslacht</label>
+        <select class="field-input" id="gender">
+          <option value="male">Man</option>
+          <option value="female">Vrouw</option>
+        </select>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Telefoonnummer</label>
+        <input type="text" class="field-input" id="phone" placeholder="06XXXXXXXX" value="06123456789">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">E-mailadres</label>
+        <input type="email" class="field-input" id="email" placeholder="email@voorbeeld.nl" value="rehansaif@live.nl">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">IBAN</label>
+        <input type="text" class="field-input" id="iban" placeholder="NL..." value="NL84RABO0375186298">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">BIC</label>
+        <input type="text" class="field-input" id="bic" placeholder="BIC code">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Adresgegevens</div>
+
+      <div class="field-group">
+        <label class="field-label">Straatnaam</label>
+        <input type="text" class="field-input" id="street" placeholder="Straatnaam">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Huisnummer</label>
+        <input type="text" class="field-input" id="houseNumber" placeholder="12" value="59">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Toevoeging</label>
+        <input type="text" class="field-input" id="houseAddition" placeholder="A" value="A01">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Postcode</label>
+        <input type="text" class="field-input" id="postalCode" placeholder="1234 AB" value="3038 JD">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Plaats</label>
+        <input type="text" class="field-input" id="city" placeholder="Plaatsnaam">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Installatie Details</div>
+
+      <div class="field-group">
+        <label class="field-label">Aankoopdatum</label>
+        <input type="text" class="field-input" id="purchaseDate" placeholder="DD-MM-JJJJ" value="28-10-2024">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Installatiedatum</label>
+        <input type="text" class="field-input" id="installationDate" placeholder="DD-MM-JJJJ" value="30-10-2024">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Meldcode</label>
+        <input type="text" class="field-input" id="meldCode" placeholder="bijv. KA06175" value="KA06175">
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="startAutomation">
+      Start Automatisering
+    </button>
+
+    <div id="status" class="status"></div>
+  </div>
+
+  <div class="content view" id="settingsView">
+    <div class="card">
+      <div class="section-title">Mistral API Configuratie</div>
+      <div class="field-group">
+        <label class="field-label">Mistral API Key</label>
+        <input type="password" class="field-input" id="mistralApiKey" placeholder="Voer je Mistral API key in">
+        <div class="field-help">
+          Krijg een API key op <a href="https://console.mistral.ai/" target="_blank">console.mistral.ai</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">Bedrijfsgegevens</div>
+
+      <div class="field-group">
+        <label class="field-label">Bedrijfsnaam</label>
+        <input type="text" class="field-input" id="settingsCompanyName" placeholder="Bedrijfsnaam">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">KvK-nummer</label>
+        <input type="text" class="field-input" id="settingsKvkNumber" placeholder="KvK-nummer">
+      </div>
+    </div>
+
+    <button class="btn btn-primary" id="saveSettingsBtn">
+      Opslaan
+    </button>
+
+    <div id="settingsStatus" class="status"></div>
+  </div>
+
+  <script src="pdf.min.js"></script>
+  <script>
+    // Configure PDF.js worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js';
+  </script>
+  <script src="popup.js"></script>
+</body>
+</html>

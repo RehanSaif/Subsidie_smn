@@ -1,0 +1,2030 @@
+{
+    "title": "Eherkenning_ISDE",
+    "steps": [
+        {
+            "type": "setViewport",
+            "width": 1125,
+            "height": 962,
+            "deviceScaleFactor": 1,
+            "isMobile": false,
+            "hasTouch": false,
+            "isLandscape": false
+        },
+        {
+            "type": "navigate",
+            "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=C61271907ED2C877296D",
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=C61271907ED2C877296D",
+                    "title": "eLoket"
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "#page_1_navigation_3_link"
+                ],
+                [
+                    "xpath///*[@id=\"page_1_navigation_3_link\"]"
+                ],
+                [
+                    "pierce/#page_1_navigation_3_link"
+                ]
+            ],
+            "offsetY": 16,
+            "offsetX": 48
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/__ISDE aanvragen (warmtepomp, zonneboiler, isolatie (bijv. glas), elektrische kookvoorziening en aansluiting warmtenet)"
+                ],
+                [
+                    "#catalog_NieuweAanvraag\\.0\\.page_3_navigation_link"
+                ],
+                [
+                    "xpath///*[@id=\"catalog_NieuweAanvraag.0.page_3_navigation_link\"]"
+                ],
+                [
+                    "pierce/#catalog_NieuweAanvraag\\.0\\.page_3_navigation_link"
+                ]
+            ],
+            "offsetY": 20,
+            "offsetX": 107,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=8DC25B17C7F0C87868F5",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#btn12"
+                ],
+                [
+                    "xpath///*[@id=\"btn12\"]"
+                ],
+                [
+                    "pierce/#btn12"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 9,
+            "offsetX": 39.5,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=8DC25B17C7F0C87868F5",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/NaarWaarheid"
+                ],
+                [
+                    "#NaarWaarheid"
+                ],
+                [
+                    "xpath///*[@id=\"NaarWaarheid\"]"
+                ],
+                [
+                    "pierce/#NaarWaarheid"
+                ]
+            ],
+            "offsetY": 6,
+            "offsetX": 7.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/cbTussenpersoonJ"
+                ],
+                [
+                    "#cbTussenpersoonJ"
+                ],
+                [
+                    "xpath///*[@id=\"cbTussenpersoonJ\"]"
+                ],
+                [
+                    "pierce/#cbTussenpersoonJ"
+                ]
+            ],
+            "offsetY": 8,
+            "offsetX": 6.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/cbFWS_Deelnemer_SoortP"
+                ],
+                [
+                    "#link_aanv\\.0\\.cbFWS_Deelnemer_SoortP"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.cbFWS_Deelnemer_SoortP\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.cbFWS_Deelnemer_SoortP"
+                ]
+            ],
+            "offsetY": 9,
+            "offsetX": 10.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/edTypePand_eigenWoning_print"
+                ],
+                [
+                    "#FWS_Aanvraag_ISDEPA\\.0\\.edTypePand_eigenWoning_print"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Aanvraag_ISDEPA.0.edTypePand_eigenWoning_print\"]"
+                ],
+                [
+                    "pierce/#FWS_Aanvraag_ISDEPA\\.0\\.edTypePand_eigenWoning_print"
+                ]
+            ],
+            "offsetY": 10,
+            "offsetX": 6.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/edReedsGeinstalleerd_j_print"
+                ],
+                [
+                    "#FWS_Aanvraag_ISDEPA\\.0\\.edReedsGeinstalleerd_j_print"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Aanvraag_ISDEPA.0.edReedsGeinstalleerd_j_print\"]"
+                ],
+                [
+                    "pierce/#FWS_Aanvraag_ISDEPA\\.0\\.edReedsGeinstalleerd_j_print"
+                ]
+            ],
+            "offsetY": 8,
+            "offsetX": 9.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/edAankoopbewijs_j_print"
+                ],
+                [
+                    "#FWS_Aanvraag_ISDEPA\\.0\\.edAankoopbewijs_j_print"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Aanvraag_ISDEPA.0.edAankoopbewijs_j_print\"]"
+                ],
+                [
+                    "pierce/#FWS_Aanvraag_ISDEPA\\.0\\.edAankoopbewijs_j_print"
+                ]
+            ],
+            "offsetY": 9,
+            "offsetX": 6.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#btn14"
+                ],
+                [
+                    "xpath///*[@id=\"btn14\"]"
+                ],
+                [
+                    "pierce/#btn14"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 11,
+            "offsetX": 37.5,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=E13F4D3AA9DFC878B131",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/InfoGelezen_JN"
+                ],
+                [
+                    "#FWS_Aanvraag_ISDEPA\\.0\\.InfoGelezen_JN"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Aanvraag_ISDEPA.0.InfoGelezen_JN\"]"
+                ],
+                [
+                    "pierce/#FWS_Aanvraag_ISDEPA\\.0\\.InfoGelezen_JN"
+                ]
+            ],
+            "offsetY": 12,
+            "offsetX": 13.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#btnVolgendeTab"
+                ],
+                [
+                    "xpath///*[@id=\"btnVolgendeTab\"]"
+                ],
+                [
+                    "pierce/#btnVolgendeTab"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 16,
+            "offsetX": 33.5,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=E13F4D3AA9DFC878B131",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "change",
+            "value": "220099212",
+            "selectors": [
+                [
+                    "aria/edBSNnummer"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edBSNnummer"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_persoon.0.edBSNnummer\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edBSNnummer"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyDown",
+            "target": "main",
+            "key": "Tab"
+        },
+        {
+            "type": "keyUp",
+            "key": "Tab",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "R",
+            "selectors": [
+                [
+                    "aria/edVoorletters2"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edVoorletters2"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_persoon.0.edVoorletters2\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edVoorletters2"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "r",
+            "target": "main"
+        },
+        {
+            "type": "keyDown",
+            "target": "main",
+            "key": "Tab"
+        },
+        {
+            "type": "keyUp",
+            "key": "Tab",
+            "target": "main"
+        },
+        {
+            "type": "keyDown",
+            "target": "main",
+            "key": "Tab"
+        },
+        {
+            "type": "keyUp",
+            "key": "Tab",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "S",
+            "selectors": [
+                [
+                    "aria/edAchternaam2"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edAchternaam2"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_persoon.0.edAchternaam2\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edAchternaam2"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "s",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "Saif",
+            "selectors": [
+                [
+                    "aria/edAchternaam2"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edAchternaam2"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_persoon.0.edAchternaam2\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edAchternaam2"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyDown",
+            "target": "main",
+            "key": "Tab"
+        },
+        {
+            "type": "keyUp",
+            "key": "Tab",
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/eddGeslacht_man2"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_persoon\\.0\\.eddGeslacht_man2"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_persoon.0.eddGeslacht_man2\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_persoon\\.0\\.eddGeslacht_man2"
+                ]
+            ],
+            "offsetY": 12,
+            "offsetX": 8.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/edTelefoonField3"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_telefoon\\.0\\.edTelefoonField3"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_persoon.0.link_aanv_persoon_telefoon.0.edTelefoonField3\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_telefoon\\.0\\.edTelefoonField3"
+                ]
+            ],
+            "offsetY": 13,
+            "offsetX": 59.5
+        },
+        {
+            "type": "change",
+            "value": "0616215161",
+            "selectors": [
+                [
+                    "aria/edTelefoonField3"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_telefoon\\.0\\.edTelefoonField3"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_persoon.0.link_aanv_persoon_telefoon.0.edTelefoonField3\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_telefoon\\.0\\.edTelefoonField3"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/edEmailField3"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_email\\.0\\.edEmailField3"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_persoon.0.link_aanv_persoon_email.0.edEmailField3\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_email\\.0\\.edEmailField3"
+                ]
+            ],
+            "offsetY": 11,
+            "offsetX": 70.5
+        },
+        {
+            "type": "change",
+            "value": "rehansaif@l",
+            "selectors": [
+                [
+                    "aria/edEmailField3"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_email\\.0\\.edEmailField3"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_persoon.0.link_aanv_persoon_email.0.edEmailField3\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_email\\.0\\.edEmailField3"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "2",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "rehansaif@live.nl",
+            "selectors": [
+                [
+                    "aria/edEmailField3"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_email\\.0\\.edEmailField3"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_persoon.0.link_aanv_persoon_email.0.edEmailField3\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_email\\.0\\.edEmailField3"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/edIBAN"
+                ],
+                [
+                    "#link_aanv\\.0\\.edIBAN"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.edIBAN\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.edIBAN"
+                ]
+            ],
+            "offsetY": 7,
+            "offsetX": 53.5
+        },
+        {
+            "type": "change",
+            "value": "NL84RABO",
+            "selectors": [
+                [
+                    "aria/edIBAN"
+                ],
+                [
+                    "#link_aanv\\.0\\.edIBAN"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.edIBAN\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.edIBAN"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "o",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "NL84RABO0375186298",
+            "selectors": [
+                [
+                    "aria/edIBAN"
+                ],
+                [
+                    "#link_aanv\\.0\\.edIBAN"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.edIBAN\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.edIBAN"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/edPostcode"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edPostcode\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode"
+                ]
+            ],
+            "offsetY": 17,
+            "offsetX": 27.5
+        },
+        {
+            "type": "change",
+            "value": "JD",
+            "selectors": [
+                [
+                    "aria/edPostcode"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edPostcode\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "d",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "",
+            "selectors": [
+                [
+                    "aria/edPostcode"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edPostcode\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyDown",
+            "target": "main",
+            "key": "Backspace"
+        },
+        {
+            "type": "keyUp",
+            "key": "Backspace",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "",
+            "selectors": [
+                [
+                    "aria/edHuisnummer2"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edHuisnummer2"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edHuisnummer2\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edHuisnummer2"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/edPostcode"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edPostcode\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode"
+                ]
+            ],
+            "offsetY": 1,
+            "offsetX": 56.5
+        },
+        {
+            "type": "change",
+            "value": "3038 JD",
+            "selectors": [
+                [
+                    "aria/edPostcode"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edPostcode\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "d",
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/edHuisnummer2"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edHuisnummer2"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edHuisnummer2\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edHuisnummer2"
+                ]
+            ],
+            "offsetY": 14,
+            "offsetX": 16.5
+        },
+        {
+            "type": "change",
+            "value": "59",
+            "selectors": [
+                [
+                    "aria/edHuisnummer2"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edHuisnummer2"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edHuisnummer2\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edHuisnummer2"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "#lip_segment-instance\\:link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.Page2\\:body\\:bezoek_adres"
+                ],
+                [
+                    "xpath///*[@id=\"lip_segment-instance:link_aanv.0.link_aanv_adres_vst.0.Page2:body:bezoek_adres\"]"
+                ],
+                [
+                    "pierce/#lip_segment-instance\\:link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.Page2\\:body\\:bezoek_adres"
+                ]
+            ],
+            "offsetY": 74,
+            "offsetX": 750.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/edToevoeging2"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edToevoeging2"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edToevoeging2\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edToevoeging2"
+                ]
+            ],
+            "offsetY": 14,
+            "offsetX": 53.5
+        },
+        {
+            "type": "change",
+            "value": "A",
+            "selectors": [
+                [
+                    "aria/edToevoeging2"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edToevoeging2"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edToevoeging2\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edToevoeging2"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "a",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "A01",
+            "selectors": [
+                [
+                    "aria/edToevoeging2"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edToevoeging2"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edToevoeging2\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edToevoeging2"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "#lip_segment-instance\\:link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.Page2\\:body\\:bezoek_adres"
+                ],
+                [
+                    "xpath///*[@id=\"lip_segment-instance:link_aanv.0.link_aanv_adres_vst.0.Page2:body:bezoek_adres\"]"
+                ],
+                [
+                    "pierce/#lip_segment-instance\\:link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.Page2\\:body\\:bezoek_adres"
+                ]
+            ],
+            "offsetY": 4,
+            "offsetX": 771.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/edPostadres_anders_J"
+                ],
+                [
+                    "#link_aanv\\.0\\.edPostadres_anders_J"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.edPostadres_anders_J\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.edPostadres_anders_J"
+                ]
+            ],
+            "offsetY": 0.5,
+            "offsetX": 8.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#btnVolgendeTab"
+                ],
+                [
+                    "xpath///*[@id=\"btnVolgendeTab\"]"
+                ],
+                [
+                    "pierce/#btnVolgendeTab"
+                ]
+            ],
+            "offsetY": 8.5,
+            "offsetX": 61.5,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=E13F4D3AA9DFC878B131",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/edExtraContactpersoon_n_int"
+                ],
+                [
+                    "#link_int\\.0\\.link_int_organisatie\\.0\\.edExtraContactpersoon_n_int"
+                ],
+                [
+                    "xpath///*[@id=\"link_int.0.link_int_organisatie.0.edExtraContactpersoon_n_int\"]"
+                ],
+                [
+                    "pierce/#link_int\\.0\\.link_int_organisatie\\.0\\.edExtraContactpersoon_n_int"
+                ]
+            ],
+            "offsetY": 15.5,
+            "offsetX": 7.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#btnVolgendeTab"
+                ],
+                [
+                    "xpath///*[@id=\"btnVolgendeTab\"]"
+                ],
+                [
+                    "pierce/#btnVolgendeTab"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 12.5,
+            "offsetX": 40.5,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=E13F4D3AA9DFC878B131",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/edDigitaleCorrespondentie_J"
+                ],
+                [
+                    "#link_int\\.0\\.edDigitaleCorrespondentie_J"
+                ],
+                [
+                    "xpath///*[@id=\"link_int.0.edDigitaleCorrespondentie_J\"]"
+                ],
+                [
+                    "pierce/#link_int\\.0\\.edDigitaleCorrespondentie_J"
+                ]
+            ],
+            "offsetY": 8.5,
+            "offsetX": 5.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#btnVolgendeTab"
+                ],
+                [
+                    "xpath///*[@id=\"btnVolgendeTab\"]"
+                ],
+                [
+                    "pierce/#btnVolgendeTab"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 3.5,
+            "offsetX": 47.5,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=E13F4D3AA9DFC878B131",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Adresafwijkend_J"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.Adresafwijkend_J"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.Adresafwijkend_J\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.Adresafwijkend_J"
+                ]
+            ],
+            "offsetY": 8.75,
+            "offsetX": 8.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.next"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.next\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.next"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 12.75,
+            "offsetX": 53.5,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=E13F4D3AA9DFC878B131",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/BAGafwijkend_J"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.BAGafwijkend_J"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.BAGafwijkend_J\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.BAGafwijkend_J"
+                ]
+            ],
+            "offsetY": 13.75,
+            "offsetX": 10.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.next"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.next\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.next"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 12.75,
+            "offsetX": 67.5,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=E13F4D3AA9DFC878B131",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#btnVolgendeTab"
+                ],
+                [
+                    "xpath///*[@id=\"btnVolgendeTab\"]"
+                ],
+                [
+                    "pierce/#btnVolgendeTab"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 11,
+            "offsetX": 46.5,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=E13F4D3AA9DFC878B131",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Maatregel toevoegen"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.addInvestering"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.addInvestering\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.addInvestering"
+                ]
+            ],
+            "offsetY": 12,
+            "offsetX": 135.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.choice_warmtepomp"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.choice_warmtepomp\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.choice_warmtepomp"
+                ]
+            ],
+            "offsetY": 11.75,
+            "offsetX": 50.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "#lip_segment-instance\\:FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Page2\\:body\\:wizard_installatie_datum_datum_aangeschaft rect"
+                ],
+                [
+                    "xpath///*[@id=\"GenID__8\"]/span/svg/rect"
+                ],
+                [
+                    "pierce/#lip_segment-instance\\:FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Page2\\:body\\:wizard_installatie_datum_datum_aangeschaft rect"
+                ]
+            ],
+            "offsetY": 11.25,
+            "offsetX": 11.5
+        },
+        {
+            "type": "doubleClick",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Ga naar de vorige maand"
+                ],
+                [
+                    "div.datepicker-days th.prev"
+                ],
+                [
+                    "xpath///*[@id=\"datepicker-1\"]/div[1]/table/thead/tr[2]/th[1]"
+                ],
+                [
+                    "pierce/div.datepicker-days th.prev"
+                ]
+            ],
+            "offsetY": 26,
+            "offsetX": 15.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Ga naar de vorige maand"
+                ],
+                [
+                    "div.datepicker-days th.prev"
+                ],
+                [
+                    "xpath///*[@id=\"datepicker-1\"]/div[1]/table/thead/tr[2]/th[1]"
+                ],
+                [
+                    "pierce/div.datepicker-days th.prev"
+                ]
+            ],
+            "offsetY": 26,
+            "offsetX": 15.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Ga naar de vorige maand"
+                ],
+                [
+                    "div.datepicker-days th.prev"
+                ],
+                [
+                    "xpath///*[@id=\"datepicker-1\"]/div[1]/table/thead/tr[2]/th[1]"
+                ],
+                [
+                    "pierce/div.datepicker-days th.prev"
+                ]
+            ],
+            "offsetY": 26,
+            "offsetX": 15.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Ga naar de vorige maand"
+                ],
+                [
+                    "div.datepicker-days th.prev"
+                ],
+                [
+                    "xpath///*[@id=\"datepicker-1\"]/div[1]/table/thead/tr[2]/th[1]"
+                ],
+                [
+                    "pierce/div.datepicker-days th.prev"
+                ]
+            ],
+            "offsetY": 26,
+            "offsetX": 15.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Ga naar de vorige maand"
+                ],
+                [
+                    "div.datepicker-days th.prev"
+                ],
+                [
+                    "xpath///*[@id=\"datepicker-1\"]/div[1]/table/thead/tr[2]/th[1]"
+                ],
+                [
+                    "pierce/div.datepicker-days th.prev"
+                ]
+            ],
+            "offsetY": 26,
+            "offsetX": 15.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Ga naar de vorige maand"
+                ],
+                [
+                    "div.datepicker-days th.prev"
+                ],
+                [
+                    "xpath///*[@id=\"datepicker-1\"]/div[1]/table/thead/tr[2]/th[1]"
+                ],
+                [
+                    "pierce/div.datepicker-days th.prev"
+                ]
+            ],
+            "offsetY": 26,
+            "offsetX": 15.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Ga naar de vorige maand"
+                ],
+                [
+                    "div.datepicker-days th.prev"
+                ],
+                [
+                    "xpath///*[@id=\"datepicker-1\"]/div[1]/table/thead/tr[2]/th[1]"
+                ],
+                [
+                    "pierce/div.datepicker-days th.prev"
+                ]
+            ],
+            "offsetY": 26,
+            "offsetX": 15.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Ga naar de vorige maand"
+                ],
+                [
+                    "div.datepicker-days th.prev"
+                ],
+                [
+                    "xpath///*[@id=\"datepicker-1\"]/div[1]/table/thead/tr[2]/th[1]"
+                ],
+                [
+                    "pierce/div.datepicker-days th.prev"
+                ]
+            ],
+            "offsetY": 26,
+            "offsetX": 15.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Ga naar de vorige maand"
+                ],
+                [
+                    "div.datepicker-days th.prev"
+                ],
+                [
+                    "xpath///*[@id=\"datepicker-1\"]/div[1]/table/thead/tr[2]/th[1]"
+                ],
+                [
+                    "pierce/div.datepicker-days th.prev"
+                ]
+            ],
+            "offsetY": 26,
+            "offsetX": 15.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Ga naar de vorige maand"
+                ],
+                [
+                    "div.datepicker-days th.prev"
+                ],
+                [
+                    "xpath///*[@id=\"datepicker-1\"]/div[1]/table/thead/tr[2]/th[1]"
+                ],
+                [
+                    "pierce/div.datepicker-days th.prev"
+                ]
+            ],
+            "offsetY": 26,
+            "offsetX": 15.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Maandag, 28 Oktober 2024"
+                ],
+                [
+                    "#datepicker-1-day28-old"
+                ],
+                [
+                    "xpath///*[@id=\"datepicker-1-day28-old\"]"
+                ],
+                [
+                    "pierce/#datepicker-1-day28-old"
+                ]
+            ],
+            "offsetY": 17,
+            "offsetX": 27.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/DatumInstallatie"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.DatumInstallatie"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.DatumInstallatie\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.DatumInstallatie"
+                ]
+            ],
+            "offsetY": 11.75,
+            "offsetX": 71.5
+        },
+        {
+            "type": "change",
+            "value": "30-10-2024",
+            "selectors": [
+                [
+                    "aria/DatumInstallatie"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.DatumInstallatie"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.DatumInstallatie\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.DatumInstallatie"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/GebruikAardgas_jn_J"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.GebruikAardgas_jn_J"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.GebruikAardgas_jn_J\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.GebruikAardgas_jn_J"
+                ]
+            ],
+            "offsetY": 11.75,
+            "offsetX": 7.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/InstallBedrijf_NL_jn_J"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_NL_jn_J"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.InstallBedrijf_NL_jn_J\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_NL_jn_J"
+                ]
+            ],
+            "offsetY": 7.75,
+            "offsetX": 9.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/GebruikAardgas_jn_J"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.GebruikAardgas_jn_J"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.GebruikAardgas_jn_J\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.GebruikAardgas_jn_J"
+                ]
+            ],
+            "offsetY": 12.75,
+            "offsetX": 10.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/InstallBedrijf_KvK"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_KvK"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.InstallBedrijf_KvK\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_KvK"
+                ]
+            ],
+            "offsetY": 17.75,
+            "offsetX": 34.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/InstallBedrijf_KvK"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_KvK"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.InstallBedrijf_KvK\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_KvK"
+                ]
+            ],
+            "offsetY": 17.75,
+            "offsetX": 34.5
+        },
+        {
+            "type": "change",
+            "value": "72017376",
+            "selectors": [
+                [
+                    "aria/InstallBedrijf_KvK"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_KvK"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.InstallBedrijf_KvK\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_KvK"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/InstallBedrijf_Naam"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_Naam"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.InstallBedrijf_Naam\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_Naam"
+                ]
+            ],
+            "offsetY": 17.75,
+            "offsetX": 104.5
+        },
+        {
+            "type": "change",
+            "value": "S",
+            "selectors": [
+                [
+                    "aria/InstallBedrijf_Naam"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_Naam"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.InstallBedrijf_Naam\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_Naam"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "s",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "Saman G",
+            "selectors": [
+                [
+                    "aria/InstallBedrijf_Naam"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_Naam"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.InstallBedrijf_Naam\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_Naam"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyUp",
+            "key": "g",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "Saman Groep",
+            "selectors": [
+                [
+                    "aria/InstallBedrijf_Naam"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_Naam"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.InstallBedrijf_Naam\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_Naam"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.wizard_investering_volgende\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 3.75,
+            "offsetX": 59.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Selecteer meldcode"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.lookup_meldcode"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.lookup_meldcode\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.lookup_meldcode"
+                ]
+            ],
+            "offsetY": 9.75,
+            "offsetX": 15.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/KA06175[role=\"link\"]"
+                ],
+                [
+                    "#row_0 > td:nth-of-type(1) > a"
+                ],
+                [
+                    "xpath///*[@id=\"row_0\"]/td[1]/a"
+                ],
+                [
+                    "pierce/#row_0 > td:nth-of-type(1) > a"
+                ],
+                [
+                    "text/KA06175"
+                ]
+            ],
+            "offsetY": 17.5,
+            "offsetX": 78.0234375
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.wizard_investering_volgende\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 7.75,
+            "offsetX": 45.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.0\\.btn_ToevoegenBijlage"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.Bijlagen_NogToevoegen_ISDEPA_Meldcode.0.btn_ToevoegenBijlage\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.0\\.btn_ToevoegenBijlage"
+                ]
+            ],
+            "offsetY": 11.75,
+            "offsetX": 66.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Klik op deze knop om de bestanden te selecteren via een bestandsbeheerder, of sleep de bestanden naar dit veld.",
+                    "aria/[role=\"generic\"]"
+                ],
+                [
+                    "div.dropZone > div"
+                ],
+                [
+                    "xpath///*[@id=\"lip_attachments_resumable\"]/div[1]/div"
+                ],
+                [
+                    "pierce/div.dropZone > div"
+                ],
+                [
+                    "text/Drop bestanden"
+                ]
+            ],
+            "offsetY": 30.25,
+            "offsetX": 241.5
+        },
+        {
+            "type": "change",
+            "value": "C:\\fakepath\\Aanvraagformulier Zeeland Financial Matching.docx",
+            "selectors": [
+                [
+                    "#lip_modalWindow div.content input"
+                ],
+                [
+                    "xpath///*[@id=\"lip_attachments_resumable\"]/div[1]/input"
+                ],
+                [
+                    "pierce/#lip_modalWindow div.content input"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.1\\.btn_ToevoegenBijlage"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.Bijlagen_NogToevoegen_ISDEPA_Meldcode.1.btn_ToevoegenBijlage\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.1\\.btn_ToevoegenBijlage"
+                ]
+            ],
+            "offsetY": 14.75,
+            "offsetX": 53.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Klik op deze knop om de bestanden te selecteren via een bestandsbeheerder, of sleep de bestanden naar dit veld.",
+                    "aria/[role=\"generic\"]"
+                ],
+                [
+                    "div.dropZone > div"
+                ],
+                [
+                    "xpath///*[@id=\"lip_attachments_resumable\"]/div[1]/div"
+                ],
+                [
+                    "pierce/div.dropZone > div"
+                ],
+                [
+                    "text/Drop bestanden"
+                ]
+            ],
+            "offsetY": 42.25,
+            "offsetX": 255.5
+        },
+        {
+            "type": "change",
+            "value": "C:\\fakepath\\definitieve_aanslag_inkomstenbelasting_2023_20-07-2025_00.00u.pdf",
+            "selectors": [
+                [
+                    "#lip_modalWindow div.content input"
+                ],
+                [
+                    "xpath///*[@id=\"lip_attachments_resumable\"]/div[1]/input"
+                ],
+                [
+                    "pierce/#lip_modalWindow div.content input"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.wizard_investering_volgende\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 10.25,
+            "offsetX": 59.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.wizard_investering_volgende\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 6.25,
+            "offsetX": 53.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#btnVolgendeTab"
+                ],
+                [
+                    "xpath///*[@id=\"btnVolgendeTab\"]"
+                ],
+                [
+                    "pierce/#btnVolgendeTab"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 2,
+            "offsetX": 61.5,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=E13F4D3AA9DFC878B131",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Ja, volgende"
+                ],
+                [
+                    "#QuestionEmbedding_585_default"
+                ],
+                [
+                    "xpath///*[@id=\"QuestionEmbedding_585_default\"]"
+                ],
+                [
+                    "pierce/#QuestionEmbedding_585_default"
+                ],
+                [
+                    "text/Ja, volgende"
+                ]
+            ],
+            "offsetY": 15,
+            "offsetX": 39.5
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#btnVolgendeTab"
+                ],
+                [
+                    "xpath///*[@id=\"btnVolgendeTab\"]"
+                ],
+                [
+                    "pierce/#btnVolgendeTab"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 7,
+            "offsetX": 57.5,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=E13F4D3AA9DFC878B131",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/cbAccoord"
+                ],
+                [
+                    "#cbAccoord"
+                ],
+                [
+                    "xpath///*[@id=\"cbAccoord\"]"
+                ],
+                [
+                    "pierce/#cbAccoord"
+                ]
+            ],
+            "offsetY": 7.5,
+            "offsetX": 9.5
+        }
+    ]
+}
