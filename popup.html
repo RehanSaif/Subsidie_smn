@@ -16,11 +16,11 @@
       background: #f8f9fa;
       overflow-y: auto;
       overflow-x: hidden;
-      border-radius: 16px;
+      border-radius: 24px;
     }
 
     body {
-      border-radius: 16px;
+      border-radius: 24px;
     }
 
     .header {
@@ -30,14 +30,14 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: 16px 16px 0 0;
+      border-radius: 24px 24px 0 0;
       position: relative;
     }
 
     .header-logo {
       width: 40px;
       height: 40px;
-      border-radius: 8px;
+      border-radius: 12px;
     }
 
     .settings-btn {
@@ -49,7 +49,7 @@
       border: none;
       cursor: pointer;
       padding: 8px;
-      border-radius: 8px;
+      border-radius: 12px;
       transition: all 0.2s;
       color: #868e96;
     }
@@ -70,7 +70,7 @@
 
     .card {
       background: white;
-      border-radius: 20px;
+      border-radius: 24px;
       padding: 24px;
       margin-bottom: 16px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.06);
@@ -96,7 +96,7 @@
       width: 100%;
       padding: 10px 14px;
       border: 1px solid #e9ecef;
-      border-radius: 10px;
+      border-radius: 12px;
       font-size: 15px;
       color: #212529;
       background: white;
@@ -129,7 +129,7 @@
       gap: 8px;
       padding: 12px 16px;
       border: 2px dashed #dee2e6;
-      border-radius: 10px;
+      border-radius: 12px;
       cursor: pointer;
       transition: all 0.2s;
       font-size: 14px;
@@ -148,7 +148,7 @@
       margin-top: 8px;
       padding: 6px 10px;
       background: #fff9e6;
-      border-radius: 8px;
+      border-radius: 10px;
       display: inline-block;
       border: 1px solid #FFC012;
     }
@@ -157,7 +157,7 @@
       width: 100%;
       padding: 14px 20px;
       border: none;
-      border-radius: 12px;
+      border-radius: 16px;
       font-size: 15px;
       font-weight: 600;
       cursor: pointer;
@@ -194,7 +194,7 @@
     .status {
       margin-top: 12px;
       padding: 12px 16px;
-      border-radius: 8px;
+      border-radius: 12px;
       font-size: 13px;
       display: none;
     }
@@ -238,7 +238,7 @@
       border: none;
       cursor: pointer;
       padding: 8px;
-      border-radius: 8px;
+      border-radius: 12px;
       transition: all 0.2s;
       color: #868e96;
       display: none;
@@ -292,22 +292,6 @@
 
   <div class="content view active" id="mainView">
     <div class="card">
-      <div class="section-title">Machtigingsformulier (Optioneel)</div>
-
-      <div class="field-group">
-        <label class="field-label">Upload machtigingsformulier om gegevens automatisch in te vullen</label>
-        <div class="file-upload">
-          <input type="file" class="file-upload-input" id="machtigingsformulier" accept=".pdf,.jpg,.jpeg,.png">
-          <div class="file-upload-label">
-            <span>Kies machtigingsformulier...</span>
-          </div>
-        </div>
-        <div id="machtigingName" class="file-name" style="display: none;"></div>
-        <div id="extractionStatus" style="display: none; margin-top: 8px; font-size: 12px; color: #868e96;"></div>
-      </div>
-    </div>
-
-    <div class="card">
       <div class="section-title">Benodigde Documenten</div>
 
       <div class="field-group">
@@ -330,17 +314,19 @@
           </div>
         </div>
         <div id="factuurName" class="file-name" style="display: none;"></div>
+        <div id="factuurExtractionStatus" style="display: none; margin-top: 8px; font-size: 12px; color: #868e96;"></div>
       </div>
 
       <div class="field-group">
-        <label class="field-label">Machtigingsbewijs (Optioneel)</label>
+        <label class="field-label">Machtigingsformulier (Optioneel)</label>
         <div class="file-upload">
-          <input type="file" class="file-upload-input" id="machtigingsbewijsDoc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+          <input type="file" class="file-upload-input" id="machtigingsformulier" accept=".pdf,.jpg,.jpeg,.png">
           <div class="file-upload-label">
-            <span>Kies machtigingsbewijs...</span>
+            <span>Kies machtigingsformulier...</span>
           </div>
         </div>
-        <div id="machtigingsbewijsName" class="file-name" style="display: none;"></div>
+        <div id="machtigingName" class="file-name" style="display: none;"></div>
+        <div id="extractionStatus" style="display: none; margin-top: 8px; font-size: 12px; color: #868e96;"></div>
       </div>
     </div>
 
@@ -348,18 +334,18 @@
       <div class="section-title">Persoonlijke Gegevens</div>
 
       <div class="field-group">
-        <label class="field-label">BSN-nummer</label>
-        <input type="text" class="field-input" id="bsn" placeholder="220099212" value="220099212">
+        <label class="field-label">BSN</label>
+        <input type="text" class="field-input" id="bsn" placeholder="BSN">
       </div>
 
       <div class="field-group">
         <label class="field-label">Voorletters</label>
-        <input type="text" class="field-input" id="initials" placeholder="R" value="R">
+        <input type="text" class="field-input" id="initials" placeholder="Voorletters">
       </div>
 
       <div class="field-group">
         <label class="field-label">Achternaam</label>
-        <input type="text" class="field-input" id="lastName" placeholder="Achternaam" value="Saif">
+        <input type="text" class="field-input" id="lastName" placeholder="Achternaam">
       </div>
 
       <div class="field-group">
@@ -372,17 +358,17 @@
 
       <div class="field-group">
         <label class="field-label">Telefoonnummer</label>
-        <input type="text" class="field-input" id="phone" placeholder="06XXXXXXXX" value="06123456789">
+        <input type="text" class="field-input" id="phone" placeholder="06XXXXXXXX">
       </div>
 
       <div class="field-group">
         <label class="field-label">E-mailadres</label>
-        <input type="email" class="field-input" id="email" placeholder="email@voorbeeld.nl" value="rehansaif@live.nl">
+        <input type="email" class="field-input" id="email" placeholder="email@voorbeeld.nl">
       </div>
 
       <div class="field-group">
         <label class="field-label">IBAN</label>
-        <input type="text" class="field-input" id="iban" placeholder="NL..." value="NL84RABO0375186298">
+        <input type="text" class="field-input" id="iban" placeholder="NL...">
       </div>
 
       <div class="field-group">
@@ -401,17 +387,17 @@
 
       <div class="field-group">
         <label class="field-label">Huisnummer</label>
-        <input type="text" class="field-input" id="houseNumber" placeholder="12" value="59">
+        <input type="text" class="field-input" id="houseNumber" placeholder="12">
       </div>
 
       <div class="field-group">
         <label class="field-label">Toevoeging</label>
-        <input type="text" class="field-input" id="houseAddition" placeholder="A" value="A01">
+        <input type="text" class="field-input" id="houseAddition" placeholder="A">
       </div>
 
       <div class="field-group">
         <label class="field-label">Postcode</label>
-        <input type="text" class="field-input" id="postalCode" placeholder="1234 AB" value="3038 JD">
+        <input type="text" class="field-input" id="postalCode" placeholder="1234 AB">
       </div>
 
       <div class="field-group">
@@ -425,17 +411,29 @@
 
       <div class="field-group">
         <label class="field-label">Aankoopdatum</label>
-        <input type="text" class="field-input" id="purchaseDate" placeholder="DD-MM-JJJJ" value="28-10-2024">
+        <input type="text" class="field-input" id="purchaseDate" placeholder="DD-MM-JJJJ">
       </div>
 
       <div class="field-group">
         <label class="field-label">Installatiedatum</label>
-        <input type="text" class="field-input" id="installationDate" placeholder="DD-MM-JJJJ" value="30-10-2024">
+        <input type="text" class="field-input" id="installationDate" placeholder="DD-MM-JJJJ">
       </div>
 
       <div class="field-group">
         <label class="field-label">Meldcode</label>
-        <input type="text" class="field-input" id="meldCode" placeholder="bijv. KA06175" value="KA06175">
+        <input type="text" class="field-input" id="meldCode" placeholder="bijv. KA06175">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Aardgas gebruik na installatie</label>
+        <select class="field-input" id="gasUsage">
+          <option value="">Selecteer...</option>
+          <option value="yes">Ja</option>
+          <option value="no">Nee</option>
+        </select>
+        <div class="field-help">
+          Wordt er nog aardgas gebruikt voor ruimte verwarming?
+        </div>
       </div>
     </div>
 

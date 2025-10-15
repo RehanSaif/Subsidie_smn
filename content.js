@@ -10,14 +10,14 @@ function createStatusPanel() {
   panel.id = 'isde-automation-panel';
   panel.innerHTML = `
     <div style="position: fixed; top: 20px; right: 20px; width: 320px; background: white; border: 2px solid #4CAF50; border-radius: 8px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 999999; font-family: Arial, sans-serif;">
-      <h3 style="margin: 0 0 10px 0; color: #333; font-size: 16px;">🤖 ISDE Automation</h3>
-      <div id="automation-status" style="color: #666; margin-bottom: 8px; font-size: 13px;">Starting...</div>
+      <h3 style="margin: 0 0 10px 0; color: #333; font-size: 16px;">🤖 ISDE Automatisering</h3>
+      <div id="automation-status" style="color: #666; margin-bottom: 8px; font-size: 13px;">Bezig met opstarten...</div>
       <div id="current-step" style="color: #4CAF50; font-weight: bold; margin-bottom: 8px; font-size: 14px; padding: 8px; background: #f0f9f0; border-radius: 4px;"></div>
       <div id="detected-step" style="color: #999; margin-bottom: 10px; font-size: 11px;"></div>
       <div style="display: flex; gap: 5px; flex-wrap: wrap;">
-        <button id="continue-automation" style="background: #FFC012; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; flex: 1;">Continue</button>
+        <button id="continue-automation" style="background: #FFC012; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; flex: 1;">Doorgaan</button>
         <button id="stop-automation" style="background: #dc3545; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; flex: 1;">Stop</button>
-        <button id="close-panel" style="background: #666; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Hide</button>
+        <button id="close-panel" style="background: #666; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Verbergen</button>
       </div>
     </div>
   `;
@@ -147,30 +147,34 @@ async function clickElement(selectorOrElement) {
   await new Promise(r => setTimeout(r, 1000));
 }
 
-// Helper function to fill input with human-like delays
+// Helper function to fill input - paste entire value instantly
 async function fillInput(selector, value) {
   if (!value) return;
   const element = await waitForElement(selector);
   element.scrollIntoView({behavior: 'smooth', block: 'center'});
-  await new Promise(r => setTimeout(r, 800 + Math.random() * 400)); // Random delay before typing
+  await new Promise(r => setTimeout(r, 400 + Math.random() * 200)); // Wait before interacting
 
   // Focus the field first
   element.focus();
-  await new Promise(r => setTimeout(r, 300));
+  await new Promise(r => setTimeout(r, 250 + Math.random() * 150));
 
-  // Clear existing value
+  // Clear existing value first
   element.value = '';
+  element.dispatchEvent(new Event('input', { bubbles: true }));
+  await new Promise(r => setTimeout(r, 150 + Math.random() * 100));
 
-  // Type each character with small delays (more human-like)
-  for (let i = 0; i < value.length; i++) {
-    element.value += value[i];
-    element.dispatchEvent(new Event('input', { bubbles: true }));
-    await new Promise(r => setTimeout(r, 50 + Math.random() * 100)); // Random typing speed
-  }
+  // Paste the entire value
+  element.value = value;
+  element.dispatchEvent(new Event('input', { bubbles: true }));
+
+  await new Promise(r => setTimeout(r, 200 + Math.random() * 150));
 
   element.dispatchEvent(new Event('change', { bubbles: true }));
+
+  await new Promise(r => setTimeout(r, 150 + Math.random() * 100));
+
   element.blur();
-  await new Promise(r => setTimeout(r, 600 + Math.random() * 400)); // Random delay after typing
+  await new Promise(r => setTimeout(r, 300 + Math.random() * 200)); // Wait after to let validation complete
 }
 
 // Helper function to upload a file
@@ -238,6 +242,22 @@ function detectCurrentStep() {
   if (document.querySelector('#cbAccoord') && document.querySelector('input[value="Indienen"]')) {
     console.log('🎯 Detected: final_confirmed - Terms page with submit button');
     return 'final_confirmed';
+  }
+
+  // Step 19.5: Final review page (Verzenden tab - "Controleer uw gegevens")
+  const hasControleerGegevens = Array.from(document.querySelectorAll('*')).some(el =>
+    el.textContent && el.textContent.includes('Controleer uw gegevens')
+  );
+  const hasPersoonsgegevens = Array.from(document.querySelectorAll('*')).some(el =>
+    el.textContent && el.textContent.includes('Persoonsgegevens')
+  );
+  const hasVerzendenTab = Array.from(document.querySelectorAll('*')).some(el =>
+    el.textContent && el.textContent.trim() === 'Verzenden'
+  );
+
+  if (hasControleerGegevens && hasPersoonsgegevens && hasVerzendenTab) {
+    console.log('🎯 Detected: final_review_page - Final review page (Verzenden tab)');
+    return 'final_review_page';
   }
 
   // Step 19: Final confirmation question
@@ -340,6 +360,22 @@ function detectCurrentStep() {
   if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.lookup_meldcode')) {
     console.log('🎯 Detected: date_continued - Meldcode lookup button visible');
     return 'date_continued';
+  }
+
+  // Step 16.5: Meldcode search within warmtepomp wizard (step 3 of modal)
+  const hasMeldcodeSearch = Array.from(document.querySelectorAll('*')).some(el =>
+    el.textContent && (
+      el.textContent.includes('Zoek de meldcode voor deze maatregel') ||
+      el.textContent.includes('Meldcode en toegepast materiaal')
+    )
+  );
+  const hasWarmtepompWizard = Array.from(document.querySelectorAll('*')).some(el =>
+    el.textContent && el.textContent.includes('Geselecteerde maatregel: Warmtepomp')
+  );
+
+  if (hasMeldcodeSearch && hasWarmtepompWizard) {
+    console.log('🎯 Detected: meldcode_search_in_wizard - Meldcode search within warmtepomp wizard');
+    return 'meldcode_search_in_wizard';
   }
 
   // Step 13: Installation details modal (date fields)
@@ -823,17 +859,101 @@ async function startFullAutomation(config) {
       console.log('Step 12: Selecting warmtepomp');
       updateStatus('Selecting warmtepomp', '12 - Measure Selection', detectedStep);
       await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.choice_warmtepomp');
-      sessionStorage.setItem('automationStep', 'warmtepomp_selected');
+      sessionStorage.setItem('automationStep', 'meldcode_search_in_wizard');
 
-      // Wait for modal to open, then continue automation
-      console.log('Waiting for warmtepomp modal to open...');
+      // Wait for wizard to show meldcode search step
+      console.log('Waiting for meldcode search step to appear...');
       await new Promise(r => setTimeout(r, 1500));
 
-      // Continue automation to fill the date fields
+      // Continue automation to search for meldcode
       setTimeout(() => {
         startFullAutomation(config);
       }, 500);
       return;
+    }
+
+    // Step 12.5: Meldcode search within warmtepomp wizard
+    if (currentStep === 'meldcode_search_in_wizard' || detectedStep === 'meldcode_search_in_wizard') {
+      console.log('Step 12.5: Searching for meldcode in warmtepomp wizard');
+      updateStatus('Searching for meldcode', '12.5 - Meldcode Search', detectedStep);
+
+      // Wait for modal to be fully loaded
+      await new Promise(r => setTimeout(r, 800));
+
+      // Try to find the search input field
+      const searchInput = document.querySelector('#lip_matchcode') ||
+                         document.querySelector('input[name="lip_matchcode"]') ||
+                         document.querySelector('input[type="text"]');
+
+      if (searchInput && config.meldCode) {
+        console.log('✅ Found meldcode search field, filling with:', config.meldCode);
+        searchInput.focus();
+        searchInput.value = config.meldCode;
+        searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+        await new Promise(r => setTimeout(r, 500));
+
+        // Click the search button (the [...] button or Zoeken button)
+        const searchButton = document.querySelector('input[type="submit"][value*="Zoeken"]') ||
+                            document.querySelector('button[type="submit"]');
+
+        if (searchButton) {
+          console.log('✅ Clicking search button');
+          searchButton.click();
+          await new Promise(r => setTimeout(r, 2000)); // Wait for search results
+          console.log('✅ Search completed, waiting for results...');
+        } else {
+          console.log('⚠️ Search button not found, trying to find meldcode directly');
+        }
+
+        // Wait for results
+        await new Promise(r => setTimeout(r, 1000));
+
+        // Find and click the meldcode from results
+        const meldcodeLinks = document.querySelectorAll('td a, table a');
+        let meldcodeClicked = false;
+
+        for (let link of meldcodeLinks) {
+          if (link.textContent.includes(config.meldCode)) {
+            console.log('✅ Found matching meldcode link:', link.textContent);
+            link.click();
+            meldcodeClicked = true;
+            await new Promise(r => setTimeout(r, 1000));
+            break;
+          }
+        }
+
+        if (!meldcodeClicked) {
+          // Try clicking the first result
+          const firstLink = document.querySelector('td a[href*="meldcode"], table a, #row_0 a');
+          if (firstLink) {
+            console.log('⚠️ Exact match not found, clicking first meldcode result');
+            firstLink.click();
+            await new Promise(r => setTimeout(r, 1000));
+          }
+        }
+
+        // Click Volgende to advance to next step of wizard (date fields)
+        const volgendeBtn = document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende') ||
+                           document.querySelector('input[value="Volgende"]');
+
+        if (volgendeBtn) {
+          console.log('✅ Clicking Volgende to advance to date fields');
+          await clickElement(volgendeBtn);
+        }
+
+        sessionStorage.setItem('automationStep', 'warmtepomp_selected');
+
+        // Continue automation to fill dates
+        setTimeout(() => {
+          startFullAutomation(config);
+        }, 1500);
+        return;
+      } else {
+        console.log('⚠️ Search input not found or no meldcode configured');
+        updateStatus('Please search for meldcode manually', '12.5 - Manual Action Required');
+        return;
+      }
     }
     
     // Step 13: Fill installation details and dates
@@ -853,9 +973,15 @@ async function startFullAutomation(config) {
       // Extra delay after filling dates before clicking checkboxes
       await new Promise(r => setTimeout(r, 1200));
 
-      // IMPORTANT: Click checkboxes FIRST and wait for fields to appear
-      console.log('Clicking gas usage checkbox...');
-      await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.GebruikAardgas_jn_J');
+      // IMPORTANT: Click gas usage radio button based on config
+      console.log('Setting gas usage based on config:', config.gasUsage);
+      if (config.gasUsage === 'no') {
+        console.log('Clicking Nee for gas usage...');
+        await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.GebruikAardgas_jn_N');
+      } else {
+        console.log('Clicking Ja for gas usage...');
+        await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.GebruikAardgas_jn_J');
+      }
 
       // Extra wait after gas checkbox
       await new Promise(r => setTimeout(r, 800));
@@ -1294,30 +1420,72 @@ async function startFullAutomation(config) {
       }
     }
 
+    // Step 19.5: Final review page (Verzenden tab)
+    if (currentStep === 'final_review_page' || detectedStep === 'final_review_page') {
+      console.log('Step 19.5: Op eindcontrole pagina, scroll naar beneden en klik Volgende');
+      updateStatus('Gegevens controleren', '19.5 - Eindcontrole', detectedStep);
+
+      // Scroll naar beneden om alle gegevens te tonen
+      window.scrollTo({
+        top: document.body.scrollHeight,
+        behavior: 'smooth'
+      });
+
+      await new Promise(r => setTimeout(r, 1500));
+
+      // Zoek en klik de Volgende knop
+      const volgendeButton = document.querySelector('#btnVolgendeTab') ||
+                            document.querySelector('input[value="Volgende"]');
+
+      if (volgendeButton) {
+        console.log('✅ Volgende knop gevonden, doorgaan naar bevestiging');
+        await clickElement(volgendeButton);
+        sessionStorage.setItem('automationStep', 'final_review_done');
+        return;
+      } else {
+        console.log('⚠️ Volgende knop niet gevonden');
+        updateStatus('Klik handmatig op Volgende', '19.5 - Handmatige actie vereist');
+        return;
+      }
+    }
+
     // Step 19: Final confirmation - "Ja, volgende" button
     if (document.querySelector('#QuestionEmbedding_585_default') &&
-        (currentStep === 'files_handled' || currentStep === 'measure_overview_done' || currentStep === 'measure_confirmed' || currentStep === 'final_measure_overview_done')) {
+        (currentStep === 'files_handled' || currentStep === 'measure_overview_done' || currentStep === 'measure_confirmed' || currentStep === 'final_measure_overview_done' || currentStep === 'final_review_done')) {
       console.log('Step 19: Final confirmation');
-      updateStatus('Final confirmation', '19 - Confirmation', detectedStep);
+      updateStatus('Laatste bevestiging', '19 - Bevestiging', detectedStep);
       await clickElement('#QuestionEmbedding_585_default');
       await clickElement('#btnVolgendeTab');
       sessionStorage.setItem('automationStep', 'final_confirmed');
       return;
     }
 
-    // Step 20: Accept terms
+    // Step 20: Accept terms - scroll to bottom for manual review
     if (document.querySelector('#cbAccoord') && currentStep === 'final_confirmed') {
-      console.log('Step 20: Accepting terms');
-      updateStatus('Accepting terms - Almost done!', '20 - Final Step', detectedStep);
-      await clickElement('#cbAccoord');
-      updateStatus('✅ Complete! Review and submit', 'DONE', detectedStep);
-      sessionStorage.clear();
-      alert('Automation complete! Review the form and click Submit when ready.');
+      console.log('Step 20: Laatste pagina bereikt, scrollen naar beneden voor handmatige controle');
+      updateStatus('✅ Voltooid! Controleer en verstuur', '20 - Eindcontrole', detectedStep);
+
+      // Scroll naar beneden
+      window.scrollTo({
+        top: document.body.scrollHeight,
+        behavior: 'smooth'
+      });
+
+      // Wacht even tot scroll klaar is
+      await new Promise(r => setTimeout(r, 1000));
+
+      // Houd het automatiseringspaneel zichtbaar maar geef voltooiing aan
+      updateStatus('✅ Klaar voor verzending - Controleer het formulier hieronder en klik op Indienen wanneer u klaar bent', 'KLAAR', detectedStep);
+
+      // Verwijder sessionStorage niet voor het geval gebruiker moet doorgaan
+      // sessionStorage.clear();
+
+      console.log('✅ Automatisering voltooid - wacht op handmatige verzending');
       return;
     }
 
-    console.log('No matching step found, waiting for page load or manual action');
-    updateStatus('Waiting for next step...', currentStep, detectedStep);
+    console.log('Geen overeenkomende stap gevonden, wacht op laden van pagina of handmatige actie');
+    updateStatus('Wacht op volgende stap...', currentStep, detectedStep);
     
   } catch (error) {
     console.error('Automation error:', error);

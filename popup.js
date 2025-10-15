@@ -3,7 +3,7 @@ let betaalbewijsData = null;
 let factuurData = null;
 let machtigingsbewijsData = null;
 
-// Machtigingsformulier OCR handler
+// Machtigingsformulier handler - doet zowel OCR als bestand opslaan
 document.getElementById('machtigingsformulier').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (file) {
@@ -11,13 +11,17 @@ document.getElementById('machtigingsformulier').addEventListener('change', async
     nameDiv.textContent = `✓ ${file.name}`;
     nameDiv.style.display = 'inline-block';
 
+    // Sla het bestand op voor uploaden naar formulier
+    machtigingsbewijsData = await fileToBase64(file);
+    console.log('📎 Machtigingsformulier uploaded (session only):', file.name);
+
     const statusDiv = document.getElementById('extractionStatus');
     statusDiv.textContent = '🔄 Gegevens worden geëxtraheerd...';
     statusDiv.style.display = 'block';
     statusDiv.style.color = '#FFC012';
 
     try {
-      // Extract data from the form
+      // Extract data from the form via OCR
       const extractedData = await extractDataFromForm(file);
 
       console.log('Extracted data result:', extractedData);
@@ -36,6 +40,10 @@ document.getElementById('machtigingsformulier').addEventListener('change', async
       }
       if (extractedData.lastName) {
         document.getElementById('lastName').value = extractedData.lastName;
+        fieldsFound++;
+      }
+      if (extractedData.gender) {
+        document.getElementById('gender').value = extractedData.gender;
         fieldsFound++;
       }
       if (extractedData.phone) {
@@ -67,7 +75,27 @@ document.getElementById('machtigingsformulier').addEventListener('change', async
         fieldsFound++;
       }
       if (extractedData.houseNumber) {
-        document.getElementById('houseNumber').value = extractedData.houseNumber;
+        // Split house number into number and addition
+        // Match: leading digits (59) and everything after (A01)
+        const houseNumberMatch = extractedData.houseNumber.match(/^(\d+)(.*)$/);
+        if (houseNumberMatch) {
+          const number = houseNumberMatch[1];
+          const addition = houseNumberMatch[2];
+
+          document.getElementById('houseNumber').value = number;
+          if (addition) {
+            document.getElementById('houseAddition').value = addition;
+            fieldsFound++;
+          }
+          fieldsFound++;
+        } else {
+          // If no match, just use the whole value
+          document.getElementById('houseNumber').value = extractedData.houseNumber;
+          fieldsFound++;
+        }
+      }
+      if (extractedData.gasUsage) {
+        document.getElementById('gasUsage').value = extractedData.gasUsage;
         fieldsFound++;
       }
 
@@ -78,9 +106,6 @@ document.getElementById('machtigingsformulier').addEventListener('change', async
         statusDiv.textContent = '⚠️ Geen gegevens gevonden. Controleer de console voor details.';
         statusDiv.style.color = '#f59f00';
       }
-
-      // Auto-save after extraction
-      autoSaveConfig();
 
       setTimeout(() => {
         statusDiv.style.display = 'none';
@@ -115,18 +140,48 @@ document.getElementById('factuurDoc').addEventListener('change', async (e) => {
     nameDiv.textContent = `✓ ${file.name}`;
     nameDiv.style.display = 'inline-block';
     console.log('✓ Factuur ready for automation (will be cleared after use)');
-  }
-});
 
-document.getElementById('machtigingsbewijsDoc').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (file) {
-    console.log('📎 Machtigingsbewijs uploaded (session only):', file.name);
-    machtigingsbewijsData = await fileToBase64(file);
-    const nameDiv = document.getElementById('machtigingsbewijsName');
-    nameDiv.textContent = `✓ ${file.name}`;
-    nameDiv.style.display = 'inline-block';
-    console.log('✓ Machtigingsbewijs ready for automation (will be cleared after use)');
+    // Extract meldcode from factuur
+    const statusDiv = document.getElementById('factuurExtractionStatus');
+    if (statusDiv) {
+      statusDiv.textContent = '🔄 Meldcode wordt geëxtraheerd uit factuur...';
+      statusDiv.style.display = 'block';
+      statusDiv.style.color = '#FFC012';
+    }
+
+    try {
+      const meldcode = await extractMeldcodeFromFactuur(file);
+
+      if (meldcode) {
+        document.getElementById('meldCode').value = meldcode;
+        console.log('✅ Meldcode extracted:', meldcode);
+
+        if (statusDiv) {
+          statusDiv.textContent = `✅ Meldcode gevonden: ${meldcode}`;
+          statusDiv.style.color = '#2b8a3e';
+          setTimeout(() => {
+            statusDiv.style.display = 'none';
+          }, 3000);
+        }
+      } else {
+        if (statusDiv) {
+          statusDiv.textContent = '⚠️ Geen meldcode gevonden in factuur';
+          statusDiv.style.color = '#f59f00';
+          setTimeout(() => {
+            statusDiv.style.display = 'none';
+          }, 3000);
+        }
+      }
+    } catch (error) {
+      console.error('Meldcode extraction error:', error);
+      if (statusDiv) {
+        statusDiv.textContent = `❌ Fout bij extraheren meldcode: ${error.message}`;
+        statusDiv.style.color = '#c92a2a';
+        setTimeout(() => {
+          statusDiv.style.display = 'none';
+        }, 5000);
+      }
+    }
   }
 });
 
@@ -185,36 +240,96 @@ async function imageToBase64(file) {
   });
 }
 
-// Extract data from machtigingsformulier using Mistral Pixtral
-async function extractDataFromForm(file) {
-  console.log('=== Starting extraction with Mistral ===');
+// Extract text from PDF (optionally only first page for efficiency)
+async function extractTextFromPDF(file, firstPageOnly = false) {
+  console.log('Extracting text from PDF...');
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  console.log('Total pages in PDF:', pdf.numPages);
+
+  let fullText = '';
+
+  // Extract text from specified pages
+  const maxPage = firstPageOnly ? 1 : pdf.numPages;
+  console.log('Will extract from page(s):', maxPage);
+
+  for (let i = 1; i <= maxPage; i++) {
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items.map(item => item.str).join(' ');
+    fullText += pageText + '\n';
+    console.log(`Page ${i} text length:`, pageText.length);
+  }
+
+  console.log(`Extracted text from ${maxPage} page(s), total length:`, fullText.length);
+  console.log('First 500 chars of extracted text:', fullText.substring(0, 500));
+  return fullText;
+}
+
+// Extract meldcode from factuur using Mistral
+async function extractMeldcodeFromFactuur(file) {
+  console.log('=== Starting meldcode extraction with Mistral ===');
   console.log('File:', file.name, 'Type:', file.type, 'Size:', file.size);
 
   try {
     // Get API key
     const { mistralApiKey } = await chrome.storage.local.get(['mistralApiKey']);
     if (!mistralApiKey) {
-      throw new Error('Geen Mistral API key ingesteld. Voer eerst je API key in.');
+      throw new Error('Geen Mistral API key ingesteld. Voer eerst je API key in via instellingen.');
     }
 
-    // Convert file to base64
-    let base64Image;
+    let textContent;
+
+    // Extract text based on file type
     if (file.type === 'application/pdf') {
-      console.log('Converting PDF to base64 image...');
-      const statusDiv = document.getElementById('extractionStatus');
-      statusDiv.textContent = '🔄 PDF converteren...';
-      base64Image = await pdfToBase64Image(file);
+      console.log('Extracting text from PDF...');
+      textContent = await extractTextFromPDF(file);
     } else {
-      console.log('Converting image to base64...');
-      base64Image = await imageToBase64(file);
+      // For images, use OCR via vision model
+      console.log('Converting image to base64 for OCR...');
+      const base64Image = await imageToBase64(file);
+      const base64Data = base64Image.split(',')[1];
+
+      const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${mistralApiKey}`
+        },
+        body: JSON.stringify({
+          model: 'pixtral-12b-2409',
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Extract all text from this image.' },
+              { type: 'image_url', image_url: `data:image/png;base64,${base64Data}` }
+            ]
+          }],
+          max_tokens: 1000
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`Mistral API error: ${errorData.error?.message || response.statusText}`);
+      }
+
+      const data = await response.json();
+      textContent = data.choices[0].message.content;
     }
 
-    // Extract the base64 data (remove data:image/png;base64, prefix)
-    const base64Data = base64Image.split(',')[1];
+    console.log('Text extracted, searching for meldcode...');
 
-    console.log('Calling Mistral API...');
-    const statusDiv = document.getElementById('extractionStatus');
-    statusDiv.textContent = '🔄 Gegevens extraheren met AI...';
+    // Search for meldcode pattern in text
+    const meldcodeMatch = textContent.match(/KA\d{5}/i);
+    if (meldcodeMatch) {
+      const meldcode = meldcodeMatch[0].toUpperCase();
+      console.log('✅ Meldcode found in text:', meldcode);
+      return meldcode;
+    }
+
+    // If no pattern found, use AI to find it
+    console.log('No direct pattern found, asking AI...');
 
     const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
       method: 'POST',
@@ -223,38 +338,175 @@ async function extractDataFromForm(file) {
         'Authorization': `Bearer ${mistralApiKey}`
       },
       body: JSON.stringify({
-        model: 'pixtral-12b-2409',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: `Extract the following information from this Dutch machtigingsformulier (authorization form). Return ONLY a valid JSON object with these exact keys, nothing else:
+        model: 'mistral-small-latest',
+        messages: [{
+          role: 'user',
+          content: `Find the meldcode in this invoice text. The meldcode typically starts with "KA" followed by 5 digits (e.g., KA06175).
 
-{
-  "bsn": "9-digit BSN number if found, otherwise null",
-  "initials": "initials (voorletters) if found, otherwise null",
-  "lastName": "last name (achternaam) if found, otherwise null",
-  "email": "email address if found, otherwise null",
-  "phone": "phone number (telefoonnummer) if found, otherwise null",
-  "iban": "IBAN if found, otherwise null",
-  "bic": "BIC code if found, otherwise null",
-  "street": "street name from address (adres) field if found, otherwise null",
-  "postalCode": "postal code (postcode) if found, otherwise null",
-  "city": "city/place name (plaats) if found, otherwise null",
-  "houseNumber": "house number (huisnummer) from address if found, otherwise null"
+Invoice text:
+${textContent.substring(0, 2000)}
+
+Return ONLY the meldcode or "null" if not found.`
+        }],
+        max_tokens: 20
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(`Mistral API error: ${errorData.error?.message || response.statusText}`);
+    }
+
+    const data = await response.json();
+    let content = data.choices[0].message.content.trim();
+    console.log('AI response:', content);
+
+    // Clean up response
+    if (content === 'null' || content === 'NULL' || !content) {
+      return null;
+    }
+
+    // Extract meldcode pattern from AI response
+    const aiMatch = content.match(/KA\d{5}/i);
+    if (aiMatch) {
+      return aiMatch[0].toUpperCase();
+    }
+
+    return null;
+
+  } catch (error) {
+    console.error('Meldcode Extraction Error:', error);
+    throw error;
+  }
 }
 
-Important: Return ONLY valid JSON, no markdown, no explanation, no additional text.`
-              },
-              {
-                type: 'image_url',
-                image_url: `data:image/png;base64,${base64Data}`
-              }
-            ]
-          }
-        ],
+// Extract data from machtigingsformulier using Mistral
+async function extractDataFromForm(file) {
+  console.log('=== Starting extraction with Mistral ===');
+  console.log('File:', file.name, 'Type:', file.type, 'Size:', file.size);
+
+  try {
+    // Get API key
+    const { mistralApiKey } = await chrome.storage.local.get(['mistralApiKey']);
+    if (!mistralApiKey) {
+      throw new Error('Geen Mistral API key ingesteld. Voer eerst je API key in via instellingen.');
+    }
+
+    const statusDiv = document.getElementById('extractionStatus');
+    let textContent;
+
+    // Use Mistral Document AI OCR for better extraction
+    console.log('Using Mistral Document AI OCR...');
+    if (statusDiv) {
+      statusDiv.textContent = '🔄 Document OCR met Mistral AI...';
+    }
+
+    // Convert file to base64 for OCR API
+    let base64Document;
+    if (file.type === 'application/pdf') {
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      const binary = bytes.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
+      base64Document = `data:application/pdf;base64,${btoa(binary)}`;
+    } else {
+      // For images, convert to base64
+      base64Document = await imageToBase64(file);
+    }
+
+    if (statusDiv) {
+      statusDiv.textContent = '🔄 Document wordt geanalyseerd...';
+    }
+
+    // Step 1: Extract text using Mistral OCR
+    console.log('Calling Mistral OCR API...');
+    const ocrResponse = await fetch('https://api.mistral.ai/v1/ocr', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${mistralApiKey}`
+      },
+      body: JSON.stringify({
+        model: 'mistral-ocr-latest',
+        document: {
+          type: 'document_url',
+          document_url: base64Document
+        }
+      })
+    });
+
+    if (!ocrResponse.ok) {
+      const errorData = await ocrResponse.json();
+      throw new Error(`Mistral OCR error: ${errorData.error?.message || ocrResponse.statusText}`);
+    }
+
+    const ocrData = await ocrResponse.json();
+    console.log('OCR response:', ocrData);
+
+    // Extract text from OCR response
+    let extractedText = '';
+    if (ocrData.pages && ocrData.pages.length > 0) {
+      // Only use first page
+      extractedText = ocrData.pages[0].markdown || '';
+    }
+
+    console.log('Extracted text from OCR:', extractedText.substring(0, 500));
+
+    if (statusDiv) {
+      statusDiv.textContent = '🔄 Gegevens extraheren met AI...';
+    }
+
+    // Step 2: Use text model to extract structured data
+    console.log('Calling Mistral text model for structured extraction...');
+    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${mistralApiKey}`
+      },
+      body: JSON.stringify({
+        model: 'mistral-small-latest',
+        messages: [{
+          role: 'user',
+          content: `Extract the CUSTOMER information from this Dutch machtigingsformulier text.
+
+IMPORTANT: Extract the FILLED-IN customer data, NOT the company information (like SAMAN, Gouwepoort, Zierikzee).
+
+Look for customer details after these labels:
+- "Achternaam en voorletters" or "Saif" - extract last name and initials
+- "Geslacht" - return "male" for "Man/M" or "female" for "Vrouw/V"
+- "Adres" - street name (like Insulindestraat)
+- House number (like 59A01)
+- "Postcode en plaats" - postal code and city
+- "Telefoonnummer" - phone (06 or 0 prefix, NOT 085 company numbers)
+- "E-mail" - personal email (NOT @samangroep)
+- "BSN" - 9-digit BSN number
+- "IBAN" - starts with NL
+- "BIC" - if present
+- "Gebruikt u na installatie van deze warmtepomp nog aardgas voor ruimte verwarming?" - return "yes" for "Ja" or "no" for "nee"
+
+Return ONLY valid JSON:
+
+{
+  "bsn": "BSN or null",
+  "initials": "initials or null",
+  "lastName": "last name or null",
+  "gender": "male or female or null",
+  "email": "email or null",
+  "phone": "phone or null",
+  "iban": "IBAN or null",
+  "bic": "BIC or null",
+  "street": "street name or null",
+  "postalCode": "postal code or null",
+  "city": "city or null",
+  "houseNumber": "house number or null",
+  "gasUsage": "yes or no or null"
+}
+
+Text:
+${extractedText}
+
+Return ONLY JSON, no markdown.`
+        }],
         max_tokens: 500
       })
     });
@@ -293,76 +545,36 @@ Important: Return ONLY valid JSON, no markdown, no explanation, no additional te
   }
 }
 
-// Auto-save configuration on input change (DOCUMENTS ARE NOT SAVED)
-function autoSaveConfig() {
-  chrome.storage.local.get(['isdeConfig'], (result) => {
-    const config = result.isdeConfig || {};
-
-    config.bsn = document.getElementById('bsn').value;
-    config.initials = document.getElementById('initials').value;
-    config.lastName = document.getElementById('lastName').value;
-    config.gender = document.getElementById('gender').value;
-    config.phone = document.getElementById('phone').value;
-    config.email = document.getElementById('email').value;
-    config.iban = document.getElementById('iban').value;
-    config.bic = document.getElementById('bic').value;
-    config.street = document.getElementById('street').value;
-    config.postalCode = document.getElementById('postalCode').value;
-    config.city = document.getElementById('city').value;
-    config.houseNumber = document.getElementById('houseNumber').value;
-    config.houseAddition = document.getElementById('houseAddition').value;
-    config.purchaseDate = document.getElementById('purchaseDate').value;
-    config.installationDate = document.getElementById('installationDate').value;
-    config.meldCode = document.getElementById('meldCode').value;
-
-    // Documents are NOT saved - they must be uploaded fresh each time
-    // config.betaalbewijs = betaalbewijsData;
-    // config.factuur = factuurData;
-    // config.machtigingsbewijs = machtigingsbewijsData;
-
-    // Keep existing companyName and kvkNumber from settings
-    chrome.storage.local.set({ isdeConfig: config });
-  });
-}
-
 // Load configuration on startup
 function loadConfiguration() {
-  chrome.storage.local.get(['isdeConfig'], (result) => {
-    // Load form config
-    if (result.isdeConfig) {
-      const config = result.isdeConfig;
-      document.getElementById('bsn').value = config.bsn || '';
-      document.getElementById('initials').value = config.initials || '';
-      document.getElementById('lastName').value = config.lastName || '';
-      document.getElementById('gender').value = config.gender || 'male';
-      document.getElementById('phone').value = config.phone || '';
-      document.getElementById('email').value = config.email || '';
-      document.getElementById('iban').value = config.iban || '';
-      document.getElementById('bic').value = config.bic || '';
-      document.getElementById('street').value = config.street || '';
-      document.getElementById('postalCode').value = config.postalCode || '';
-      document.getElementById('city').value = config.city || '';
-      document.getElementById('houseNumber').value = config.houseNumber || '';
-      document.getElementById('houseAddition').value = config.houseAddition || '';
-      document.getElementById('purchaseDate').value = config.purchaseDate || '';
-      document.getElementById('installationDate').value = config.installationDate || '';
-      document.getElementById('meldCode').value = config.meldCode || '';
+  // Reset all form fields to empty on startup
+  document.getElementById('bsn').value = '';
+  document.getElementById('initials').value = '';
+  document.getElementById('lastName').value = '';
+  document.getElementById('gender').value = 'male';
+  document.getElementById('phone').value = '';
+  document.getElementById('email').value = '';
+  document.getElementById('iban').value = '';
+  document.getElementById('bic').value = '';
+  document.getElementById('street').value = '';
+  document.getElementById('postalCode').value = '';
+  document.getElementById('city').value = '';
+  document.getElementById('houseNumber').value = '';
+  document.getElementById('houseAddition').value = '';
+  document.getElementById('purchaseDate').value = '';
+  document.getElementById('installationDate').value = '';
+  document.getElementById('meldCode').value = '';
+  document.getElementById('gasUsage').value = '';
 
-      // Documents are NOT loaded from storage - they must be uploaded fresh each time
-      // Reset document variables to null
-      betaalbewijsData = null;
-      factuurData = null;
-      machtigingsbewijsData = null;
-      console.log('🔄 Document variables reset - please upload documents fresh for each session');
-    }
-  });
+  // Reset document variables to null
+  betaalbewijsData = null;
+  factuurData = null;
+  machtigingsbewijsData = null;
+
+  console.log('🔄 Plugin gestart met lege velden - upload documenten om gegevens automatisch in te vullen');
 }
 
-// Add auto-save listeners to all inputs
-document.querySelectorAll('input, select').forEach(element => {
-  element.addEventListener('change', autoSaveConfig);
-  element.addEventListener('blur', autoSaveConfig);
-});
+// Auto-save is disabled - form data is not persisted between sessions
 
 // Start automation
 document.getElementById('startAutomation').addEventListener('click', () => {
@@ -397,6 +609,7 @@ document.getElementById('startAutomation').addEventListener('click', () => {
         purchaseDate: document.getElementById('purchaseDate').value,
         installationDate: document.getElementById('installationDate').value,
         meldCode: document.getElementById('meldCode').value,
+        gasUsage: document.getElementById('gasUsage').value,
         companyName: result.isdeConfig?.companyName || '',
         kvkNumber: result.isdeConfig?.kvkNumber || '',
         betaalbewijs: betaalbewijsData,
