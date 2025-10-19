@@ -1,3 +1,6 @@
+// Global flag to track if automation has been stopped
+let automationStopped = false;
+
 // Create status panel functions
 function createStatusPanel() {
   // Remove existing panel if present
@@ -47,6 +50,8 @@ function createStatusPanel() {
 
   document.getElementById('stop-automation').addEventListener('click', () => {
     console.log('Stop automation clicked');
+    // Set global flag to stop automation
+    automationStopped = true;
     // Clear all automation state
     sessionStorage.removeItem('automationConfig');
     sessionStorage.removeItem('automationStep');
@@ -73,6 +78,8 @@ function updateStatus(message, step, detectedStep) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'startAutomation') {
     console.log('Starting automation with config:', request.config);
+    // Reset stop flag when starting new automation
+    automationStopped = false;
     // Clear any existing automation state
     sessionStorage.removeItem('automationStep');
     sessionStorage.removeItem('automationConfig');
@@ -481,6 +488,12 @@ function detectCurrentStep() {
 
 // Main automation function following the exact recording
 async function startFullAutomation(config) {
+  // Check if automation has been stopped by user
+  if (automationStopped) {
+    console.log('❌ Automation stopped by user, not continuing');
+    return;
+  }
+
   try {
     const currentUrl = window.location.href;
     console.log('Current URL:', currentUrl);
@@ -1495,6 +1508,12 @@ async function startFullAutomation(config) {
 
 // Check if we need to continue automation after page load
 window.addEventListener('load', () => {
+  // Don't continue if automation has been stopped
+  if (automationStopped) {
+    console.log('❌ Automation stopped, not continuing on page load');
+    return;
+  }
+
   const automationConfig = sessionStorage.getItem('automationConfig');
   if (automationConfig) {
     const config = JSON.parse(automationConfig);
@@ -1514,6 +1533,12 @@ window.addEventListener('load', () => {
 
 // Also listen for DOM content loaded as backup
 document.addEventListener('DOMContentLoaded', () => {
+  // Don't continue if automation has been stopped
+  if (automationStopped) {
+    console.log('❌ Automation stopped, not continuing on DOM load');
+    return;
+  }
+
   const automationConfig = sessionStorage.getItem('automationConfig');
   if (automationConfig) {
     const config = JSON.parse(automationConfig);
@@ -1535,6 +1560,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Also check periodically if panel needs to be recreated (in case DOM changes)
 setInterval(() => {
+  // Don't recreate panel if automation has been stopped
+  if (automationStopped) {
+    return;
+  }
+
   const automationConfig = sessionStorage.getItem('automationConfig');
   if (automationConfig && !document.getElementById('isde-automation-panel')) {
     console.log('Status panel missing, recreating...');
