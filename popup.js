@@ -58,10 +58,6 @@ document.getElementById('machtigingsformulier').addEventListener('change', async
         document.getElementById('iban').value = extractedData.iban;
         fieldsFound++;
       }
-      if (extractedData.bic) {
-        document.getElementById('bic').value = extractedData.bic;
-        fieldsFound++;
-      }
       if (extractedData.street) {
         document.getElementById('street').value = extractedData.street;
         fieldsFound++;
@@ -107,6 +103,9 @@ document.getElementById('machtigingsformulier').addEventListener('change', async
         statusDiv.style.color = '#f59f00';
       }
 
+      // Update button state after extraction
+      updateStartButtonState();
+
       setTimeout(() => {
         statusDiv.style.display = 'none';
       }, 5000);
@@ -115,6 +114,9 @@ document.getElementById('machtigingsformulier').addEventListener('change', async
       console.error('Error stack:', error.stack);
       statusDiv.textContent = `❌ Fout: ${error.message}`;
       statusDiv.style.color = '#c92a2a';
+
+      // Update button state even on error
+      updateStartButtonState();
     }
   }
 });
@@ -128,6 +130,7 @@ document.getElementById('betaalbewijsDoc').addEventListener('change', async (e) 
     nameDiv.textContent = `✓ ${file.name}`;
     nameDiv.style.display = 'inline-block';
     console.log('✓ Betaalbewijs ready for automation (will be cleared after use)');
+    updateStartButtonState();
   }
 });
 
@@ -150,14 +153,25 @@ document.getElementById('factuurDoc').addEventListener('change', async (e) => {
     }
 
     try {
-      const meldcode = await extractMeldcodeFromFactuur(file);
+      const { meldcode, installationDate } = await extractMeldcodeFromFactuur(file);
+
+      let fieldsFound = [];
 
       if (meldcode) {
         document.getElementById('meldCode').value = meldcode;
+        fieldsFound.push('Meldcode: ' + meldcode);
         console.log('✅ Meldcode extracted:', meldcode);
+      }
 
+      if (installationDate) {
+        document.getElementById('installationDate').value = installationDate;
+        fieldsFound.push('Installatiedatum: ' + installationDate);
+        console.log('✅ Installation date extracted:', installationDate);
+      }
+
+      if (fieldsFound.length > 0) {
         if (statusDiv) {
-          statusDiv.textContent = `✅ Meldcode gevonden: ${meldcode}`;
+          statusDiv.textContent = `✅ Gevonden: ${fieldsFound.join(', ')}`;
           statusDiv.style.color = '#2b8a3e';
           setTimeout(() => {
             statusDiv.style.display = 'none';
@@ -165,23 +179,30 @@ document.getElementById('factuurDoc').addEventListener('change', async (e) => {
         }
       } else {
         if (statusDiv) {
-          statusDiv.textContent = '⚠️ Geen meldcode gevonden in factuur';
+          statusDiv.textContent = '⚠️ Geen meldcode of datum gevonden in factuur';
           statusDiv.style.color = '#f59f00';
           setTimeout(() => {
             statusDiv.style.display = 'none';
           }, 3000);
         }
       }
+
+      // Update button state after extraction
+      updateStartButtonState();
     } catch (error) {
-      console.error('Meldcode extraction error:', error);
+      console.error('Factuur extraction error:', error);
       if (statusDiv) {
-        statusDiv.textContent = `❌ Fout bij extraheren meldcode: ${error.message}`;
+        statusDiv.textContent = `❌ Fout bij extraheren factuur: ${error.message}`;
         statusDiv.style.color = '#c92a2a';
         setTimeout(() => {
           statusDiv.style.display = 'none';
         }, 5000);
       }
+      updateStartButtonState();
     }
+
+    // Update button state when factuur is uploaded
+    updateStartButtonState();
   }
 });
 
@@ -266,9 +287,9 @@ async function extractTextFromPDF(file, firstPageOnly = false) {
   return fullText;
 }
 
-// Extract meldcode from factuur using Mistral
+// Extract meldcode and installation date from factuur using Mistral
 async function extractMeldcodeFromFactuur(file) {
-  console.log('=== Starting meldcode extraction with Mistral ===');
+  console.log('=== Starting meldcode and date extraction with Mistral ===');
   console.log('File:', file.name, 'Type:', file.type, 'Size:', file.size);
 
   try {
@@ -284,6 +305,54 @@ async function extractMeldcodeFromFactuur(file) {
     if (file.type === 'application/pdf') {
       console.log('Extracting text from PDF...');
       textContent = await extractTextFromPDF(file);
+
+      // Check if PDF has no text (scanned PDF)
+      if (!textContent || textContent.trim().length < 10) {
+        console.log('⚠️ PDF has no extractable text, using Vision AI OCR...');
+        // Convert PDF to image and use OCR
+        const pdfImage = await pdfToBase64Image(file);
+        const base64Data = pdfImage.split(',')[1];
+
+        const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${mistralApiKey}`
+          },
+          body: JSON.stringify({
+            model: 'pixtral-12b-2409',
+            messages: [{
+              role: 'user',
+              content: [
+                { type: 'text', text: 'Extract all text from this invoice image, including meldcode and dates.' },
+                { type: 'image_url', image_url: `data:image/png;base64,${base64Data}` }
+              ]
+            }],
+            max_tokens: 1000
+          })
+        });
+
+        if (!response.ok) {
+          let errorMessage = response.statusText;
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.error?.message || errorMessage;
+          } catch (e) {
+            // Could not parse error response
+          }
+
+          // Special handling for rate limit errors
+          if (response.status === 429) {
+            throw new Error(`Mistral API rate limit bereikt. Wacht even (30-60 seconden) voordat je het opnieuw probeert.`);
+          }
+
+          throw new Error(`Mistral API error (${response.status}): ${errorMessage}`);
+        }
+
+        const data = await response.json();
+        textContent = data.choices[0].message.content;
+        console.log('✅ Text extracted via Vision AI OCR');
+      }
     } else {
       // For images, use OCR via vision model
       console.log('Converting image to base64 for OCR...');
@@ -310,72 +379,138 @@ async function extractMeldcodeFromFactuur(file) {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`Mistral API error: ${errorData.error?.message || response.statusText}`);
+        let errorMessage = response.statusText;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error?.message || errorMessage;
+        } catch (e) {
+          // Could not parse error response
+        }
+
+        // Special handling for rate limit errors
+        if (response.status === 429) {
+          throw new Error(`Mistral API rate limit bereikt. Wacht even (30-60 seconden) voordat je het opnieuw probeert.`);
+        }
+
+        throw new Error(`Mistral API error (${response.status}): ${errorMessage}`);
       }
 
       const data = await response.json();
       textContent = data.choices[0].message.content;
     }
 
-    console.log('Text extracted, searching for meldcode...');
+    console.log('Text extracted, searching for meldcode and installation date...');
 
     // Search for meldcode pattern in text
     const meldcodeMatch = textContent.match(/KA\d{5}/i);
+    let meldcode = null;
+    let installationDate = null;
+
     if (meldcodeMatch) {
-      const meldcode = meldcodeMatch[0].toUpperCase();
+      meldcode = meldcodeMatch[0].toUpperCase();
       console.log('✅ Meldcode found in text:', meldcode);
-      return meldcode;
     }
 
-    // If no pattern found, use AI to find it
-    console.log('No direct pattern found, asking AI...');
+    // Search for installation date pattern (DD-MM-YYYY or DD/MM/YYYY or similar)
+    const datePatterns = [
+      /(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/,  // DD-MM-YYYY or DD/MM/YYYY
+      /(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/   // YYYY-MM-DD or YYYY/MM/DD
+    ];
 
-    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${mistralApiKey}`
-      },
-      body: JSON.stringify({
-        model: 'mistral-small-latest',
-        messages: [{
-          role: 'user',
-          content: `Find the meldcode in this invoice text. The meldcode typically starts with "KA" followed by 5 digits (e.g., KA06175).
+    for (const pattern of datePatterns) {
+      const dateMatch = textContent.match(pattern);
+      if (dateMatch) {
+        installationDate = dateMatch[1];
+        // Convert to DD-MM-YYYY format if needed
+        if (installationDate.match(/\d{4}[-\/]\d{1,2}[-\/]\d{1,2}/)) {
+          const parts = installationDate.split(/[-\/]/);
+          installationDate = `${parts[2].padStart(2, '0')}-${parts[1].padStart(2, '0')}-${parts[0]}`;
+        }
+        // Normalize separator to dash
+        installationDate = installationDate.replace(/\//g, '-');
+        console.log('✅ Installation date found in text:', installationDate);
+        break;
+      }
+    }
+
+    // If not all data found, use AI to extract it
+    if (!meldcode || !installationDate) {
+      console.log('Not all data found via regex, asking AI...');
+
+      const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${mistralApiKey}`
+        },
+        body: JSON.stringify({
+          model: 'mistral-small-latest',
+          messages: [{
+            role: 'user',
+            content: `Extract from this Dutch invoice text:
+1. Meldcode: typically starts with "KA" followed by 5 digits (e.g., KA06175)
+2. Installation date (installatiedatum): the date when the heat pump was installed
 
 Invoice text:
 ${textContent.substring(0, 2000)}
 
-Return ONLY the meldcode or "null" if not found.`
-        }],
-        max_tokens: 20
-      })
-    });
+Return ONLY valid JSON:
+{
+  "meldcode": "KA##### or null",
+  "installationDate": "DD-MM-YYYY or null"
+}
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Mistral API error: ${errorData.error?.message || response.statusText}`);
+Return ONLY JSON, no markdown.`
+          }],
+          max_tokens: 100
+        })
+      });
+
+      if (!response.ok) {
+        let errorMessage = response.statusText;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error?.message || errorMessage;
+        } catch (e) {
+          // Could not parse error response
+        }
+
+        // Special handling for rate limit errors
+        if (response.status === 429) {
+          throw new Error(`Mistral API rate limit bereikt. Wacht even (30-60 seconden) voordat je het opnieuw probeert.`);
+        }
+
+        throw new Error(`Mistral API error (${response.status}): ${errorMessage}`);
+      }
+
+      const data = await response.json();
+      let content = data.choices[0].message.content.trim();
+      console.log('AI response:', content);
+
+      // Remove markdown code blocks if present
+      content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+
+      try {
+        const extracted = JSON.parse(content);
+
+        if (!meldcode && extracted.meldcode && extracted.meldcode !== 'null') {
+          meldcode = extracted.meldcode.toUpperCase();
+          console.log('✅ Meldcode extracted by AI:', meldcode);
+        }
+
+        if (!installationDate && extracted.installationDate && extracted.installationDate !== 'null') {
+          installationDate = extracted.installationDate;
+          console.log('✅ Installation date extracted by AI:', installationDate);
+        }
+      } catch (parseError) {
+        console.warn('Could not parse AI JSON response:', parseError);
+      }
     }
 
-    const data = await response.json();
-    let content = data.choices[0].message.content.trim();
-    console.log('AI response:', content);
-
-    // Clean up response
-    if (content === 'null' || content === 'NULL' || !content) {
-      return null;
-    }
-
-    // Extract meldcode pattern from AI response
-    const aiMatch = content.match(/KA\d{5}/i);
-    if (aiMatch) {
-      return aiMatch[0].toUpperCase();
-    }
-
-    return null;
+    return { meldcode, installationDate };
 
   } catch (error) {
-    console.error('Meldcode Extraction Error:', error);
+    console.error('Extraction Error:', error);
     throw error;
   }
 }
@@ -449,7 +584,10 @@ async function extractDataFromForm(file) {
       extractedText = ocrData.pages[0].markdown || '';
     }
 
-    console.log('Extracted text from OCR:', extractedText.substring(0, 500));
+    console.log('Extracted text from OCR (first 500 chars):', extractedText.substring(0, 500));
+    console.log('=== FULL OCR TEXT FOR DEBUGGING ===');
+    console.log(extractedText);
+    console.log('=== END FULL OCR TEXT ===');
 
     if (statusDiv) {
       statusDiv.textContent = '🔄 Gegevens extraheren met AI...';
@@ -481,8 +619,15 @@ Look for customer details after these labels:
 - "E-mail" - personal email (NOT @samangroep)
 - "BSN" - 9-digit BSN number
 - "IBAN" - starts with NL
-- "BIC" - if present
-- "Gebruikt u na installatie van deze warmtepomp nog aardgas voor ruimte verwarming?" - return "yes" for "Ja" or "no" for "nee"
+
+VERY IMPORTANT - Gas usage question:
+Look for ANY variation of this question about gas usage:
+- "Gebruikt u na installatie van deze warmtepomp nog aardgas voor ruimte verwarming?"
+- "Gebruikt u nog aardgas"
+- "aardgas voor ruimte verwarming"
+If you find this question with answer "Ja" → return "yes"
+If you find this question with answer "nee" or "Nee" → return "no"
+If the question is present but unanswered → return null
 
 Return ONLY valid JSON:
 
@@ -494,7 +639,6 @@ Return ONLY valid JSON:
   "email": "email or null",
   "phone": "phone or null",
   "iban": "IBAN or null",
-  "bic": "BIC or null",
   "street": "street name or null",
   "postalCode": "postal code or null",
   "city": "city or null",
@@ -512,8 +656,20 @@ Return ONLY JSON, no markdown.`
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Mistral API error: ${errorData.error?.message || response.statusText}`);
+      let errorMessage = response.statusText;
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error?.message || errorMessage;
+      } catch (e) {
+        // Could not parse error response
+      }
+
+      // Special handling for rate limit errors
+      if (response.status === 429) {
+        throw new Error(`Mistral API rate limit bereikt. Wacht even (30-60 seconden) voordat je het opnieuw probeert.`);
+      }
+
+      throw new Error(`Mistral API error (${response.status}): ${errorMessage}`);
     }
 
     const data = await response.json();
@@ -528,6 +684,150 @@ Return ONLY JSON, no markdown.`
 
     // Parse the JSON response
     const extractedData = JSON.parse(content);
+
+    // Extra validation: Use Vision AI to detect checked checkbox for gas usage
+    if (!extractedData.gasUsage || extractedData.gasUsage === 'null') {
+      console.log('Gas usage not found by AI, using Vision AI to detect checkbox...');
+
+      if (statusDiv) {
+        statusDiv.textContent = '🔄 Aardgas checkbox detecteren met Vision AI...';
+      }
+
+      // Convert document to image for vision analysis
+      let visionBase64;
+      if (file.type === 'application/pdf') {
+        console.log('Converting PDF to image for vision analysis...');
+        // Use lower quality JPEG for Vision AI to reduce size
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 1.2 }); // Lower scale for smaller image
+
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        await page.render({
+          canvasContext: context,
+          viewport: viewport
+        }).promise;
+
+        // Convert to JPEG with compression for smaller size
+        visionBase64 = canvas.toDataURL('image/jpeg', 0.8);
+        console.log('PDF converted to JPEG for Vision AI, size:', visionBase64.length, 'chars');
+      } else {
+        visionBase64 = base64Document;
+      }
+
+      const visionData = visionBase64.split(',')[1];
+
+      try {
+        const visionResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${mistralApiKey}`
+          },
+          body: JSON.stringify({
+            model: 'pixtral-12b-2409',
+            messages: [{
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: `Look at this Dutch machtigingsformulier image. Find the question: "Gebruikt u na installatie van deze warmtepomp nog aardgas voor ruimte verwarming?"
+
+The question has two options: "Ja" and "nee". ONE is selected, ONE is NOT selected.
+
+CRITICAL: The SELECTED answer shows what the person chose. Look for these indicators:
+
+SELECTED (chosen answer):
+- CIRCLED (has a circle around it)
+- CHECKED box (☑ or ✓)
+- NOT crossed out / NOT strikethrough
+- Has asterisk or underline
+- Looks emphasized or highlighted
+
+NOT SELECTED (rejected answer):
+- Has STRIKETHROUGH / crossed out line through the text
+- Looks faded or de-emphasized
+- No marking
+
+STEP BY STEP:
+1. Find both options: "Ja" and "nee"
+2. Check if "Ja" has strikethrough → if YES, then "nee" is selected → return "no"
+3. Check if "nee" has strikethrough → if YES, then "Ja" is selected → return "yes"
+4. If one is circled/checked, that one is selected
+5. If you cannot clearly tell which is selected → return "unknown"
+
+Return ONLY one word: "yes", "no", or "unknown"`
+                },
+                {
+                  type: 'image_url',
+                  image_url: visionBase64.startsWith('data:image/jpeg') ? visionBase64 : `data:image/jpeg;base64,${visionData}`
+                }
+              ]
+            }],
+            max_tokens: 10
+          })
+        });
+
+        if (visionResponse.ok) {
+          const visionDataResponse = await visionResponse.json();
+          const visionAnswer = visionDataResponse.choices[0].message.content.toLowerCase().trim();
+          console.log('=== VISION AI RESPONSE ===');
+          console.log('Raw response:', visionDataResponse.choices[0].message.content);
+          console.log('Lowercase trimmed:', visionAnswer);
+          console.log('=========================');
+
+          // Check if Vision AI is uncertain
+          const isUncertain = visionAnswer.includes('unknown') ||
+                            visionAnswer.includes('cannot determine') ||
+                            visionAnswer.includes('not provide a clear') ||
+                            visionAnswer.includes('unclear') ||
+                            visionAnswer.includes('not sure');
+
+          if (isUncertain) {
+            console.log('⚠️ Vision AI is uncertain about gas usage, skipping...');
+            // Don't set gasUsage, leave it null to be filled manually
+          } else if (visionAnswer.includes('yes') || visionAnswer === 'ja') {
+            extractedData.gasUsage = 'yes';
+            console.log('✅ Gas usage "Ja" detected via Vision AI');
+          } else if (visionAnswer.includes('no') || visionAnswer === 'nee') {
+            extractedData.gasUsage = 'no';
+            console.log('✅ Gas usage "Nee" detected via Vision AI');
+            console.log('⚠️ WARNING: Vision AI chose "Nee" - verify this is correct!');
+          } else {
+            console.log('⚠️ Vision AI returned unexpected response, skipping...');
+          }
+        } else {
+          console.error('Vision AI request failed:', visionResponse.status, visionResponse.statusText);
+        }
+      } catch (visionError) {
+        console.warn('Vision AI failed, falling back to text patterns:', visionError);
+
+        // Fallback to text-based detection
+        const gasQuestionRegex = /gebruikt.*warmtepomp.*aardgas.*ruimte.*verwarming/i;
+        if (gasQuestionRegex.test(extractedText)) {
+          console.log('✅ Gas usage question found in text');
+
+          // Log the area around the question for debugging
+          const questionMatch = extractedText.match(/(gebruikt.*warmtepomp.*aardgas.*ruimte.*verwarming.{0,100})/i);
+          if (questionMatch) {
+            console.log('Question context:', questionMatch[1]);
+          }
+
+          // Try to find Ja or Nee within 100 characters after the question
+          const gasAnswerMatch = extractedText.match(/gebruikt.*warmtepomp.*aardgas.*ruimte.*verwarming.{0,100}(ja|nee)/i);
+          if (gasAnswerMatch) {
+            const answer = gasAnswerMatch[1].toLowerCase();
+            extractedData.gasUsage = answer === 'ja' ? 'yes' : 'no';
+            console.log('✅ Gas usage answer found via regex fallback:', extractedData.gasUsage);
+          }
+        }
+      }
+    }
 
     // Convert null values to undefined
     Object.keys(extractedData).forEach(key => {
@@ -555,7 +855,6 @@ function loadConfiguration() {
   document.getElementById('phone').value = '';
   document.getElementById('email').value = '';
   document.getElementById('iban').value = '';
-  document.getElementById('bic').value = '';
   document.getElementById('street').value = '';
   document.getElementById('postalCode').value = '';
   document.getElementById('city').value = '';
@@ -576,8 +875,91 @@ function loadConfiguration() {
 
 // Auto-save is disabled - form data is not persisted between sessions
 
+// Validate all required fields
+function validateRequiredFields() {
+  const requiredFields = [
+    { id: 'bsn', label: 'BSN' },
+    { id: 'initials', label: 'Voorletters' },
+    { id: 'lastName', label: 'Achternaam' },
+    { id: 'phone', label: 'Telefoonnummer' },
+    { id: 'email', label: 'E-mailadres' },
+    { id: 'iban', label: 'IBAN' },
+    { id: 'street', label: 'Straatnaam' },
+    { id: 'houseNumber', label: 'Huisnummer' },
+    { id: 'postalCode', label: 'Postcode' },
+    { id: 'city', label: 'Plaats' },
+    { id: 'purchaseDate', label: 'Aankoopdatum' },
+    { id: 'installationDate', label: 'Installatiedatum' },
+    { id: 'meldCode', label: 'Meldcode' },
+    { id: 'gasUsage', label: 'Aardgas gebruik' }
+  ];
+
+  const missingFields = [];
+
+  for (const field of requiredFields) {
+    const value = document.getElementById(field.id).value.trim();
+    if (!value) {
+      missingFields.push(field.label);
+    }
+  }
+
+  // Check documents
+  if (!betaalbewijsData) {
+    missingFields.push('Betaalbewijs');
+  }
+  if (!factuurData) {
+    missingFields.push('Factuur');
+  }
+
+  return missingFields;
+}
+
+// Update button state based on validation
+function updateStartButtonState() {
+  const startButton = document.getElementById('startAutomation');
+  const missingFields = validateRequiredFields();
+
+  if (missingFields.length > 0) {
+    startButton.disabled = true;
+    startButton.style.opacity = '0.5';
+    startButton.style.cursor = 'not-allowed';
+  } else {
+    startButton.disabled = false;
+    startButton.style.opacity = '1';
+    startButton.style.cursor = 'pointer';
+  }
+}
+
+// Add event listeners to all input fields to update button state
+document.addEventListener('DOMContentLoaded', () => {
+  const inputFields = [
+    'bsn', 'initials', 'lastName', 'phone', 'email', 'iban',
+    'street', 'houseNumber', 'postalCode', 'city',
+    'purchaseDate', 'installationDate', 'meldCode', 'gasUsage'
+  ];
+
+  inputFields.forEach(fieldId => {
+    const field = document.getElementById(fieldId);
+    if (field) {
+      field.addEventListener('input', updateStartButtonState);
+      field.addEventListener('change', updateStartButtonState);
+    }
+  });
+
+  // Initial button state check
+  updateStartButtonState();
+});
+
 // Start automation
 document.getElementById('startAutomation').addEventListener('click', () => {
+  // Validate all required fields
+  const missingFields = validateRequiredFields();
+
+  if (missingFields.length > 0) {
+    showStatus(`Vul eerst alle verplichte velden in: ${missingFields.join(', ')}`, 'error');
+    return;
+  }
+
   chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
     const currentTab = tabs[0];
 
@@ -590,7 +972,7 @@ document.getElementById('startAutomation').addEventListener('click', () => {
     // DO NOT save documents - we'll pass them to automation but not persist them
     console.log('🚀 Starting automation - documents will NOT be saved for next session');
 
-    // Get the full config including company details from storage
+    // Get the full config including company details and contact person from storage
     chrome.storage.local.get(['isdeConfig'], (result) => {
       const config = {
         bsn: document.getElementById('bsn').value,
@@ -600,7 +982,6 @@ document.getElementById('startAutomation').addEventListener('click', () => {
         phone: document.getElementById('phone').value,
         email: document.getElementById('email').value,
         iban: document.getElementById('iban').value,
-        bic: document.getElementById('bic').value,
         street: document.getElementById('street').value,
         postalCode: document.getElementById('postalCode').value,
         city: document.getElementById('city').value,
@@ -612,6 +993,12 @@ document.getElementById('startAutomation').addEventListener('click', () => {
         gasUsage: document.getElementById('gasUsage').value,
         companyName: result.isdeConfig?.companyName || '',
         kvkNumber: result.isdeConfig?.kvkNumber || '',
+        // Use default values if not saved in settings
+        contactInitials: result.isdeConfig?.contactInitials || 'A',
+        contactLastName: result.isdeConfig?.contactLastName || 'de Vlieger',
+        contactGender: result.isdeConfig?.contactGender || 'female',
+        contactPhone: result.isdeConfig?.contactPhone || '0682795068',
+        contactEmail: result.isdeConfig?.contactEmail || 'administratie@saman.nl',
         betaalbewijs: betaalbewijsData,
         factuur: factuurData,
         machtigingsbewijs: machtigingsbewijsData
@@ -627,7 +1014,7 @@ document.getElementById('startAutomation').addEventListener('click', () => {
       chrome.runtime.sendMessage({
         action: 'startAutomationFromPopup',
         config: config
-      }, (response) => {
+      }, () => {
         showStatus('Automatisering gestart. Het formulier wordt stap voor stap ingevuld.', 'info');
         // Close popup after a short delay so user sees the message
         setTimeout(() => {
@@ -686,6 +1073,11 @@ document.getElementById('saveSettingsBtn').addEventListener('click', () => {
 document.getElementById('mistralApiKey').addEventListener('blur', saveSettings);
 document.getElementById('settingsCompanyName').addEventListener('blur', saveSettings);
 document.getElementById('settingsKvkNumber').addEventListener('blur', saveSettings);
+document.getElementById('settingsContactInitials').addEventListener('blur', saveSettings);
+document.getElementById('settingsContactLastName').addEventListener('blur', saveSettings);
+document.getElementById('settingsContactGender').addEventListener('change', saveSettings);
+document.getElementById('settingsContactPhone').addEventListener('blur', saveSettings);
+document.getElementById('settingsContactEmail').addEventListener('blur', saveSettings);
 
 function loadSettings() {
   chrome.storage.local.get(['mistralApiKey', 'isdeConfig'], (result) => {
@@ -694,12 +1086,19 @@ function loadSettings() {
       document.getElementById('mistralApiKey').value = result.mistralApiKey;
     }
 
-    // Load company details from config
-    if (result.isdeConfig) {
-      const config = result.isdeConfig;
-      document.getElementById('settingsCompanyName').value = config.companyName || '';
-      document.getElementById('settingsKvkNumber').value = config.kvkNumber || '';
-    }
+    // Load company details from config with defaults for contact person
+    const config = result.isdeConfig || {};
+
+    // Company details
+    document.getElementById('settingsCompanyName').value = config.companyName || '';
+    document.getElementById('settingsKvkNumber').value = config.kvkNumber || '';
+
+    // Load contact person details with default values
+    document.getElementById('settingsContactInitials').value = config.contactInitials || 'A';
+    document.getElementById('settingsContactLastName').value = config.contactLastName || 'de Vlieger';
+    document.getElementById('settingsContactGender').value = config.contactGender || 'female';
+    document.getElementById('settingsContactPhone').value = config.contactPhone || '0682795068';
+    document.getElementById('settingsContactEmail').value = config.contactEmail || 'administratie@saman.nl';
   });
 }
 
@@ -707,15 +1106,25 @@ function saveSettings() {
   const mistralApiKey = document.getElementById('mistralApiKey').value;
   const companyName = document.getElementById('settingsCompanyName').value;
   const kvkNumber = document.getElementById('settingsKvkNumber').value;
+  const contactInitials = document.getElementById('settingsContactInitials').value;
+  const contactLastName = document.getElementById('settingsContactLastName').value;
+  const contactGender = document.getElementById('settingsContactGender').value;
+  const contactPhone = document.getElementById('settingsContactPhone').value;
+  const contactEmail = document.getElementById('settingsContactEmail').value;
 
   // Save API key
   chrome.storage.local.set({ mistralApiKey: mistralApiKey });
 
-  // Update company details in config
+  // Update company details and contact person in config
   chrome.storage.local.get(['isdeConfig'], (result) => {
     const config = result.isdeConfig || {};
     config.companyName = companyName;
     config.kvkNumber = kvkNumber;
+    config.contactInitials = contactInitials;
+    config.contactLastName = contactLastName;
+    config.contactGender = contactGender;
+    config.contactPhone = contactPhone;
+    config.contactEmail = contactEmail;
 
     chrome.storage.local.set({ isdeConfig: config }, () => {
       const statusDiv = document.getElementById('settingsStatus');
