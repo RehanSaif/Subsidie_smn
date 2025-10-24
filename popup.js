@@ -570,8 +570,32 @@ async function extractDataFromForm(file) {
     });
 
     if (!ocrResponse.ok) {
-      const errorData = await ocrResponse.json();
-      throw new Error(`Mistral OCR error: ${errorData.error?.message || ocrResponse.statusText}`);
+      let errorMessage = 'Unknown error';
+      let errorDetails = '';
+
+      try {
+        const errorData = await ocrResponse.json();
+        errorMessage = errorData.error?.message || ocrResponse.statusText;
+        errorDetails = JSON.stringify(errorData);
+        console.error('Mistral OCR API error details:', errorData);
+      } catch (e) {
+        errorMessage = ocrResponse.statusText;
+        console.error('Could not parse OCR error response');
+      }
+
+      console.error(`Mistral OCR failed with status ${ocrResponse.status}:`, errorMessage);
+      console.error('Full error details:', errorDetails);
+
+      // Provide helpful error messages
+      if (ocrResponse.status === 401) {
+        throw new Error('Mistral API key is ongeldig. Controleer je API key in instellingen.');
+      } else if (ocrResponse.status === 429) {
+        throw new Error('Mistral API rate limit bereikt. Wacht 30-60 seconden en probeer opnieuw.');
+      } else if (ocrResponse.status === 413) {
+        throw new Error('Bestand te groot voor OCR. Probeer een kleiner bestand of lagere resolutie.');
+      } else {
+        throw new Error(`Mistral OCR error (${ocrResponse.status}): ${errorMessage}`);
+      }
     }
 
     const ocrData = await ocrResponse.json();
@@ -618,7 +642,7 @@ Look for customer details after these labels:
 - "Telefoonnummer" - phone (06 or 0 prefix, NOT 085 company numbers)
 - "E-mail" - personal email (NOT @samangroep)
 - "BSN" - 9-digit BSN number
-- "IBAN" - starts with NL
+- "IBAN" - starts with NL (IMPORTANT: return WITHOUT spaces or dots, e.g., NL33INGB0682403059)
 
 VERY IMPORTANT - Gas usage question:
 Look for ANY variation of this question about gas usage:
@@ -684,6 +708,61 @@ Return ONLY JSON, no markdown.`
 
     // Parse the JSON response
     const extractedData = JSON.parse(content);
+
+    // Regex fallbacks for fields AI might miss
+    console.log('🔍 Applying regex fallbacks for missing fields...');
+
+    // BSN fallback: 9 digits, optionally with spaces or dashes
+    if (!extractedData.bsn) {
+      const bsnMatch = extractedText.match(/BSN[:\s]*(\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d)/i);
+      if (bsnMatch) {
+        extractedData.bsn = bsnMatch[1].replace(/[\s-]/g, ''); // Remove spaces and dashes
+        console.log('✅ BSN found via regex:', extractedData.bsn);
+      }
+    }
+
+    // IBAN fallback: NL + 2 digits + 4 letters + 10 digits
+    if (!extractedData.iban) {
+      const ibanMatch = extractedText.match(/(?:IBAN[:\s]*)?([NL]{2}\s?[0-9]{2}\s?[A-Z]{4}\s?[0-9]{4}\s?[0-9]{4}\s?[0-9]{2})/i);
+      if (ibanMatch) {
+        extractedData.iban = ibanMatch[1].replace(/\s/g, '').replace(/\./g, '').toUpperCase(); // Remove spaces and dots
+        console.log('✅ IBAN found via regex:', extractedData.iban);
+      }
+    }
+
+    // Also clean IBAN if it was found by AI but has spaces/dots
+    if (extractedData.iban) {
+      extractedData.iban = extractedData.iban.replace(/\s/g, '').replace(/\./g, '').toUpperCase();
+      console.log('✅ IBAN cleaned (removed spaces/dots):', extractedData.iban);
+    }
+
+    // Email fallback: standard email pattern
+    if (!extractedData.email) {
+      // Exclude company emails like @samangroep
+      const emailMatch = extractedText.match(/([a-z0-9._-]+@[a-z0-9._-]+\.[a-z]{2,6})/gi);
+      if (emailMatch) {
+        // Filter out company emails
+        const personalEmail = emailMatch.find(email =>
+          !email.toLowerCase().includes('@samangroep') &&
+          !email.toLowerCase().includes('@saman')
+        );
+        if (personalEmail) {
+          extractedData.email = personalEmail.toLowerCase();
+          console.log('✅ Email found via regex:', extractedData.email);
+        }
+      }
+    }
+
+    // Phone fallback: Dutch phone patterns
+    if (!extractedData.phone) {
+      const phoneMatch = extractedText.match(/(?:Telefoon|Tel)[:\s]*((?:06|0[0-9]{1,2})[\s-]?[0-9]{3,4}[\s-]?[0-9]{4})/i);
+      if (phoneMatch) {
+        extractedData.phone = phoneMatch[1].replace(/[\s-]/g, ''); // Remove spaces and dashes
+        console.log('✅ Phone found via regex:', extractedData.phone);
+      }
+    }
+
+    console.log('🔍 After regex fallbacks:', extractedData);
 
     // Extra validation: Use Vision AI to detect checked checkbox for gas usage
     if (!extractedData.gasUsage || extractedData.gasUsage === 'null') {
@@ -1010,16 +1089,45 @@ document.getElementById('startAutomation').addEventListener('click', () => {
       console.log('  - Factuur:', config.factuur ? config.factuur.name : 'Not uploaded');
       console.log('  - Machtigingsbewijs:', config.machtigingsbewijs ? config.machtigingsbewijs.name : 'Not uploaded');
 
-      // Send message to background script to start automation
-      chrome.runtime.sendMessage({
-        action: 'startAutomationFromPopup',
-        config: config
-      }, () => {
-        showStatus('Automatisering gestart. Het formulier wordt stap voor stap ingevuld.', 'info');
-        // Close popup after a short delay so user sees the message
-        setTimeout(() => {
-          window.close();
-        }, 2000);
+      // Store files in chrome.storage.local to avoid message size limits
+      // Use timestamp + random string to ensure unique session ID even with multiple tabs
+      const sessionId = `${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
+      const filesToStore = {};
+
+      // Store session ID in config so content script knows which files belong to this tab
+      config.sessionId = sessionId;
+
+      if (config.betaalbewijs) {
+        filesToStore[`file_betaalbewijs_${sessionId}`] = config.betaalbewijs;
+        config.betaalbewijsKey = `file_betaalbewijs_${sessionId}`;
+        delete config.betaalbewijs; // Remove large data from config
+      }
+
+      if (config.factuur) {
+        filesToStore[`file_factuur_${sessionId}`] = config.factuur;
+        config.factuurKey = `file_factuur_${sessionId}`;
+        delete config.factuur; // Remove large data from config
+      }
+
+      if (config.machtigingsbewijs) {
+        filesToStore[`file_machtigingsbewijs_${sessionId}`] = config.machtigingsbewijs;
+        config.machtigingsbewijsKey = `file_machtigingsbewijs_${sessionId}`;
+        delete config.machtigingsbewijs; // Remove large data from config
+      }
+
+      // Store files first, then send message
+      chrome.storage.local.set(filesToStore, () => {
+        console.log('📦 Files stored in chrome.storage.local for session:', sessionId);
+        console.log('   Files:', Object.keys(filesToStore));
+
+        // Send message to background script to start automation
+        chrome.runtime.sendMessage({
+          action: 'startAutomationFromPopup',
+          config: config
+        }, () => {
+          showStatus('Automatisering gestart. Het formulier wordt stap voor stap ingevuld.', 'info');
+          // Window stays open - user can switch tabs and come back
+        });
       });
     });
   });

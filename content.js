@@ -174,9 +174,12 @@ function createStatusPanel() {
       // Documents section
       html += '<div style="margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid #e9ecef;"><strong style="color: #FFC012; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;">Documenten</strong></div>';
       html += `<div>`;
-      html += `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span style="color: #868e96; font-size: 11px;">Betaalbewijs</span> <span style="color: #212529; font-weight: 500; font-size: 11px;">${config.betaalbewijs ? '✅ ' + config.betaalbewijs.name : '❌ Niet geüpload'}</span></div>`;
-      html += `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span style="color: #868e96; font-size: 11px;">Factuur</span> <span style="color: #212529; font-weight: 500; font-size: 11px;">${config.factuur ? '✅ ' + config.factuur.name : '❌ Niet geüpload'}</span></div>`;
-      html += `<div style="display: flex; justify-content: space-between;"><span style="color: #868e96; font-size: 11px;">Machtigingsbewijs</span> <span style="color: #212529; font-weight: 500; font-size: 11px;">${config.machtigingsbewijs ? '✅ ' + config.machtigingsbewijs.name : '⚪ Optioneel'}</span></div>`;
+      const betaalbewijsStatus = (config.betaalbewijs ? '✅ ' + config.betaalbewijs.name : (config.betaalbewijsKey ? '✅ Geüpload' : '❌ Niet geüpload'));
+      const factuurStatus = (config.factuur ? '✅ ' + config.factuur.name : (config.factuurKey ? '✅ Geüpload' : '❌ Niet geüpload'));
+      const machtigingsbewijsStatus = (config.machtigingsbewijs ? '✅ ' + config.machtigingsbewijs.name : (config.machtigingsbewijsKey ? '✅ Geüpload' : '⚪ Optioneel'));
+      html += `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span style="color: #868e96; font-size: 11px;">Betaalbewijs</span> <span style="color: #212529; font-weight: 500; font-size: 11px;">${betaalbewijsStatus}</span></div>`;
+      html += `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span style="color: #868e96; font-size: 11px;">Factuur</span> <span style="color: #212529; font-weight: 500; font-size: 11px;">${factuurStatus}</span></div>`;
+      html += `<div style="display: flex; justify-content: space-between;"><span style="color: #868e96; font-size: 11px;">Machtigingsbewijs</span> <span style="color: #212529; font-weight: 500; font-size: 11px;">${machtigingsbewijsStatus}</span></div>`;
       html += `</div>`;
 
       html += '</div>';
@@ -300,7 +303,45 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('Cleared automation state and timeouts, starting fresh');
     createStatusPanel();
     updateStatus('Automatisering gestart', 'Initialiseren');
-    startFullAutomation(request.config);
+
+    // Retrieve files from chrome.storage.local if keys are provided
+    const filesToRetrieve = [];
+    if (request.config.betaalbewijsKey) filesToRetrieve.push(request.config.betaalbewijsKey);
+    if (request.config.factuurKey) filesToRetrieve.push(request.config.factuurKey);
+    if (request.config.machtigingsbewijsKey) filesToRetrieve.push(request.config.machtigingsbewijsKey);
+
+    if (filesToRetrieve.length > 0) {
+      console.log('📥 Retrieving files from chrome.storage.local:', filesToRetrieve);
+      chrome.storage.local.get(filesToRetrieve, (result) => {
+        // Replace keys with actual file data
+        if (request.config.betaalbewijsKey) {
+          request.config.betaalbewijs = result[request.config.betaalbewijsKey];
+          delete request.config.betaalbewijsKey;
+        }
+        if (request.config.factuurKey) {
+          request.config.factuur = result[request.config.factuurKey];
+          delete request.config.factuurKey;
+        }
+        if (request.config.machtigingsbewijsKey) {
+          request.config.machtigingsbewijs = result[request.config.machtigingsbewijsKey];
+          delete request.config.machtigingsbewijsKey;
+        }
+
+        console.log('✅ Files retrieved successfully for session:', request.config.sessionId);
+        startFullAutomation(request.config);
+
+        // Clean up storage after automation completes (60 seconds should be enough)
+        // Each tab has unique session ID, so this only removes files from THIS tab
+        setTimeout(() => {
+          chrome.storage.local.remove(filesToRetrieve, () => {
+            console.log('🧹 Cleaned up temporary files from storage for session:', request.config.sessionId);
+          });
+        }, 60000); // 60 seconds - enough time for file upload step
+      });
+    } else {
+      startFullAutomation(request.config);
+    }
+
     sendResponse({status: 'started'});
     return false;
   } else if (request.action === 'fillCurrentPage') {
@@ -417,8 +458,78 @@ async function fillInput(selector, value) {
   element.dispatchEvent(new Event('input', { bubbles: true }));
   await new Promise(r => setTimeout(r, 150 + Math.random() * 100));
 
-  // Paste the entire value
-  element.value = value;
+  // Sanitize values based on field type
+  let sanitizedValue = value;
+
+  // Phone number sanitization - remove dashes, spaces, and other punctuation
+  if (selector.includes('Telefoon') || selector.includes('telefoon')) {
+    // Remove all characters except digits and +
+    sanitizedValue = value.replace(/[^0-9+]/g, '');
+    console.log(`📞 Sanitized phone: "${value}" → "${sanitizedValue}"`);
+  }
+
+  // IBAN sanitization - fix common OCR errors and remove BIC codes
+  if (selector.includes('IBAN') || selector.includes('iban')) {
+    console.log(`🏦 Original IBAN value: "${value}"`);
+
+    // Remove dots/periods that OCR might add
+    sanitizedValue = sanitizedValue.replace(/\./g, '');
+
+    // Remove BIC codes (like RABONL2U, ABNANL2A, etc.)
+    // BIC is 8-11 characters: 4 letters (bank) + 2 letters (country) + 2 chars (location) + optional 3 chars (branch)
+    // Common pattern: RABONL2U, ABNANL2A, INGBNL2A
+    // Remove any trailing uppercase sequence that looks like a BIC after the IBAN
+    sanitizedValue = sanitizedValue.replace(/([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?)$/g, '');
+
+    // Fix OCR errors: O→0, I/l→1, S→5
+    // Only fix these in the digits section (after NL)
+    if (sanitizedValue.toUpperCase().startsWith('NL')) {
+      // Remove all spaces first to work with clean IBAN
+      const cleanIban = sanitizedValue.replace(/\s/g, '');
+
+      // Extract just the IBAN part (NL + 16 characters = 18 total)
+      // Pattern: NL + 2 digits + 4 letters + 10 digits
+      const ibanMatch = cleanIban.match(/^(NL[0-9]{2}[A-Z]{4}[0-9]{10})/i);
+
+      if (ibanMatch) {
+        // Use the matched IBAN only (without any trailing garbage)
+        const nlPrefix = ibanMatch[1].substring(0, 2).toUpperCase();
+        const rest = ibanMatch[1].substring(2);
+
+        // Fix OCR errors in the rest of the IBAN
+        const fixed = rest
+          .replace(/O/g, '0')  // O → 0
+          .replace(/I/g, '1')  // I → 1
+          .replace(/l/g, '1')  // l → 1
+          .replace(/S/g, '5')  // S → 5
+          .replace(/Y/g, '4')  // Y → 4 (common in position 4 of IBAN)
+          .toUpperCase();
+
+        sanitizedValue = nlPrefix + fixed;
+        console.log(`🏦 Sanitized IBAN (matched pattern): "${value}" → "${sanitizedValue}"`);
+      } else {
+        // Fallback: just clean up the whole value
+        const nlPrefix = sanitizedValue.substring(0, 2).toUpperCase();
+        const rest = sanitizedValue.substring(2).replace(/\s/g, '');
+
+        // Fix OCR errors in the rest of the IBAN
+        const fixed = rest
+          .replace(/O/g, '0')  // O → 0
+          .replace(/I/g, '1')  // I → 1
+          .replace(/l/g, '1')  // l → 1
+          .replace(/S/g, '5')  // S → 5
+          .replace(/Y/g, '4')  // Y → 4
+          .toUpperCase()
+          .substring(0, 16); // Take only first 16 chars after NL
+
+        sanitizedValue = nlPrefix + fixed;
+        console.log(`🏦 Sanitized IBAN (fallback): "${value}" → "${sanitizedValue}"`);
+      }
+    }
+  }
+
+  // Paste the sanitized value
+  element.value = sanitizedValue;
   element.dispatchEvent(new Event('input', { bubbles: true }));
 
   await new Promise(r => setTimeout(r, 200 + Math.random() * 150));
@@ -948,6 +1059,28 @@ async function startFullAutomation(config) {
 
       // Clear the click timestamp since we successfully navigated
       sessionStorage.removeItem('lastNieuweAanvraagClick');
+
+      // Wait for the page to load and ISDE links to appear
+      console.log('Waiting for ISDE links to appear...');
+      await new Promise(r => setTimeout(r, 1500)); // Initial wait for page transition
+
+      // Wait specifically for catalog links or any ISDE-related link to appear
+      let waitAttempts = 0;
+      const maxWaitAttempts = 10; // Wait up to 5 seconds total (10 x 500ms)
+      while (waitAttempts < maxWaitAttempts) {
+        const catalogLinks = document.querySelectorAll('a[id*="catalog"]').length;
+        const allLinks = document.querySelectorAll('a').length;
+        console.log(`Wait attempt ${waitAttempts + 1}: Found ${catalogLinks} catalog links, ${allLinks} total links`);
+
+        // If we see a reasonable number of links, the page is probably loaded
+        if (catalogLinks > 0 || allLinks > 20) {
+          console.log('✅ Page appears loaded with links');
+          break;
+        }
+
+        await new Promise(r => setTimeout(r, 500));
+        waitAttempts++;
+      }
 
       // Try multiple selector strategies
       let isdeLink = null;
@@ -1807,32 +1940,38 @@ async function startFullAutomation(config) {
          currentStep === 'files_handled' ||
          detectedStep === 'vervolgstap_modal') &&
         hasVervolgstapModalNow) {
-      console.log('Step 18.4: Vervolgstap modal present, clicking Volgende');
+      console.log('Step 18.4: Vervolgstap modal present, looking for action button');
       updateStatus('Vervolgstap modal verwerken', '18.4 - Vervolgstap Modal', detectedStep);
 
       await new Promise(r => setTimeout(r, 800));
 
-      // Find the "Volgende" button in the modal
-      let volgendeButton = null;
+      // Find the action button in the modal - try multiple button names
+      let actionButton = null;
       const buttons = document.querySelectorAll('input[type="submit"], input[type="button"], button');
 
-      console.log(`Checking ${buttons.length} buttons for "Volgende"`);
+      console.log(`Checking ${buttons.length} buttons for action button`);
       for (let btn of buttons) {
-        const buttonText = btn.value || btn.textContent || '';
-        console.log(`Button text: "${buttonText.trim()}"`);
-        if (buttonText.trim() === 'Volgende') {
-          volgendeButton = btn;
-          console.log('✅ Found "Volgende" button in modal');
+        const buttonText = (btn.value || btn.textContent || '').trim();
+        console.log(`Button text: "${buttonText}"`);
+
+        // Try multiple button names that might appear in this modal
+        if (buttonText === 'Volgende' ||
+            buttonText === 'Kiezen' ||
+            buttonText.includes('Volgende') ||
+            buttonText.includes('Kiezen')) {
+          actionButton = btn;
+          console.log(`✅ Found action button: "${buttonText}"`);
           break;
         }
       }
 
-      if (volgendeButton) {
-        volgendeButton.scrollIntoView({behavior: 'smooth', block: 'center'});
+      if (actionButton) {
+        const buttonText = (actionButton.value || actionButton.textContent || '').trim();
+        actionButton.scrollIntoView({behavior: 'smooth', block: 'center'});
         await new Promise(r => setTimeout(r, 500));
 
-        volgendeButton.click();
-        console.log('✅ Clicked "Volgende" in modal');
+        actionButton.click();
+        console.log(`✅ Clicked "${buttonText}" button in modal`);
 
         await new Promise(r => setTimeout(r, 1500));
         sessionStorage.setItem('automationStep', 'vervolgstap_completed');
@@ -1843,8 +1982,14 @@ async function startFullAutomation(config) {
         }, 2000);
         return;
       } else {
-        console.log('⚠️ "Volgende" button not found in modal');
-        updateStatus('Klik handmatig op "Volgende"', '18.4 - Handmatige actie');
+        console.log('⚠️ Action button not found in modal, logging all button texts for debugging:');
+        buttons.forEach(btn => {
+          console.log(`  - "${(btn.value || btn.textContent || '').trim()}"`);
+        });
+        updateStatus('Klik handmatig op de button in de modal', '18.4 - Handmatige actie');
+
+        // Auto-pause to prevent loop
+        automationPaused = true;
         return;
       }
     }

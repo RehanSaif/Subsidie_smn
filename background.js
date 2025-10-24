@@ -1,3 +1,42 @@
+// Open popup as a window instead of a popup to keep it open when switching tabs
+let popupWindowId = null;
+
+chrome.action.onClicked.addListener((tab) => {
+  // Check if popup window is already open
+  if (popupWindowId !== null) {
+    chrome.windows.get(popupWindowId, (window) => {
+      if (chrome.runtime.lastError || !window) {
+        // Window was closed, open a new one
+        createPopupWindow();
+      } else {
+        // Window exists, focus it
+        chrome.windows.update(popupWindowId, { focused: true });
+      }
+    });
+  } else {
+    createPopupWindow();
+  }
+});
+
+function createPopupWindow() {
+  chrome.windows.create({
+    url: chrome.runtime.getURL('popup.html'),
+    type: 'popup',
+    width: 420,
+    height: 700,
+    focused: true
+  }, (window) => {
+    popupWindowId = window.id;
+  });
+}
+
+// Clean up when window is closed
+chrome.windows.onRemoved.addListener((windowId) => {
+  if (windowId === popupWindowId) {
+    popupWindowId = null;
+  }
+});
+
 // Background service worker to handle automation
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'startAutomationFromPopup') {
