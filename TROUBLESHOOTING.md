@@ -351,6 +351,54 @@ Hier zijn de belangrijkste plaatsen waar selectors voorkomen:
 '#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.0\\.toevoegen_bestand' // File input
 ```
 
+### Quick Fix: Alleen Selector Naam Veranderd
+
+Als **alleen de ID naam verandert** (niet de structuur), is het heel simpel:
+
+**Voorbeeld:**
+```
+OUD ID: btn_volgende_pagina
+NIEUW ID: btn_next_page
+```
+
+**Stappen:**
+
+1. **Find & Replace in content.js**:
+   ```
+   Ctrl+F (of Cmd+F op Mac)
+   Zoek: #btn_volgende_pagina
+   Vervang met: #btn_next_page
+   Replace All
+   ```
+
+2. **Escaping Controleren**:
+   - Als de nieuwe ID punten heeft: gebruik `\\.`
+   - Als de nieuwe ID geen punten heeft: geen escaping nodig
+
+   **Voorbeelden**:
+   ```javascript
+   // Geen punten - geen escaping
+   '#btn_next_page'
+
+   // Met punten - WEL escaping
+   '#link\\.0\\.btn_next'
+   ```
+
+3. **Reload & Test**:
+   - `chrome://extensions` → Reload
+   - Test de automatisering
+
+**Let op**: Als er MEERDERE selectors zijn veranderd:
+- Doe Find & Replace voor elk afzonderlijk
+- Of: gebruik Regex replace voor patronen
+
+**Regex Voorbeeld** (geavanceerd):
+```javascript
+// Als alle #btn_ ID's zijn veranderd naar #button_
+Zoek met regex: #btn_(\w+)
+Vervang met: #button_$1
+```
+
 ### Quick Reference: Selector Replacement
 
 ```javascript
@@ -689,6 +737,224 @@ Console: "⚠️ WARNING: Vision AI chose 'Nee' - verify this is correct!"
 - **Omcirkeld/Aangevinkt** = geselecteerd
 - **Doorgestreept** = NIET geselecteerd
 - **Onduidelijk** = vision AI geeft "unknown" terug
+
+### 4. AI Prompts Verbeteren voor Betere Extractie
+
+Als OCR systematisch verkeerde data extraheert, kun je de AI prompts aanpassen.
+
+**Bestand**: `popup.js`
+
+#### A. Klantgegevens Extractie Verbeteren
+
+**Locatie**: `popup.js` regel ~924-968 (in functie `extractDataFromForm`)
+
+**Huidige Prompt**:
+```javascript
+content: `Extract the CUSTOMER information from this Dutch machtigingsformulier text.
+
+IMPORTANT: Extract the FILLED-IN customer data, NOT the company information
+(like SAMAN, Gouwepoort, Zierikzee).
+
+Look for customer details after these labels:
+- "Achternaam en voorletters" or "Saif" - extract last name and initials
+- "Geslacht" - return "male" for "Man/M" or "female" for "Vrouw/V"
+...`
+```
+
+**Voorbeelden van Aanpassingen**:
+
+1. **Als AI steeds bedrijfsnaam pakt in plaats van klantnaam**:
+   ```javascript
+   // VOEG TOE aan prompt:
+   VERY IMPORTANT: Skip these company names and look for the CUSTOMER name below:
+   - SAMAN Groep
+   - [Voeg andere bedrijfsnamen toe die vaak verschijnen]
+
+   The customer name typically appears AFTER company address section.
+   ```
+
+2. **Als BSN niet wordt gevonden**:
+   ```javascript
+   // VOEG TOE:
+   BSN is ALWAYS 9 digits. Look for patterns like:
+   - "BSN: 123456789"
+   - "BSN-nummer: 123 456 789"
+   - "Burgerservicenummer: 123-45-6789"
+
+   Remove all spaces and dashes from BSN before returning.
+   ```
+
+3. **Als IBAN steeds fout is**:
+   ```javascript
+   // VOEG TOE:
+   IBAN format: NL + 2 digits + 4 LETTERS + 10 digits
+   Example: NL12ABCD0123456789
+
+   CRITICAL: Return IBAN WITHOUT spaces, dots, or BIC code.
+   If you see "NL12 ABCD 0123 4567 89 RABONL2U", return only "NL12ABCD0123456789"
+   ```
+
+4. **Voor specifiek document formaat**:
+   ```javascript
+   // VOEG TOE:
+   The document follows this structure:
+   [Beschrijf de structuur van jullie specifieke formulier]
+
+   Company information: Top section
+   Customer information: Middle section, starts after "Klantgegevens"
+   Installation address: Bottom section
+   ```
+
+#### B. Meldcode Extractie Verbeteren
+
+**Locatie**: `popup.js` regel ~691-703 (in functie `extractMeldcodeFromFactuur`)
+
+**Huidige Prompt**:
+```javascript
+content: `Extract from this Dutch invoice text:
+1. Meldcode: typically starts with "KA" followed by 5 digits (e.g., KA06175)
+2. Installation date (installatiedatum): the date when the heat pump was installed`
+```
+
+**Voorbeelden van Aanpassingen**:
+
+1. **Als meldcode niet wordt gevonden**:
+   ```javascript
+   // VERVANG met:
+   content: `Extract from this Dutch invoice text:
+
+   1. MELDCODE (CRITICAL):
+      - Format: KA followed by EXACTLY 5 digits
+      - Examples: KA06175, KA12345, KA99999
+      - Look in these sections:
+        * Near "Meldcode"
+        * Near "RVO meldcode"
+        * In tables with warmtepomp/heat pump information
+      - Common locations:
+        * Top right of invoice
+        * In product description table
+        * Near installation details
+
+   2. Installation date (installatiedatum):
+      - The date when equipment was installed
+      - Format: DD-MM-YYYY
+      - Look near: "datum installatie", "geplaatst op", "installation date"
+
+   If meldcode appears multiple times, return the FIRST occurrence.`
+   ```
+
+2. **Als datum in verkeerd formaat komt**:
+   ```javascript
+   // VOEG TOE:
+   IMPORTANT DATE FORMAT:
+   - ALWAYS return date as DD-MM-YYYY
+   - If you find "2024-03-15", convert to "15-03-2024"
+   - If you find "15/03/2024", convert to "15-03-2024"
+   - If you find "15 maart 2024", convert to "15-03-2024"
+   ```
+
+#### C. Vision AI Checkbox Detectie Verbeteren
+
+**Locatie**: `popup.js` regel ~1130-1155 (in Vision AI call voor gas usage)
+
+**Huidige Prompt**:
+```javascript
+text: `Look at this Dutch machtigingsformulier image. Find the question:
+"Gebruikt u na installatie van deze warmtepomp nog aardgas voor ruimte verwarming?"
+
+The question has two options: "Ja" and "nee". ONE is selected, ONE is NOT selected.
+
+CRITICAL: The SELECTED answer shows what the person chose. Look for these indicators:
+
+SELECTED (chosen answer):
+- CIRCLED (has a circle around it)
+- CHECKED box (☑ or ✓)
+- NOT crossed out / NOT strikethrough
+...`
+```
+
+**Voorbeelden van Aanpassingen**:
+
+1. **Als checkboxes anders gemarkeerd zijn in jullie formulieren**:
+   ```javascript
+   // VOEG TOE:
+   SELECTED indicators for YOUR forms:
+   - Has a THICK pen mark / highlighted
+   - Has asterisk (*) next to it
+   - Has [X] mark in box
+   - Text is underlined
+   - [Beschrijf hoe jullie formulieren markering doen]
+   ```
+
+2. **Als layout anders is**:
+   ```javascript
+   // VOEG TOE:
+   The question appears in this format on our forms:
+   □ Ja  □ Nee
+
+   OR
+
+   ○ Ja  ○ Nee
+
+   The FILLED option (■ or ●) is the selected answer.
+   ```
+
+#### D. Test je Prompt Wijzigingen
+
+**Stappenplan**:
+
+1. **Backup originele prompt**:
+   ```javascript
+   // Kopieer de oude prompt naar een comment voor het geval
+   /* ORIGINAL PROMPT:
+   content: `Extract the CUSTOMER information...`
+   */
+   ```
+
+2. **Maak wijziging**:
+   ```javascript
+   content: `Extract the CUSTOMER information...
+
+   [JOUW NIEUWE INSTRUCTIES HIER]`
+   ```
+
+3. **Test met echte documenten**:
+   - Reload extensie
+   - Upload test document
+   - Check console logs voor extracted data
+   - Vergelijk met verwachte resultaten
+
+4. **Itereer**:
+   - Als het beter is maar nog niet perfect: verfijn verder
+   - Als het slechter is: revert naar backup
+   - Document je wijzigingen voor toekomstige referentie
+
+**Debug Logging Toevoegen**:
+
+Om te zien wat AI precies ziet:
+```javascript
+// Voeg toe VOOR de AI call:
+console.log('=== TEXT BEING SENT TO AI ===');
+console.log(extractedText.substring(0, 1000)); // Eerste 1000 characters
+console.log('=== END TEXT ===');
+
+// Voeg toe NA de AI call:
+console.log('=== AI RAW RESPONSE ===');
+console.log(data.choices[0].message.content);
+console.log('=== END RESPONSE ===');
+```
+
+Dit helpt je begrijpen waarom AI bepaalde keuzes maakt.
+
+**Veelvoorkomende Prompt Verbeteringen**:
+
+| Probleem | Oplossing in Prompt |
+|----------|---------------------|
+| AI vindt veld niet | Voeg meer voorbeelden en locaties toe waar veld kan staan |
+| AI pakt verkeerde data | Voeg expliciete exclusies toe (NOT the company name) |
+| Format is verkeerd | Geef exact format voorbeeld en conversie instructies |
+| Inconsistente resultaten | Maak instructies meer specifiek en step-by-step |
+| AI zegt "null" te veel | Geef meer context over waar te zoeken en hoe te herkennen |
 
 ---
 
