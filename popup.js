@@ -1,78 +1,159 @@
-// File handling
+/**
+ * ============================================================================
+ * POPUP.JS - Chrome Extensie voor ISDE Subsidieaanvraag Automatisering
+ * ============================================================================
+ *
+ * Dit bestand beheert de popup interface van de Chrome extensie voor het
+ * automatisch invullen van ISDE subsidieaanvraag formulieren.
+ *
+ * HOOFDFUNCTIONALITEIT:
+ * - Uploaden van documenten (machtigingsformulier, betaalbewijs, factuur)
+ * - OCR-extractie van klantgegevens uit documenten via Mistral AI
+ * - Validatie van formuliervelden
+ * - Configuratiebeheer (bedrijfsgegevens, API sleutels)
+ * - Communicatie met content script voor formulier automatisering
+ *
+ * DOCUMENTVERWERKING:
+ * - Machtigingsformulier: Klantgegevens extractie (BSN, naam, adres, IBAN, etc.)
+ * - Factuur: Meldcode en installatiedatum extractie
+ * - Betaalbewijs: Opgeslagen voor upload naar subsidieformulier
+ *
+ * AI TECHNOLOGIE:
+ * - Mistral OCR API voor documenttekst extractie
+ * - Pixtral Vision AI voor checkbox detectie en gescande documenten
+ * - Mistral Small voor gestructureerde data extractie
+ * ============================================================================
+ */
+
+// ============================================================================
+// BESTANDSOPSLAG VARIABELEN
+// ============================================================================
+// Deze variabelen slaan de geüploade documenten op als base64 data tijdens
+// de huidige sessie. Data wordt NIET opgeslagen tussen sessies - na afsluiten
+// van de popup moeten bestanden opnieuw worden geüpload.
+
+/** @type {Object|null} Betaalbewijs document data (base64) voor upload naar subsidieformulier */
 let betaalbewijsData = null;
+
+/** @type {Object|null} Factuur document data (base64) met meldcode en installatiedatum */
 let factuurData = null;
+
+/** @type {Object|null} Machtigingsformulier data (base64) voor OCR extractie van klantgegevens */
 let machtigingsbewijsData = null;
 
-// Machtigingsformulier handler - doet zowel OCR als bestand opslaan
+// ============================================================================
+// EVENT LISTENER: MACHTIGINGSFORMULIER UPLOAD
+// ============================================================================
+/**
+ * Behandelt het uploaden van het machtigingsformulier.
+ *
+ * FUNCTIONALITEIT:
+ * 1. Slaat het bestand op voor later gebruik (upload naar subsidieformulier)
+ * 2. Voert OCR uit om klantgegevens te extraheren
+ * 3. Vult automatisch de formuliervelden in met geëxtraheerde data
+ * 4. Toont status feedback aan de gebruiker
+ * 5. Update de status van de "Start" knop
+ *
+ * GEËXTRAHEERDE VELDEN:
+ * - BSN (Burgerservicenummer)
+ * - Voorletters en achternaam
+ * - Geslacht (man/vrouw)
+ * - Contactgegevens (telefoon, email)
+ * - Adresgegevens (straat, huisnummer, postcode, plaats)
+ * - IBAN bankrekeningnummer
+ * - Aardgasgebruik (ja/nee)
+ */
 document.getElementById('machtigingsformulier').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (file) {
+    // Toon bestandsnaam in de UI
     const nameDiv = document.getElementById('machtigingName');
     nameDiv.textContent = `✓ ${file.name}`;
     nameDiv.style.display = 'inline-block';
 
-    // Sla het bestand op voor uploaden naar formulier
+    // Converteer bestand naar base64 en sla op voor upload naar formulier
     machtigingsbewijsData = await fileToBase64(file);
     console.log('📎 Machtigingsformulier uploaded (session only):', file.name);
 
+    // Toon extractie status aan gebruiker
     const statusDiv = document.getElementById('extractionStatus');
     statusDiv.textContent = '🔄 Gegevens worden geëxtraheerd...';
     statusDiv.style.display = 'block';
     statusDiv.style.color = '#FFC012';
 
     try {
-      // Extract data from the form via OCR
+      // Voer OCR extractie uit op het machtigingsformulier
       const extractedData = await extractDataFromForm(file);
 
       console.log('Extracted data result:', extractedData);
 
-      // Count how many fields were found
+      // Tel hoeveel velden succesvol zijn gevonden
       let fieldsFound = 0;
 
-      // Fill in the fields with extracted data
+      // Vul BSN veld in
       if (extractedData.bsn) {
         document.getElementById('bsn').value = extractedData.bsn;
         fieldsFound++;
       }
+
+      // Vul voorletters veld in
       if (extractedData.initials) {
         document.getElementById('initials').value = extractedData.initials;
         fieldsFound++;
       }
+
+      // Vul achternaam veld in
       if (extractedData.lastName) {
         document.getElementById('lastName').value = extractedData.lastName;
         fieldsFound++;
       }
+
+      // Vul geslacht veld in (male/female)
       if (extractedData.gender) {
         document.getElementById('gender').value = extractedData.gender;
         fieldsFound++;
       }
+
+      // Vul telefoonnummer veld in
       if (extractedData.phone) {
         document.getElementById('phone').value = extractedData.phone;
         fieldsFound++;
       }
+
+      // Vul e-mailadres veld in
       if (extractedData.email) {
         document.getElementById('email').value = extractedData.email;
         fieldsFound++;
       }
+
+      // Vul IBAN bankrekeningnummer in
       if (extractedData.iban) {
         document.getElementById('iban').value = extractedData.iban;
         fieldsFound++;
       }
+
+      // Vul straatnaam veld in
       if (extractedData.street) {
         document.getElementById('street').value = extractedData.street;
         fieldsFound++;
       }
+
+      // Vul postcode veld in
       if (extractedData.postalCode) {
         document.getElementById('postalCode').value = extractedData.postalCode;
         fieldsFound++;
       }
+
+      // Vul plaatsnaam veld in
       if (extractedData.city) {
         document.getElementById('city').value = extractedData.city;
         fieldsFound++;
       }
+
+      // Splits huisnummer in nummer en toevoeging
+      // Bijvoorbeeld: "59A01" wordt gesplitst in "59" en "A01"
       if (extractedData.houseNumber) {
-        // Split house number into number and addition
-        // Match: leading digits (59) and everything after (A01)
+        // Match: cijfers aan het begin (59) en alles daarna (A01)
         const houseNumberMatch = extractedData.houseNumber.match(/^(\d+)(.*)$/);
         if (houseNumberMatch) {
           const number = houseNumberMatch[1];
@@ -85,16 +166,19 @@ document.getElementById('machtigingsformulier').addEventListener('change', async
           }
           fieldsFound++;
         } else {
-          // If no match, just use the whole value
+          // Als geen match, gebruik de hele waarde
           document.getElementById('houseNumber').value = extractedData.houseNumber;
           fieldsFound++;
         }
       }
+
+      // Vul aardgasgebruik veld in (yes/no)
       if (extractedData.gasUsage) {
         document.getElementById('gasUsage').value = extractedData.gasUsage;
         fieldsFound++;
       }
 
+      // Toon succesbericht met aantal gevonden velden
       if (fieldsFound > 0) {
         statusDiv.textContent = `✅ ${fieldsFound} veld(en) succesvol ingevuld!`;
         statusDiv.style.color = '#2b8a3e';
@@ -103,48 +187,94 @@ document.getElementById('machtigingsformulier').addEventListener('change', async
         statusDiv.style.color = '#f59f00';
       }
 
-      // Update button state after extraction
+      // Update de status van de "Start Automatisering" knop
       updateStartButtonState();
 
+      // Verberg status na 5 seconden
       setTimeout(() => {
         statusDiv.style.display = 'none';
       }, 5000);
     } catch (error) {
+      // Behandel extractie fouten
       console.error('Extraction error:', error);
       console.error('Error stack:', error.stack);
       statusDiv.textContent = `❌ Fout: ${error.message}`;
       statusDiv.style.color = '#c92a2a';
 
-      // Update button state even on error
+      // Update knop status ook bij fout
       updateStartButtonState();
     }
   }
 });
 
+// ============================================================================
+// EVENT LISTENER: BETAALBEWIJS UPLOAD
+// ============================================================================
+/**
+ * Behandelt het uploaden van het betaalbewijs document.
+ *
+ * FUNCTIONALITEIT:
+ * - Converteert bestand naar base64 formaat
+ * - Slaat data op in sessie variabele (niet persistent)
+ * - Toont bestandsnaam in UI
+ * - Update de status van de "Start" knop
+ *
+ * GEBRUIK:
+ * Het betaalbewijs wordt later geüpload naar het subsidieformulier
+ * tijdens de automatisering. Geen OCR extractie nodig voor dit document.
+ */
 document.getElementById('betaalbewijsDoc').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (file) {
     console.log('📎 Betaalbewijs uploaded (session only):', file.name);
+
+    // Converteer bestand naar base64 en sla op
     betaalbewijsData = await fileToBase64(file);
+
+    // Toon bestandsnaam in de UI
     const nameDiv = document.getElementById('betaalbewijsName');
     nameDiv.textContent = `✓ ${file.name}`;
     nameDiv.style.display = 'inline-block';
+
     console.log('✓ Betaalbewijs ready for automation (will be cleared after use)');
+
+    // Update de status van de "Start Automatisering" knop
     updateStartButtonState();
   }
 });
 
+// ============================================================================
+// EVENT LISTENER: FACTUUR UPLOAD
+// ============================================================================
+/**
+ * Behandelt het uploaden van de factuur document.
+ *
+ * FUNCTIONALITEIT:
+ * 1. Slaat het factuurbestand op voor upload naar subsidieformulier
+ * 2. Voert OCR extractie uit om meldcode en installatiedatum te vinden
+ * 3. Vult automatisch de meldcode en installatiedatum velden in
+ * 4. Toont extractie status aan de gebruiker
+ *
+ * GEËXTRAHEERDE GEGEVENS:
+ * - Meldcode: Format KA##### (bijvoorbeeld KA06175)
+ * - Installatiedatum: Datum van warmtepomp installatie (DD-MM-YYYY)
+ */
 document.getElementById('factuurDoc').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (file) {
     console.log('📎 Factuur uploaded (session only):', file.name);
+
+    // Converteer bestand naar base64 en sla op
     factuurData = await fileToBase64(file);
+
+    // Toon bestandsnaam in de UI
     const nameDiv = document.getElementById('factuurName');
     nameDiv.textContent = `✓ ${file.name}`;
     nameDiv.style.display = 'inline-block';
+
     console.log('✓ Factuur ready for automation (will be cleared after use)');
 
-    // Extract meldcode from factuur
+    // Toon extractie status voor meldcode en datum
     const statusDiv = document.getElementById('factuurExtractionStatus');
     if (statusDiv) {
       statusDiv.textContent = '🔄 Meldcode wordt geëxtraheerd uit factuur...';
@@ -153,22 +283,26 @@ document.getElementById('factuurDoc').addEventListener('change', async (e) => {
     }
 
     try {
+      // Voer meldcode en datum extractie uit
       const { meldcode, installationDate } = await extractMeldcodeFromFactuur(file);
 
       let fieldsFound = [];
 
+      // Vul meldcode veld in als gevonden
       if (meldcode) {
         document.getElementById('meldCode').value = meldcode;
         fieldsFound.push('Meldcode: ' + meldcode);
         console.log('✅ Meldcode extracted:', meldcode);
       }
 
+      // Vul installatiedatum veld in als gevonden
       if (installationDate) {
         document.getElementById('installationDate').value = installationDate;
         fieldsFound.push('Installatiedatum: ' + installationDate);
         console.log('✅ Installation date extracted:', installationDate);
       }
 
+      // Toon succesmelding met gevonden gegevens
       if (fieldsFound.length > 0) {
         if (statusDiv) {
           statusDiv.textContent = `✅ Gevonden: ${fieldsFound.join(', ')}`;
@@ -178,6 +312,7 @@ document.getElementById('factuurDoc').addEventListener('change', async (e) => {
           }, 3000);
         }
       } else {
+        // Waarschuwing als geen gegevens gevonden
         if (statusDiv) {
           statusDiv.textContent = '⚠️ Geen meldcode of datum gevonden in factuur';
           statusDiv.style.color = '#f59f00';
@@ -187,9 +322,10 @@ document.getElementById('factuurDoc').addEventListener('change', async (e) => {
         }
       }
 
-      // Update button state after extraction
+      // Update de status van de "Start Automatisering" knop
       updateStartButtonState();
     } catch (error) {
+      // Behandel extractie fouten
       console.error('Factuur extraction error:', error);
       if (statusDiv) {
         statusDiv.textContent = `❌ Fout bij extraheren factuur: ${error.message}`;
@@ -201,11 +337,29 @@ document.getElementById('factuurDoc').addEventListener('change', async (e) => {
       updateStartButtonState();
     }
 
-    // Update button state when factuur is uploaded
+    // Update knop status na factuur upload
     updateStartButtonState();
   }
 });
 
+// ============================================================================
+// HULPFUNCTIE: BESTAND NAAR BASE64 CONVERSIE
+// ============================================================================
+/**
+ * Converteert een bestand naar base64 gecodeerde data.
+ *
+ * @param {File} file - Het te converteren bestand
+ * @returns {Promise<Object>} Promise die resolvet met object met:
+ *   - name: bestandsnaam
+ *   - type: MIME type (bijv. "application/pdf", "image/jpeg")
+ *   - data: base64 gecodeerde data met data URL prefix
+ *
+ * GEBRUIK:
+ * Base64 formaat wordt gebruikt voor:
+ * - Opslag in Chrome storage
+ * - Upload naar subsidieformulier
+ * - Verzending naar Mistral AI API's
+ */
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -219,26 +373,48 @@ function fileToBase64(file) {
   });
 }
 
-// Convert PDF to image base64
+// ============================================================================
+// PDF CONVERSIE: PDF NAAR BASE64 AFBEELDING
+// ============================================================================
+/**
+ * Converteert de eerste pagina van een PDF naar een base64 afbeelding.
+ *
+ * PROCES:
+ * 1. Laadt PDF met PDF.js library
+ * 2. Rendert eerste pagina op canvas met 2x schaal (betere kwaliteit)
+ * 3. Converteert canvas naar PNG base64
+ *
+ * @param {File} file - PDF bestand om te converteren
+ * @returns {Promise<string>} Base64 gecodeerde PNG afbeelding met data URL
+ *
+ * GEBRUIK:
+ * Gebruikt voor Vision AI OCR wanneer PDF geen extracteerbare tekst bevat
+ * (gescande documenten). Hogere schaal (2.0) zorgt voor betere OCR resultaten.
+ */
 async function pdfToBase64Image(file) {
   console.log('Starting PDF conversion, file type:', file.type);
   const arrayBuffer = await file.arrayBuffer();
   console.log('ArrayBuffer size:', arrayBuffer.byteLength);
 
+  // Laad PDF document met PDF.js
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   console.log('PDF loaded, pages:', pdf.numPages);
 
+  // Haal eerste pagina op
   const page = await pdf.getPage(1);
   console.log('Page loaded');
 
+  // Bepaal viewport met 2x schaal voor betere kwaliteit
   const viewport = page.getViewport({ scale: 2.0 });
   console.log('Viewport:', viewport.width, 'x', viewport.height);
 
+  // Maak canvas element aan voor rendering
   const canvas = document.createElement('canvas');
   const context = canvas.getContext('2d');
   canvas.height = viewport.height;
   canvas.width = viewport.width;
 
+  // Render PDF pagina naar canvas
   await page.render({
     canvasContext: context,
     viewport: viewport
@@ -246,12 +422,24 @@ async function pdfToBase64Image(file) {
 
   console.log('PDF rendered to canvas successfully');
 
-  // Convert canvas to base64
+  // Converteer canvas naar base64 PNG
   const base64 = canvas.toDataURL('image/png');
   return base64;
 }
 
-// Convert image file to base64
+// ============================================================================
+// AFBEELDING CONVERSIE: AFBEELDING NAAR BASE64
+// ============================================================================
+/**
+ * Converteert een afbeeldingsbestand naar base64 formaat.
+ *
+ * @param {File} file - Afbeeldingsbestand (JPEG, PNG, etc.)
+ * @returns {Promise<string>} Base64 gecodeerde afbeelding met data URL
+ *
+ * GEBRUIK:
+ * Wordt gebruikt voor Vision AI OCR wanneer het geüploade bestand
+ * al een afbeelding is (geen PDF conversie nodig).
+ */
 async function imageToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -261,7 +449,25 @@ async function imageToBase64(file) {
   });
 }
 
-// Extract text from PDF (optionally only first page for efficiency)
+// ============================================================================
+// PDF TEKST EXTRACTIE
+// ============================================================================
+/**
+ * Extraheert tekst uit een PDF bestand met PDF.js.
+ *
+ * FUNCTIONALITEIT:
+ * - Extraheert tekst uit elke pagina van de PDF
+ * - Optioneel alleen eerste pagina voor betere prestaties
+ * - Gebruikt voor PDF's met embedded tekst (niet gescand)
+ *
+ * @param {File} file - PDF bestand om tekst uit te extraheren
+ * @param {boolean} firstPageOnly - Als true, alleen eerste pagina extraheren
+ * @returns {Promise<string>} Geëxtraheerde tekst uit PDF
+ *
+ * GEBRUIK:
+ * Als geëxtraheerde tekst < 10 karakters, is het waarschijnlijk een
+ * gescande PDF zonder embedded tekst. Dan wordt Vision AI OCR gebruikt.
+ */
 async function extractTextFromPDF(file, firstPageOnly = false) {
   console.log('Extracting text from PDF...');
   const arrayBuffer = await file.arrayBuffer();
@@ -270,10 +476,11 @@ async function extractTextFromPDF(file, firstPageOnly = false) {
 
   let fullText = '';
 
-  // Extract text from specified pages
+  // Bepaal hoeveel pagina's te extraheren
   const maxPage = firstPageOnly ? 1 : pdf.numPages;
   console.log('Will extract from page(s):', maxPage);
 
+  // Loop door alle te extraheren pagina's
   for (let i = 1; i <= maxPage; i++) {
     const page = await pdf.getPage(i);
     const textContent = await page.getTextContent();
@@ -287,13 +494,42 @@ async function extractTextFromPDF(file, firstPageOnly = false) {
   return fullText;
 }
 
-// Extract meldcode and installation date from factuur using Mistral
+// ============================================================================
+// OCR FUNCTIE: MELDCODE EN INSTALLATIEDATUM EXTRACTIE UIT FACTUUR
+// ============================================================================
+/**
+ * Extraheert meldcode en installatiedatum uit factuur met Mistral AI.
+ *
+ * PROCES:
+ * 1. Haalt Mistral API key op uit instellingen
+ * 2. Voor PDF's: probeert eerst tekst extractie, anders Vision AI OCR
+ * 3. Voor afbeeldingen: gebruikt direct Vision AI OCR
+ * 4. Zoekt meldcode patroon (KA#####) met regex
+ * 5. Zoekt datum patronen (DD-MM-YYYY, YYYY-MM-DD)
+ * 6. Bij ontbrekende data: gebruikt AI voor gestructureerde extractie
+ *
+ * @param {File} file - Factuur bestand (PDF of afbeelding)
+ * @returns {Promise<Object>} Object met meldcode en installationDate
+ *
+ * MELDCODE FORMAT:
+ * - Start met "KA" gevolgd door 5 cijfers (bijv. KA06175)
+ *
+ * DATUM FORMATS ONDERSTEUND:
+ * - DD-MM-YYYY (Nederlands formaat)
+ * - DD/MM/YYYY
+ * - YYYY-MM-DD (wordt geconverteerd naar DD-MM-YYYY)
+ *
+ * ERROR HANDLING:
+ * - Geen API key: specifieke foutmelding
+ * - Rate limit (429): wacht 30-60 seconden melding
+ * - Andere API fouten: status code en bericht
+ */
 async function extractMeldcodeFromFactuur(file) {
   console.log('=== Starting meldcode and date extraction with Mistral ===');
   console.log('File:', file.name, 'Type:', file.type, 'Size:', file.size);
 
   try {
-    // Get API key
+    // Haal Mistral API key op uit Chrome storage
     const { mistralApiKey } = await chrome.storage.local.get(['mistralApiKey']);
     if (!mistralApiKey) {
       throw new Error('Geen Mistral API key ingesteld. Voer eerst je API key in via instellingen.');
@@ -301,18 +537,20 @@ async function extractMeldcodeFromFactuur(file) {
 
     let textContent;
 
-    // Extract text based on file type
+    // Bepaal extractie methode op basis van bestandstype
     if (file.type === 'application/pdf') {
       console.log('Extracting text from PDF...');
       textContent = await extractTextFromPDF(file);
 
-      // Check if PDF has no text (scanned PDF)
+      // Controleer of PDF extracteerbare tekst bevat (niet gescand)
       if (!textContent || textContent.trim().length < 10) {
         console.log('⚠️ PDF has no extractable text, using Vision AI OCR...');
-        // Convert PDF to image and use OCR
+
+        // Converteer PDF naar afbeelding voor Vision AI
         const pdfImage = await pdfToBase64Image(file);
         const base64Data = pdfImage.split(',')[1];
 
+        // Gebruik Mistral Pixtral Vision AI voor OCR
         const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -332,16 +570,17 @@ async function extractMeldcodeFromFactuur(file) {
           })
         });
 
+        // Behandel API fouten
         if (!response.ok) {
           let errorMessage = response.statusText;
           try {
             const errorData = await response.json();
             errorMessage = errorData.error?.message || errorMessage;
           } catch (e) {
-            // Could not parse error response
+            // Kon error response niet parsen
           }
 
-          // Special handling for rate limit errors
+          // Speciale behandeling voor rate limit fouten
           if (response.status === 429) {
             throw new Error(`Mistral API rate limit bereikt. Wacht even (30-60 seconden) voordat je het opnieuw probeert.`);
           }
@@ -354,7 +593,7 @@ async function extractMeldcodeFromFactuur(file) {
         console.log('✅ Text extracted via Vision AI OCR');
       }
     } else {
-      // For images, use OCR via vision model
+      // Voor afbeeldingen: gebruik Vision AI OCR
       console.log('Converting image to base64 for OCR...');
       const base64Image = await imageToBase64(file);
       const base64Data = base64Image.split(',')[1];
@@ -378,16 +617,17 @@ async function extractMeldcodeFromFactuur(file) {
         })
       });
 
+      // Behandel API fouten
       if (!response.ok) {
         let errorMessage = response.statusText;
         try {
           const errorData = await response.json();
           errorMessage = errorData.error?.message || errorMessage;
         } catch (e) {
-          // Could not parse error response
+          // Kon error response niet parsen
         }
 
-        // Special handling for rate limit errors
+        // Speciale behandeling voor rate limit fouten
         if (response.status === 429) {
           throw new Error(`Mistral API rate limit bereikt. Wacht even (30-60 seconden) voordat je het opnieuw probeert.`);
         }
@@ -401,7 +641,7 @@ async function extractMeldcodeFromFactuur(file) {
 
     console.log('Text extracted, searching for meldcode and installation date...');
 
-    // Search for meldcode pattern in text
+    // Zoek meldcode patroon in geëxtraheerde tekst (KA + 5 cijfers)
     const meldcodeMatch = textContent.match(/KA\d{5}/i);
     let meldcode = null;
     let installationDate = null;
@@ -411,7 +651,7 @@ async function extractMeldcodeFromFactuur(file) {
       console.log('✅ Meldcode found in text:', meldcode);
     }
 
-    // Search for installation date pattern (DD-MM-YYYY or DD/MM/YYYY or similar)
+    // Zoek installatiedatum patronen
     const datePatterns = [
       /(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/,  // DD-MM-YYYY or DD/MM/YYYY
       /(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/   // YYYY-MM-DD or YYYY/MM/DD
@@ -421,19 +661,19 @@ async function extractMeldcodeFromFactuur(file) {
       const dateMatch = textContent.match(pattern);
       if (dateMatch) {
         installationDate = dateMatch[1];
-        // Convert to DD-MM-YYYY format if needed
+        // Converteer YYYY-MM-DD naar DD-MM-YYYY formaat indien nodig
         if (installationDate.match(/\d{4}[-\/]\d{1,2}[-\/]\d{1,2}/)) {
           const parts = installationDate.split(/[-\/]/);
           installationDate = `${parts[2].padStart(2, '0')}-${parts[1].padStart(2, '0')}-${parts[0]}`;
         }
-        // Normalize separator to dash
+        // Normaliseer scheidingsteken naar streepje
         installationDate = installationDate.replace(/\//g, '-');
         console.log('✅ Installation date found in text:', installationDate);
         break;
       }
     }
 
-    // If not all data found, use AI to extract it
+    // Als niet alle data gevonden via regex, gebruik AI extractie
     if (!meldcode || !installationDate) {
       console.log('Not all data found via regex, asking AI...');
 
@@ -466,16 +706,17 @@ Return ONLY JSON, no markdown.`
         })
       });
 
+      // Behandel API fouten
       if (!response.ok) {
         let errorMessage = response.statusText;
         try {
           const errorData = await response.json();
           errorMessage = errorData.error?.message || errorMessage;
         } catch (e) {
-          // Could not parse error response
+          // Kon error response niet parsen
         }
 
-        // Special handling for rate limit errors
+        // Speciale behandeling voor rate limit fouten
         if (response.status === 429) {
           throw new Error(`Mistral API rate limit bereikt. Wacht even (30-60 seconden) voordat je het opnieuw probeert.`);
         }
@@ -487,17 +728,19 @@ Return ONLY JSON, no markdown.`
       let content = data.choices[0].message.content.trim();
       console.log('AI response:', content);
 
-      // Remove markdown code blocks if present
+      // Verwijder markdown code blocks indien aanwezig
       content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
 
       try {
         const extracted = JSON.parse(content);
 
+        // Gebruik AI geëxtraheerde meldcode als niet gevonden via regex
         if (!meldcode && extracted.meldcode && extracted.meldcode !== 'null') {
           meldcode = extracted.meldcode.toUpperCase();
           console.log('✅ Meldcode extracted by AI:', meldcode);
         }
 
+        // Gebruik AI geëxtraheerde datum als niet gevonden via regex
         if (!installationDate && extracted.installationDate && extracted.installationDate !== 'null') {
           installationDate = extracted.installationDate;
           console.log('✅ Installation date extracted by AI:', installationDate);
@@ -515,13 +758,61 @@ Return ONLY JSON, no markdown.`
   }
 }
 
-// Extract data from machtigingsformulier using Mistral
+// ============================================================================
+// OCR FUNCTIE: KLANTGEGEVENS EXTRACTIE UIT MACHTIGINGSFORMULIER
+// ============================================================================
+/**
+ * Extraheert klantgegevens uit machtigingsformulier met Mistral AI.
+ *
+ * PROCES:
+ * 1. Haalt Mistral API key op uit instellingen
+ * 2. Converteert document naar base64 (PDF of afbeelding)
+ * 3. Voert Mistral Document OCR uit voor tekst extractie
+ * 4. Gebruikt AI voor gestructureerde data extractie met specifieke instructies
+ * 5. Past regex fallbacks toe voor gemiste velden (BSN, IBAN, email, telefoon)
+ * 6. Gebruikt Vision AI voor checkbox detectie (aardgasgebruik vraag)
+ *
+ * @param {File} file - Machtigingsformulier bestand (PDF of afbeelding)
+ * @returns {Promise<Object>} Geëxtraheerde klantgegevens
+ *
+ * GEËXTRAHEERDE VELDEN:
+ * - bsn: 9-cijferig Burgerservicenummer
+ * - initials: Voorletters
+ * - lastName: Achternaam
+ * - gender: "male" of "female"
+ * - email: E-mailadres (geen bedrijfs-emails)
+ * - phone: Telefoonnummer (06 of 0 prefix, geen 085 nummers)
+ * - iban: Bankrekeningnummer (zonder spaties/punten)
+ * - street: Straatnaam
+ * - houseNumber: Huisnummer (inclusief toevoeging zoals "59A01")
+ * - postalCode: Postcode
+ * - city: Plaatsnaam
+ * - gasUsage: "yes" of "no" (aardgas voor ruimteverwarming na installatie)
+ *
+ * AI MODELLEN GEBRUIKT:
+ * - mistral-ocr-latest: Document OCR voor tekst extractie
+ * - mistral-small-latest: Gestructureerde data extractie
+ * - pixtral-12b-2409: Vision AI voor checkbox detectie
+ *
+ * REGEX FALLBACKS:
+ * Als AI velden mist, worden regex patronen toegepast voor:
+ * - BSN: 9 cijfers met optionele spaties/streepjes
+ * - IBAN: NL + 2 cijfers + 4 letters + 10 cijfers
+ * - Email: Standaard email patroon (exclusief @samangroep)
+ * - Telefoon: Nederlandse telefoonpatronen
+ *
+ * SPECIALE BEHANDELING AARDGASGEBRUIK:
+ * De vraag over aardgasgebruik heeft vaak checkboxes. Vision AI
+ * wordt gebruikt om te detecteren welke checkbox is aangevinkt:
+ * - Gekruist/doorgestreept = NIET geselecteerd
+ * - Omcirkeld/aangevinkt = WEL geselecteerd
+ */
 async function extractDataFromForm(file) {
   console.log('=== Starting extraction with Mistral ===');
   console.log('File:', file.name, 'Type:', file.type, 'Size:', file.size);
 
   try {
-    // Get API key
+    // Haal Mistral API key op uit Chrome storage
     const { mistralApiKey } = await chrome.storage.local.get(['mistralApiKey']);
     if (!mistralApiKey) {
       throw new Error('Geen Mistral API key ingesteld. Voer eerst je API key in via instellingen.');
@@ -530,21 +821,22 @@ async function extractDataFromForm(file) {
     const statusDiv = document.getElementById('extractionStatus');
     let textContent;
 
-    // Use Mistral Document AI OCR for better extraction
+    // Gebruik Mistral Document AI OCR voor betere extractie
     console.log('Using Mistral Document AI OCR...');
     if (statusDiv) {
       statusDiv.textContent = '🔄 Document OCR met Mistral AI...';
     }
 
-    // Convert file to base64 for OCR API
+    // Converteer bestand naar base64 voor OCR API
     let base64Document;
     if (file.type === 'application/pdf') {
+      // Voor PDF: converteer naar base64
       const arrayBuffer = await file.arrayBuffer();
       const bytes = new Uint8Array(arrayBuffer);
       const binary = bytes.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
       base64Document = `data:application/pdf;base64,${btoa(binary)}`;
     } else {
-      // For images, convert to base64
+      // Voor afbeeldingen: converteer naar base64
       base64Document = await imageToBase64(file);
     }
 
@@ -552,7 +844,7 @@ async function extractDataFromForm(file) {
       statusDiv.textContent = '🔄 Document wordt geanalyseerd...';
     }
 
-    // Step 1: Extract text using Mistral OCR
+    // Stap 1: Extraheer tekst met Mistral OCR
     console.log('Calling Mistral OCR API...');
     const ocrResponse = await fetch('https://api.mistral.ai/v1/ocr', {
       method: 'POST',
@@ -569,6 +861,7 @@ async function extractDataFromForm(file) {
       })
     });
 
+    // Behandel OCR API fouten met gedetailleerde foutmeldingen
     if (!ocrResponse.ok) {
       let errorMessage = 'Unknown error';
       let errorDetails = '';
@@ -586,7 +879,7 @@ async function extractDataFromForm(file) {
       console.error(`Mistral OCR failed with status ${ocrResponse.status}:`, errorMessage);
       console.error('Full error details:', errorDetails);
 
-      // Provide helpful error messages
+      // Geef specifieke foutmeldingen per status code
       if (ocrResponse.status === 401) {
         throw new Error('Mistral API key is ongeldig. Controleer je API key in instellingen.');
       } else if (ocrResponse.status === 429) {
@@ -601,10 +894,9 @@ async function extractDataFromForm(file) {
     const ocrData = await ocrResponse.json();
     console.log('OCR response:', ocrData);
 
-    // Extract text from OCR response
+    // Extraheer tekst uit OCR response (alleen eerste pagina)
     let extractedText = '';
     if (ocrData.pages && ocrData.pages.length > 0) {
-      // Only use first page
       extractedText = ocrData.pages[0].markdown || '';
     }
 
@@ -617,7 +909,7 @@ async function extractDataFromForm(file) {
       statusDiv.textContent = '🔄 Gegevens extraheren met AI...';
     }
 
-    // Step 2: Use text model to extract structured data
+    // Stap 2: Gebruik text model voor gestructureerde data extractie
     console.log('Calling Mistral text model for structured extraction...');
     const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
       method: 'POST',
@@ -679,16 +971,17 @@ Return ONLY JSON, no markdown.`
       })
     });
 
+    // Behandel AI extractie API fouten
     if (!response.ok) {
       let errorMessage = response.statusText;
       try {
         const errorData = await response.json();
         errorMessage = errorData.error?.message || errorMessage;
       } catch (e) {
-        // Could not parse error response
+        // Kon error response niet parsen
       }
 
-      // Special handling for rate limit errors
+      // Speciale behandeling voor rate limit fouten
       if (response.status === 429) {
         throw new Error(`Mistral API rate limit bereikt. Wacht even (30-60 seconden) voordat je het opnieuw probeert.`);
       }
@@ -702,46 +995,49 @@ Return ONLY JSON, no markdown.`
     let content = data.choices[0].message.content;
     console.log('Extracted content:', content);
 
-    // Remove markdown code blocks if present
+    // Verwijder markdown code blocks indien aanwezig
     content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
     console.log('Cleaned content:', content);
 
-    // Parse the JSON response
+    // Parse JSON response naar object
     const extractedData = JSON.parse(content);
 
-    // Regex fallbacks for fields AI might miss
+    // ========================================================================
+    // REGEX FALLBACKS VOOR GEMISTE VELDEN
+    // ========================================================================
+    // Als AI bepaalde velden mist, proberen we ze te vinden met regex patronen
     console.log('🔍 Applying regex fallbacks for missing fields...');
 
-    // BSN fallback: 9 digits, optionally with spaces or dashes
+    // BSN fallback: 9 cijfers, optioneel met spaties of streepjes
     if (!extractedData.bsn) {
       const bsnMatch = extractedText.match(/BSN[:\s]*(\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d)/i);
       if (bsnMatch) {
-        extractedData.bsn = bsnMatch[1].replace(/[\s-]/g, ''); // Remove spaces and dashes
+        extractedData.bsn = bsnMatch[1].replace(/[\s-]/g, ''); // Verwijder spaties en streepjes
         console.log('✅ BSN found via regex:', extractedData.bsn);
       }
     }
 
-    // IBAN fallback: NL + 2 digits + 4 letters + 10 digits
+    // IBAN fallback: NL + 2 cijfers + 4 letters + 10 cijfers
     if (!extractedData.iban) {
       const ibanMatch = extractedText.match(/(?:IBAN[:\s]*)?([NL]{2}\s?[0-9]{2}\s?[A-Z]{4}\s?[0-9]{4}\s?[0-9]{4}\s?[0-9]{2})/i);
       if (ibanMatch) {
-        extractedData.iban = ibanMatch[1].replace(/\s/g, '').replace(/\./g, '').toUpperCase(); // Remove spaces and dots
+        extractedData.iban = ibanMatch[1].replace(/\s/g, '').replace(/\./g, '').toUpperCase(); // Verwijder spaties en punten
         console.log('✅ IBAN found via regex:', extractedData.iban);
       }
     }
 
-    // Also clean IBAN if it was found by AI but has spaces/dots
+    // Maak IBAN schoon als het door AI gevonden is maar spaties/punten bevat
     if (extractedData.iban) {
       extractedData.iban = extractedData.iban.replace(/\s/g, '').replace(/\./g, '').toUpperCase();
       console.log('✅ IBAN cleaned (removed spaces/dots):', extractedData.iban);
     }
 
-    // Email fallback: standard email pattern
+    // Email fallback: standaard email patroon
     if (!extractedData.email) {
-      // Exclude company emails like @samangroep
+      // Sluit bedrijfs-emails uit zoals @samangroep
       const emailMatch = extractedText.match(/([a-z0-9._-]+@[a-z0-9._-]+\.[a-z]{2,6})/gi);
       if (emailMatch) {
-        // Filter out company emails
+        // Filter bedrijfs-emails eruit
         const personalEmail = emailMatch.find(email =>
           !email.toLowerCase().includes('@samangroep') &&
           !email.toLowerCase().includes('@saman')
@@ -753,18 +1049,33 @@ Return ONLY JSON, no markdown.`
       }
     }
 
-    // Phone fallback: Dutch phone patterns
+    // Telefoon fallback: Nederlandse telefoonpatronen
     if (!extractedData.phone) {
       const phoneMatch = extractedText.match(/(?:Telefoon|Tel)[:\s]*((?:06|0[0-9]{1,2})[\s-]?[0-9]{3,4}[\s-]?[0-9]{4})/i);
       if (phoneMatch) {
-        extractedData.phone = phoneMatch[1].replace(/[\s-]/g, ''); // Remove spaces and dashes
+        extractedData.phone = phoneMatch[1].replace(/[\s-]/g, ''); // Verwijder spaties en streepjes
         console.log('✅ Phone found via regex:', extractedData.phone);
       }
     }
 
     console.log('🔍 After regex fallbacks:', extractedData);
 
-    // Extra validation: Use Vision AI to detect checked checkbox for gas usage
+    // ========================================================================
+    // EXTRA VALIDATIE: VISION AI VOOR AARDGAS CHECKBOX DETECTIE
+    // ========================================================================
+    /**
+     * Als AI het aardgasgebruik veld niet heeft gevonden, gebruiken we
+     * Vision AI om de aangevinkte checkbox te detecteren.
+     *
+     * PROCES:
+     * 1. Converteer document naar afbeelding (voor PDF: lagere kwaliteit JPEG)
+     * 2. Gebruik Pixtral Vision AI om checkboxes te analyseren
+     * 3. Detecteer welke optie geselecteerd is op basis van visuele kenmerken:
+     *    - Omcirkeld/aangevinkt = geselecteerd
+     *    - Doorgestreept = NIET geselecteerd
+     * 4. Als Vision AI onzeker is, skip deze stap
+     * 5. Als Vision AI faalt, fallback naar tekst-gebaseerde detectie
+     */
     if (!extractedData.gasUsage || extractedData.gasUsage === 'null') {
       console.log('Gas usage not found by AI, using Vision AI to detect checkbox...');
 
@@ -772,15 +1083,15 @@ Return ONLY JSON, no markdown.`
         statusDiv.textContent = '🔄 Aardgas checkbox detecteren met Vision AI...';
       }
 
-      // Convert document to image for vision analysis
+      // Converteer document naar afbeelding voor vision analyse
       let visionBase64;
       if (file.type === 'application/pdf') {
         console.log('Converting PDF to image for vision analysis...');
-        // Use lower quality JPEG for Vision AI to reduce size
+        // Gebruik lagere kwaliteit JPEG voor Vision AI om bestandsgrootte te verminderen
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
         const page = await pdf.getPage(1);
-        const viewport = page.getViewport({ scale: 1.2 }); // Lower scale for smaller image
+        const viewport = page.getViewport({ scale: 1.2 }); // Lagere schaal voor kleinere afbeelding
 
         const canvas = document.createElement('canvas');
         const context = canvas.getContext('2d');
@@ -792,7 +1103,7 @@ Return ONLY JSON, no markdown.`
           viewport: viewport
         }).promise;
 
-        // Convert to JPEG with compression for smaller size
+        // Converteer naar JPEG met compressie voor kleinere bestandsgrootte
         visionBase64 = canvas.toDataURL('image/jpeg', 0.8);
         console.log('PDF converted to JPEG for Vision AI, size:', visionBase64.length, 'chars');
       } else {
@@ -802,6 +1113,7 @@ Return ONLY JSON, no markdown.`
       const visionData = visionBase64.split(',')[1];
 
       try {
+        // Roep Vision AI aan voor checkbox detectie
         const visionResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -860,7 +1172,7 @@ Return ONLY one word: "yes", "no", or "unknown"`
           console.log('Lowercase trimmed:', visionAnswer);
           console.log('=========================');
 
-          // Check if Vision AI is uncertain
+          // Controleer of Vision AI onzeker is over het antwoord
           const isUncertain = visionAnswer.includes('unknown') ||
                             visionAnswer.includes('cannot determine') ||
                             visionAnswer.includes('not provide a clear') ||
@@ -869,7 +1181,7 @@ Return ONLY one word: "yes", "no", or "unknown"`
 
           if (isUncertain) {
             console.log('⚠️ Vision AI is uncertain about gas usage, skipping...');
-            // Don't set gasUsage, leave it null to be filled manually
+            // Stel gasUsage niet in, laat null voor handmatig invullen
           } else if (visionAnswer.includes('yes') || visionAnswer === 'ja') {
             extractedData.gasUsage = 'yes';
             console.log('✅ Gas usage "Ja" detected via Vision AI');
@@ -886,18 +1198,18 @@ Return ONLY one word: "yes", "no", or "unknown"`
       } catch (visionError) {
         console.warn('Vision AI failed, falling back to text patterns:', visionError);
 
-        // Fallback to text-based detection
+        // Fallback naar tekst-gebaseerde detectie
         const gasQuestionRegex = /gebruikt.*warmtepomp.*aardgas.*ruimte.*verwarming/i;
         if (gasQuestionRegex.test(extractedText)) {
           console.log('✅ Gas usage question found in text');
 
-          // Log the area around the question for debugging
+          // Log de context rondom de vraag voor debugging
           const questionMatch = extractedText.match(/(gebruikt.*warmtepomp.*aardgas.*ruimte.*verwarming.{0,100})/i);
           if (questionMatch) {
             console.log('Question context:', questionMatch[1]);
           }
 
-          // Try to find Ja or Nee within 100 characters after the question
+          // Probeer "Ja" of "Nee" te vinden binnen 100 karakters na de vraag
           const gasAnswerMatch = extractedText.match(/gebruikt.*warmtepomp.*aardgas.*ruimte.*verwarming.{0,100}(ja|nee)/i);
           if (gasAnswerMatch) {
             const answer = gasAnswerMatch[1].toLowerCase();
@@ -908,7 +1220,7 @@ Return ONLY one word: "yes", "no", or "unknown"`
       }
     }
 
-    // Convert null values to undefined
+    // Converteer null waarden naar undefined (verwijder uit object)
     Object.keys(extractedData).forEach(key => {
       if (extractedData[key] === null || extractedData[key] === 'null') {
         delete extractedData[key];
@@ -924,9 +1236,23 @@ Return ONLY one word: "yes", "no", or "unknown"`
   }
 }
 
-// Load configuration on startup
+// ============================================================================
+// CONFIGURATIE LADEN BIJ OPSTARTEN
+// ============================================================================
+/**
+ * Reset alle formuliervelden naar lege waarden bij het openen van de popup.
+ *
+ * FUNCTIONALITEIT:
+ * - Wist alle persoonlijke gegevens velden
+ * - Reset document variabelen naar null
+ * - Zorgt ervoor dat gebruiker documenten opnieuw moet uploaden
+ *
+ * PRIVACY & VEILIGHEID:
+ * Data wordt NIET opgeslagen tussen sessies. Dit voorkomt dat gevoelige
+ * klantgegevens persistent worden opgeslagen in de browser.
+ */
 function loadConfiguration() {
-  // Reset all form fields to empty on startup
+  // Reset alle formuliervelden naar leeg bij opstarten
   document.getElementById('bsn').value = '';
   document.getElementById('initials').value = '';
   document.getElementById('lastName').value = '';
@@ -944,7 +1270,7 @@ function loadConfiguration() {
   document.getElementById('meldCode').value = '';
   document.getElementById('gasUsage').value = '';
 
-  // Reset document variables to null
+  // Reset document variabelen naar null
   betaalbewijsData = null;
   factuurData = null;
   machtigingsbewijsData = null;
@@ -952,9 +1278,28 @@ function loadConfiguration() {
   console.log('🔄 Plugin gestart met lege velden - upload documenten om gegevens automatisch in te vullen');
 }
 
-// Auto-save is disabled - form data is not persisted between sessions
+// Auto-opslaan is uitgeschakeld - formulierdata wordt niet bewaard tussen sessies
 
-// Validate all required fields
+// ============================================================================
+// VALIDATIE: CONTROLEER VERPLICHTE VELDEN
+// ============================================================================
+/**
+ * Controleert of alle verplichte velden zijn ingevuld.
+ *
+ * VERPLICHTE VELDEN:
+ * - Persoonlijke gegevens: BSN, voorletters, achternaam, geslacht
+ * - Contactgegevens: telefoon, email
+ * - Financieel: IBAN
+ * - Adresgegevens: straat, huisnummer, postcode, plaats
+ * - Installatie: aankoopdatum, installatiedatum, meldcode, aardgasgebruik
+ * - Documenten: betaalbewijs, factuur
+ *
+ * @returns {Array<string>} Array met labels van ontbrekende velden
+ *
+ * GEBRUIK:
+ * Wordt gebruikt om de "Start Automatisering" knop in/uit te schakelen
+ * en om te valideren voordat automatisering start.
+ */
 function validateRequiredFields() {
   const requiredFields = [
     { id: 'bsn', label: 'BSN' },
@@ -975,6 +1320,7 @@ function validateRequiredFields() {
 
   const missingFields = [];
 
+  // Controleer alle formuliervelden
   for (const field of requiredFields) {
     const value = document.getElementById(field.id).value.trim();
     if (!value) {
@@ -982,7 +1328,7 @@ function validateRequiredFields() {
     }
   }
 
-  // Check documents
+  // Controleer of documenten zijn geüpload
   if (!betaalbewijsData) {
     missingFields.push('Betaalbewijs');
   }
@@ -993,23 +1339,51 @@ function validateRequiredFields() {
   return missingFields;
 }
 
-// Update button state based on validation
+// ============================================================================
+// KNOPSTATUS: UPDATE "START AUTOMATISERING" KNOP
+// ============================================================================
+/**
+ * Update de enabled/disabled status van de "Start Automatisering" knop.
+ *
+ * FUNCTIONALITEIT:
+ * - Valideert alle verplichte velden
+ * - Schakelt knop in als alle velden compleet zijn
+ * - Schakelt knop uit als velden ontbreken
+ * - Past visuele styling aan (opacity, cursor)
+ *
+ * WORDT AANGEROEPEN:
+ * - Na document upload
+ * - Na OCR extractie
+ * - Bij invoer in formuliervelden (via event listeners)
+ */
 function updateStartButtonState() {
   const startButton = document.getElementById('startAutomation');
   const missingFields = validateRequiredFields();
 
   if (missingFields.length > 0) {
+    // Er ontbreken velden - knop uitschakelen
     startButton.disabled = true;
     startButton.style.opacity = '0.5';
     startButton.style.cursor = 'not-allowed';
   } else {
+    // Alle velden compleet - knop inschakelen
     startButton.disabled = false;
     startButton.style.opacity = '1';
     startButton.style.cursor = 'pointer';
   }
 }
 
-// Add event listeners to all input fields to update button state
+// ============================================================================
+// EVENT LISTENERS: FORMULIERVELDEN VOOR KNOPSTATUS
+// ============================================================================
+/**
+ * Voegt event listeners toe aan alle invoervelden om de knopstatus
+ * real-time bij te werken wanneer de gebruiker velden invult.
+ *
+ * EVENTS:
+ * - 'input': Voor directe feedback tijdens typen
+ * - 'change': Voor select dropdowns en datum velden
+ */
 document.addEventListener('DOMContentLoaded', () => {
   const inputFields = [
     'bsn', 'initials', 'lastName', 'phone', 'email', 'iban',
@@ -1025,13 +1399,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Initial button state check
+  // Initiële knopstatus check bij laden van de pagina
   updateStartButtonState();
 });
 
-// Start automation
+// ============================================================================
+// AUTOMATISERING STARTEN
+// ============================================================================
+/**
+ * Start de subsidieaanvraag automatisering wanneer gebruiker op de knop klikt.
+ *
+ * PROCES:
+ * 1. Valideer alle verplichte velden opnieuw
+ * 2. Controleer of gebruiker op juiste website is (eloket.dienstuitvoering.nl)
+ * 3. Haal bedrijfsgegevens op uit instellingen
+ * 4. Bouw configuratie object met alle data
+ * 5. Sla documenten op in Chrome storage met uniek sessie ID
+ * 6. Stuur bericht naar background script om automatisering te starten
+ *
+ * CONFIGURATIE OBJECT BEVAT:
+ * - Klantgegevens (van machtigingsformulier)
+ * - Bedrijfsgegevens (uit instellingen)
+ * - Contactpersoon details (uit instellingen)
+ * - Document referenties (via sessie keys)
+ *
+ * SESSIE MANAGEMENT:
+ * - Uniek sessie ID wordt gegenereerd (timestamp + random string)
+ * - Documenten worden opgeslagen met sessie-specifieke keys
+ * - Voorkomt conflicten bij meerdere tabbladen
+ * - Documenten worden opgeruimd na gebruik door content script
+ */
 document.getElementById('startAutomation').addEventListener('click', () => {
-  // Validate all required fields
+  // Valideer alle verplichte velden
   const missingFields = validateRequiredFields();
 
   if (missingFields.length > 0) {
@@ -1042,18 +1441,19 @@ document.getElementById('startAutomation').addEventListener('click', () => {
   chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
     const currentTab = tabs[0];
 
-    // Check if we're on the correct website
+    // Controleer of we op de juiste website zijn
     if (!currentTab.url || !currentTab.url.includes('eloket.dienstuitvoering.nl')) {
       showStatus('Ga eerst naar https://eloket.dienstuitvoering.nl', 'error');
       return;
     }
 
-    // DO NOT save documents - we'll pass them to automation but not persist them
+    // Documenten worden NIET opgeslagen - alleen doorgegeven aan automatisering
     console.log('🚀 Starting automation - documents will NOT be saved for next session');
 
-    // Get the full config including company details and contact person from storage
+    // Haal volledige config op inclusief bedrijfsgegevens en contactpersoon uit storage
     chrome.storage.local.get(['isdeConfig'], (result) => {
       const config = {
+        // Klantgegevens uit formulier
         bsn: document.getElementById('bsn').value,
         initials: document.getElementById('initials').value,
         lastName: document.getElementById('lastName').value,
@@ -1070,69 +1470,88 @@ document.getElementById('startAutomation').addEventListener('click', () => {
         installationDate: document.getElementById('installationDate').value,
         meldCode: document.getElementById('meldCode').value,
         gasUsage: document.getElementById('gasUsage').value,
+
+        // Bedrijfsgegevens uit instellingen
         companyName: result.isdeConfig?.companyName || '',
         kvkNumber: result.isdeConfig?.kvkNumber || '',
-        // Use default values if not saved in settings
+
+        // Contactpersoon details uit instellingen (met standaard waarden)
         contactInitials: result.isdeConfig?.contactInitials || 'A',
         contactLastName: result.isdeConfig?.contactLastName || 'de Vlieger',
         contactGender: result.isdeConfig?.contactGender || 'female',
         contactPhone: result.isdeConfig?.contactPhone || '0682795068',
         contactEmail: result.isdeConfig?.contactEmail || 'administratie@saman.nl',
+
+        // Document data (wordt later vervangen door storage keys)
         betaalbewijs: betaalbewijsData,
         factuur: factuurData,
         machtigingsbewijs: machtigingsbewijsData
       };
 
-      // Log documents being sent
+      // Log welke documenten worden verzonden
       console.log('🚀 Starting automation with documents:');
       console.log('  - Betaalbewijs:', config.betaalbewijs ? config.betaalbewijs.name : 'Not uploaded');
       console.log('  - Factuur:', config.factuur ? config.factuur.name : 'Not uploaded');
       console.log('  - Machtigingsbewijs:', config.machtigingsbewijs ? config.machtigingsbewijs.name : 'Not uploaded');
 
-      // Store files in chrome.storage.local to avoid message size limits
-      // Use timestamp + random string to ensure unique session ID even with multiple tabs
+      // Sla bestanden op in chrome.storage.local om bericht grootte limiet te vermijden
+      // Gebruik timestamp + random string voor uniek sessie ID (zelfs met meerdere tabs)
       const sessionId = `${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
       const filesToStore = {};
 
-      // Store session ID in config so content script knows which files belong to this tab
+      // Sla sessie ID op in config zodat content script weet welke bestanden bij deze tab horen
       config.sessionId = sessionId;
 
+      // Sla documenten op met sessie-specifieke keys
       if (config.betaalbewijs) {
         filesToStore[`file_betaalbewijs_${sessionId}`] = config.betaalbewijs;
         config.betaalbewijsKey = `file_betaalbewijs_${sessionId}`;
-        delete config.betaalbewijs; // Remove large data from config
+        delete config.betaalbewijs; // Verwijder grote data uit config
       }
 
       if (config.factuur) {
         filesToStore[`file_factuur_${sessionId}`] = config.factuur;
         config.factuurKey = `file_factuur_${sessionId}`;
-        delete config.factuur; // Remove large data from config
+        delete config.factuur; // Verwijder grote data uit config
       }
 
       if (config.machtigingsbewijs) {
         filesToStore[`file_machtigingsbewijs_${sessionId}`] = config.machtigingsbewijs;
         config.machtigingsbewijsKey = `file_machtigingsbewijs_${sessionId}`;
-        delete config.machtigingsbewijs; // Remove large data from config
+        delete config.machtigingsbewijs; // Verwijder grote data uit config
       }
 
-      // Store files first, then send message
+      // Sla bestanden eerst op, dan verstuur bericht
       chrome.storage.local.set(filesToStore, () => {
         console.log('📦 Files stored in chrome.storage.local for session:', sessionId);
         console.log('   Files:', Object.keys(filesToStore));
 
-        // Send message to background script to start automation
+        // Stuur bericht naar background script om automatisering te starten
         chrome.runtime.sendMessage({
           action: 'startAutomationFromPopup',
           config: config
         }, () => {
           showStatus('Automatisering gestart. Het formulier wordt stap voor stap ingevuld.', 'info');
-          // Window stays open - user can switch tabs and come back
+          // Popup blijft open - gebruiker kan van tab wisselen en terugkomen
         });
       });
     });
   });
 });
 
+// ============================================================================
+// UI FEEDBACK: TOON STATUS BERICHT
+// ============================================================================
+/**
+ * Toont een status bericht aan de gebruiker in de popup.
+ *
+ * @param {string} message - Het te tonen bericht
+ * @param {string} type - Type bericht: 'error', 'success', of 'info'
+ *
+ * FUNCTIONALITEIT:
+ * - Toont bericht met kleurcodering op basis van type
+ * - Verbergt bericht automatisch na 3 seconden
+ */
 function showStatus(message, type) {
   const statusDiv = document.getElementById('status');
   statusDiv.textContent = message;
@@ -1142,17 +1561,29 @@ function showStatus(message, type) {
   }, 3000);
 }
 
-// View navigation
+// ============================================================================
+// NAVIGATIE: WEERGAVE WISSELEN (HOOFD <-> INSTELLINGEN)
+// ============================================================================
+/**
+ * Wisselt tussen de hoofdweergave en instellingen weergave.
+ *
+ * @param {string} viewId - ID van de weer te geven view ('mainView' of 'settingsView')
+ *
+ * FUNCTIONALITEIT:
+ * - Verbergt alle weergaven
+ * - Toont geselecteerde weergave
+ * - Toont/verbergt terug knop op basis van huidige weergave
+ */
 function showView(viewId) {
-  // Hide all views
+  // Verberg alle weergaven
   document.querySelectorAll('.view').forEach(view => {
     view.classList.remove('active');
   });
 
-  // Show selected view
+  // Toon geselecteerde weergave
   document.getElementById(viewId).classList.add('active');
 
-  // Show/hide back button
+  // Toon/verberg terug knop
   const backBtn = document.getElementById('backBtn');
   if (viewId === 'settingsView') {
     backBtn.classList.add('visible');
@@ -1161,23 +1592,33 @@ function showView(viewId) {
   }
 }
 
-// Settings button handler
+// ============================================================================
+// EVENT LISTENERS: NAVIGATIE KNOPPEN
+// ============================================================================
+
+/** Instellingen knop - toon instellingen weergave */
 document.getElementById('settingsBtn').addEventListener('click', () => {
   loadSettings();
   showView('settingsView');
 });
 
-// Back button handler
+/** Terug knop - terug naar hoofdweergave */
 document.getElementById('backBtn').addEventListener('click', () => {
   showView('mainView');
 });
 
-// Save settings button handler
+/** Opslaan knop - sla instellingen op */
 document.getElementById('saveSettingsBtn').addEventListener('click', () => {
   saveSettings();
 });
 
-// Auto-save settings on blur
+// ============================================================================
+// EVENT LISTENERS: AUTO-OPSLAAN INSTELLINGEN
+// ============================================================================
+/**
+ * Sla instellingen automatisch op wanneer gebruiker een veld verlaat (blur event).
+ * Dit zorgt voor een betere gebruikerservaring zonder handmatig opslaan.
+ */
 document.getElementById('mistralApiKey').addEventListener('blur', saveSettings);
 document.getElementById('settingsCompanyName').addEventListener('blur', saveSettings);
 document.getElementById('settingsKvkNumber').addEventListener('blur', saveSettings);
@@ -1187,21 +1628,43 @@ document.getElementById('settingsContactGender').addEventListener('change', save
 document.getElementById('settingsContactPhone').addEventListener('blur', saveSettings);
 document.getElementById('settingsContactEmail').addEventListener('blur', saveSettings);
 
+// ============================================================================
+// INSTELLINGEN LADEN
+// ============================================================================
+/**
+ * Laadt opgeslagen instellingen uit Chrome storage en vult de velden in.
+ *
+ * GELADEN INSTELLINGEN:
+ * - Mistral API key (voor OCR/AI functionaliteit)
+ * - Bedrijfsgegevens:
+ *   - Bedrijfsnaam
+ *   - KVK nummer
+ * - Contactpersoon details:
+ *   - Voorletters
+ *   - Achternaam
+ *   - Geslacht
+ *   - Telefoonnummer
+ *   - E-mailadres
+ *
+ * STANDAARD WAARDEN:
+ * Als contactpersoon details niet zijn opgeslagen, worden standaard waarden
+ * gebruikt (A de Vlieger, administratie@saman.nl, etc.)
+ */
 function loadSettings() {
   chrome.storage.local.get(['mistralApiKey', 'isdeConfig'], (result) => {
-    // Load API key
+    // Laad API key
     if (result.mistralApiKey) {
       document.getElementById('mistralApiKey').value = result.mistralApiKey;
     }
 
-    // Load company details from config with defaults for contact person
+    // Laad bedrijfsgegevens uit config met standaard waarden voor contactpersoon
     const config = result.isdeConfig || {};
 
-    // Company details
+    // Bedrijfsgegevens
     document.getElementById('settingsCompanyName').value = config.companyName || '';
     document.getElementById('settingsKvkNumber').value = config.kvkNumber || '';
 
-    // Load contact person details with default values
+    // Laad contactpersoon details met standaard waarden
     document.getElementById('settingsContactInitials').value = config.contactInitials || 'A';
     document.getElementById('settingsContactLastName').value = config.contactLastName || 'de Vlieger';
     document.getElementById('settingsContactGender').value = config.contactGender || 'female';
@@ -1210,6 +1673,22 @@ function loadSettings() {
   });
 }
 
+// ============================================================================
+// INSTELLINGEN OPSLAAN
+// ============================================================================
+/**
+ * Slaat alle instellingen op in Chrome storage.
+ *
+ * OPGESLAGEN INSTELLINGEN:
+ * - Mistral API key (apart opgeslagen voor beveiliging)
+ * - ISDE configuratie object met:
+ *   - Bedrijfsnaam en KVK nummer
+ *   - Contactpersoon voorletters, achternaam, geslacht
+ *   - Contactpersoon telefoon en email
+ *
+ * FEEDBACK:
+ * Toont succesbericht voor 3 seconden na opslaan.
+ */
 function saveSettings() {
   const mistralApiKey = document.getElementById('mistralApiKey').value;
   const companyName = document.getElementById('settingsCompanyName').value;
@@ -1220,10 +1699,10 @@ function saveSettings() {
   const contactPhone = document.getElementById('settingsContactPhone').value;
   const contactEmail = document.getElementById('settingsContactEmail').value;
 
-  // Save API key
+  // Sla API key op
   chrome.storage.local.set({ mistralApiKey: mistralApiKey });
 
-  // Update company details and contact person in config
+  // Update bedrijfsgegevens en contactpersoon in config
   chrome.storage.local.get(['isdeConfig'], (result) => {
     const config = result.isdeConfig || {};
     config.companyName = companyName;
@@ -1246,7 +1725,13 @@ function saveSettings() {
   });
 }
 
-// Load saved config on popup open
+// ============================================================================
+// INITIALISATIE: LAAD CONFIGURATIE BIJ POPUP OPENEN
+// ============================================================================
+/**
+ * Wordt aangeroepen wanneer de popup wordt geopend.
+ * Reset alle velden naar lege waarden voor nieuwe sessie.
+ */
 window.addEventListener('DOMContentLoaded', () => {
   loadConfiguration();
 });

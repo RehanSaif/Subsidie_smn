@@ -13,7 +13,8 @@
     "storage",
     "unlimitedStorage",
     "scripting",
-    "tabs"
+    "tabs",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://eloket.dienstuitvoering.nl/*"
@@ -27,6 +28,9 @@
       "48": "icon-48.png",
       "128": "icon-128.png"
     }
+  },
+  "side_panel": {
+    "default_path": "popup.html"
   },
   "content_scripts": [
     {

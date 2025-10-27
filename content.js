@@ -1,21 +1,77 @@
-// Global flag to track if automation has been stopped
+/**
+ * ============================================================================
+ * ISDE SUBSIDIE AUTOMATISERING - CHROME EXTENSIE CONTENT SCRIPT
+ * ============================================================================
+ *
+ * Doel:
+ * Dit content script automatiseert het volledige ISDE subsidie aanvraagproces
+ * voor warmtepompen via het eLoket portaal van de overheid.
+ *
+ * Belangrijkste componenten:
+ * 1. Globale variabelen en vlaggen voor status tracking
+ * 2. Helper functies voor timeouts en status paneel beheer
+ * 3. Message listener voor communicatie met de popup/background
+ * 4. Helper functies voor DOM interactie (wachten, klikken, invullen)
+ * 5. detectCurrentStep() - detecteert huidige pagina in het aanvraagproces
+ * 6. startFullAutomation() - hoofdloop die door alle stappen navigeert
+ *
+ * Workflow:
+ * - Gebruiker start automatisering via popup
+ * - Script detecteert huidige stap in het proces
+ * - Vult formuliervelden in, klikt op knoppen, upload bestanden
+ * - Navigeert door alle ~20 stappen tot finale indiening
+ * - Gebruiker kan pauzeren, hervatten of stoppen via status paneel
+ *
+ * @author Chrome Extension
+ * @version 1.0
+ */
+
+// ============================================================================
+// SECTIE 1: GLOBALE VARIABELEN EN VLAGGEN
+// ============================================================================
+
+/**
+ * Globale vlag om bij te houden of de automatisering is gestopt door de gebruiker.
+ * Wanneer true, wordt alle verdere automatisering direct afgebroken.
+ */
 let automationStopped = false;
 
-// Global flag to track if automation has been paused
+/**
+ * Globale vlag om bij te houden of de automatisering is gepauzeerd door de gebruiker.
+ * Wanneer true, wacht de automatisering tot de gebruiker op "Hervat" klikt.
+ */
 let automationPaused = false;
 
-// Array to track all active timeouts so we can cancel them
+/**
+ * Array om alle actieve timeouts bij te houden zodat we ze kunnen annuleren
+ * wanneer de gebruiker pauzeert of stopt. Voorkomt zombie-timers.
+ */
 let activeTimeouts = [];
 
-// Loop detection: track how many times the same step has been executed
+/**
+ * Loop detectie: houdt bij hoeveel keer dezelfde stap is uitgevoerd.
+ * Als een stap te vaak wordt herhaald, pauzeert de automatisering automatisch
+ * om een oneindige loop te voorkomen.
+ */
 let lastExecutedStep = null;
 let stepExecutionCount = 0;
-const MAX_STEP_RETRIES = 2; // Auto-pause after 2 attempts on the same step
+const MAX_STEP_RETRIES = 2; // Auto-pauze na 2 pogingen op dezelfde stap
 
-// Helper function to create a tracked timeout
+// ============================================================================
+// SECTIE 2: HELPER FUNCTIES VOOR TIMEOUT BEHEER
+// ============================================================================
+
+/**
+ * Creëert een timeout die wordt bijgehouden in de activeTimeouts array.
+ * Hierdoor kunnen we alle timeouts annuleren wanneer de gebruiker pauzeert of stopt.
+ *
+ * @param {Function} callback - De functie die na de delay wordt uitgevoerd
+ * @param {number} delay - Vertraging in milliseconden
+ * @returns {number} Het timeout ID
+ */
 function createTimeout(callback, delay) {
   const timeoutId = setTimeout(() => {
-    // Remove from active timeouts when it executes
+    // Verwijder van actieve timeouts wanneer deze wordt uitgevoerd
     const index = activeTimeouts.indexOf(timeoutId);
     if (index > -1) {
       activeTimeouts.splice(index, 1);
@@ -26,21 +82,39 @@ function createTimeout(callback, delay) {
   return timeoutId;
 }
 
-// Function to clear all active timeouts
+/**
+ * Wist alle actieve timeouts en leegt de array.
+ * Wordt aangeroepen wanneer de gebruiker de automatisering pauzeert of stopt.
+ */
 function clearAllTimeouts() {
   console.log(`Clearing ${activeTimeouts.length} active timeouts`);
   activeTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
   activeTimeouts = [];
 }
 
-// Create status panel functions
+// ============================================================================
+// SECTIE 3: STATUS PANEEL FUNCTIES
+// ============================================================================
+
+/**
+ * Creëert een visueel status paneel rechtsboven op de pagina.
+ * Dit paneel toont:
+ * - Huidige status van de automatisering
+ * - Gedetecteerde stap
+ * - Configuratiegegevens (inklapbaar)
+ * - Bedieningsknoppen (Pauze, Hervat, Stop)
+ *
+ * Het paneel blijft zichtbaar tijdens het hele automatiseringsproces en
+ * geeft de gebruiker controle over de automatisering.
+ */
 function createStatusPanel() {
-  // Remove existing panel if present
+  // Verwijder bestaand paneel indien aanwezig (voorkomt duplicaten)
   const existingPanel = document.getElementById('isde-automation-panel');
   if (existingPanel) {
     existingPanel.remove();
   }
 
+  // Creëer het paneel element met volledige styling en structuur
   const panel = document.createElement('div');
   panel.id = 'isde-automation-panel';
   panel.innerHTML = `
@@ -110,14 +184,18 @@ function createStatusPanel() {
   `;
   document.head.appendChild(style);
 
-  // Toggle config data visibility
+  // -------------------------------------------------------------------------
+  // Event Handler: Toggle knop voor configuratie gegevens
+  // -------------------------------------------------------------------------
+  // Toont/verbergt de configuratiegegevens in het paneel wanneer de gebruiker
+  // op de pijl knop klikt. Gegevens worden opgehaald uit sessionStorage.
   document.getElementById('toggle-config-data').addEventListener('click', () => {
     const container = document.getElementById('config-data-container');
     const icon = document.getElementById('toggle-icon');
     const content = document.getElementById('config-data-content');
 
     if (container.style.display === 'none') {
-      // Show config data
+      // Toon configuratie gegevens
       const config = JSON.parse(sessionStorage.getItem('automationConfig') || '{}');
 
       // Format config data nicely
@@ -194,12 +272,16 @@ function createStatusPanel() {
     }
   });
 
-  // Pauze knop
+  // -------------------------------------------------------------------------
+  // Event Handler: Pauze knop
+  // -------------------------------------------------------------------------
+  // Pauzeert de automatisering. Alle actieve timeouts worden gewist en de
+  // automatisering stopt totdat de gebruiker op "Hervat" klikt.
   document.getElementById('pause-automation').addEventListener('click', () => {
     console.log('⏸ Pause automation clicked');
     automationPaused = true;
 
-    // Stop all active timeouts (but don't clear the array, so we can track state)
+    // Stop alle actieve timeouts (maar behoud de array voor status tracking)
     console.log(`⏸ Pausing - clearing ${activeTimeouts.length} active timeouts`);
     activeTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
     activeTimeouts = [];
@@ -212,16 +294,20 @@ function createStatusPanel() {
     console.log('✅ Automation paused - all pending actions stopped. Click Hervat to continue from current step.');
   });
 
-  // Hervat/Doorgaan knop
+  // -------------------------------------------------------------------------
+  // Event Handler: Hervat/Doorgaan knop
+  // -------------------------------------------------------------------------
+  // Hervat de automatisering na een pauze of handmatige interventie.
+  // Reset loop detectie tellers omdat de gebruiker handmatig heeft ingegrepen.
   document.getElementById('continue-automation').addEventListener('click', () => {
     const config = JSON.parse(sessionStorage.getItem('automationConfig') || '{}');
 
-    // If paused, resume
+    // Als gepauzeerd, hervat de automatisering
     if (automationPaused) {
       console.log('▶ Resume automation clicked');
       automationPaused = false;
 
-      // Reset loop detection counters on resume (user has intervened manually)
+      // Reset loop detectie tellers na hervatten (gebruiker heeft handmatig ingegrepen)
       lastExecutedStep = null;
       stepExecutionCount = 0;
       console.log('🔄 Loop detection counters reset after manual intervention');
@@ -235,10 +321,10 @@ function createStatusPanel() {
       return;
     }
 
-    // Manual continue (not from pause)
+    // Handmatig doorgaan (niet vanuit pauze)
     console.log('🔄 Manual continue clicked, resuming automation');
 
-    // Check if modal is open and force step to meldcode_lookup_opened
+    // Controleer of meldcode modal open is en forceer stap naar meldcode_lookup_opened
     const modalOpen = Array.from(document.querySelectorAll('*')).some(el =>
       el.textContent && el.textContent.includes('Selecteer hier uw keuze')
     );
@@ -252,27 +338,56 @@ function createStatusPanel() {
     startFullAutomation(config);
   });
 
-  // Stop knop
+  // -------------------------------------------------------------------------
+  // Event Handler: Stop knop
+  // -------------------------------------------------------------------------
+  // Stopt de automatisering volledig. Wist alle timeouts, reset alle vlaggen,
+  // verwijdert het paneel en wist de automatisering status uit sessionStorage.
   document.getElementById('stop-automation').addEventListener('click', () => {
     console.log('❌ Stop automation clicked');
-    // Set global flags to stop automation
+    // Zet globale vlaggen om automatisering te stoppen
     automationStopped = true;
     automationPaused = false;
-    // Reset loop detection counters
+    // Reset loop detectie tellers
     lastExecutedStep = null;
     stepExecutionCount = 0;
-    // Clear all pending timeouts
+    // Wis alle wachtende timeouts
     clearAllTimeouts();
-    // Clear all automation state
+    // Wis alle automatisering status uit sessionStorage
     sessionStorage.removeItem('automationConfig');
     sessionStorage.removeItem('automationStep');
     sessionStorage.removeItem('lastNieuweAanvraagClick');
-    // Remove the panel completely
+
+    // Wis crash recovery data voor deze specifieke sessie
+    const config = sessionStorage.getItem('automationConfig');
+    if (config) {
+      try {
+        const configObj = JSON.parse(config);
+        const sessionId = configObj.sessionId;
+        const recoveryKey = sessionId ? `automation_recovery_${sessionId}` : 'automation_recovery';
+        chrome.storage.local.remove(recoveryKey);
+      } catch (e) {
+        // Als parsing faalt, probeer default key te verwijderen
+        chrome.storage.local.remove('automation_recovery');
+      }
+    } else {
+      // Geen config, verwijder default key
+      chrome.storage.local.remove('automation_recovery');
+    }
+
+    // Verwijder het paneel volledig
     panel.remove();
     console.log('✅ Automation stopped completely - all timeouts cleared, panel removed');
   });
 }
 
+/**
+ * Update de status weergave in het paneel.
+ *
+ * @param {string} message - Het statusbericht om weer te geven
+ * @param {string} step - De huidige stap naam
+ * @param {string} detectedStep - De gedetecteerde stap (optioneel)
+ */
 function updateStatus(message, step, detectedStep) {
   const statusDiv = document.getElementById('automation-status');
   const stepDiv = document.getElementById('current-step');
@@ -285,26 +400,42 @@ function updateStatus(message, step, detectedStep) {
   }
 }
 
-// Listen for messages from popup or background
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+// ============================================================================
+// SECTIE 4: MESSAGE LISTENER VOOR COMMUNICATIE MET POPUP/BACKGROUND
+// ============================================================================
+
+/**
+ * Luistert naar berichten van de popup of background script.
+ * Ondersteunde acties:
+ * - 'startAutomation': Start de volledige automatisering met de meegegeven config
+ * - 'fillCurrentPage': Vult alleen de huidige pagina (voor testen)
+ *
+ * Bij 'startAutomation':
+ * 1. Reset alle vlaggen en timeouts
+ * 2. Creëert status paneel
+ * 3. Haalt bestandsgegevens op uit chrome.storage.local
+ * 4. Start de automatisering loop
+ */
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.action === 'startAutomation') {
     console.log('Starting automation with config:', request.config);
-    // Reset flags when starting new automation
+    // Reset vlaggen bij het starten van nieuwe automatisering
     automationStopped = false;
     automationPaused = false;
-    // Reset loop detection counters
+    // Reset loop detectie tellers
     lastExecutedStep = null;
     stepExecutionCount = 0;
-    // Clear all pending timeouts from previous runs
+    // Wis alle wachtende timeouts van vorige runs
     clearAllTimeouts();
-    // Clear any existing automation state
+    // Wis bestaande automatisering status
     sessionStorage.removeItem('automationStep');
     sessionStorage.removeItem('automationConfig');
     console.log('Cleared automation state and timeouts, starting fresh');
     createStatusPanel();
     updateStatus('Automatisering gestart', 'Initialiseren');
 
-    // Retrieve files from chrome.storage.local if keys are provided
+    // Haal bestandsgegevens op uit chrome.storage.local als er keys zijn opgegeven
+    // Dit is nodig omdat bestanden niet direct via messages kunnen worden verzonden
     const filesToRetrieve = [];
     if (request.config.betaalbewijsKey) filesToRetrieve.push(request.config.betaalbewijsKey);
     if (request.config.factuurKey) filesToRetrieve.push(request.config.factuurKey);
@@ -313,7 +444,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (filesToRetrieve.length > 0) {
       console.log('📥 Retrieving files from chrome.storage.local:', filesToRetrieve);
       chrome.storage.local.get(filesToRetrieve, (result) => {
-        // Replace keys with actual file data
+        // Vervang keys met daadwerkelijke bestandsgegevens
         if (request.config.betaalbewijsKey) {
           request.config.betaalbewijs = result[request.config.betaalbewijsKey];
           delete request.config.betaalbewijsKey;
@@ -330,13 +461,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         console.log('✅ Files retrieved successfully for session:', request.config.sessionId);
         startFullAutomation(request.config);
 
-        // Clean up storage after automation completes (60 seconds should be enough)
-        // Each tab has unique session ID, so this only removes files from THIS tab
+        // Ruim opslag op nadat automatisering klaar is (60 seconden is voldoende)
+        // Elk tabblad heeft een unieke sessie ID, dus dit verwijdert alleen bestanden van DIT tabblad
         setTimeout(() => {
           chrome.storage.local.remove(filesToRetrieve, () => {
             console.log('🧹 Cleaned up temporary files from storage for session:', request.config.sessionId);
           });
-        }, 60000); // 60 seconds - enough time for file upload step
+        }, 60000); // 60 seconden - genoeg tijd voor bestand upload stap
       });
     } else {
       startFullAutomation(request.config);
@@ -350,7 +481,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Helper function to wait for element
+// ============================================================================
+// SECTIE 5: HELPER FUNCTIES VOOR DOM INTERACTIE
+// ============================================================================
+
+/**
+ * Wacht tot een element met de opgegeven CSS selector verschijnt in de DOM.
+ * Gebruikt polling elke 100ms om te controleren of het element aanwezig is.
+ *
+ * @param {string} selector - CSS selector van het element
+ * @param {number} timeout - Maximale wachttijd in milliseconden (standaard: 10000)
+ * @returns {Promise<Element>} Het gevonden element
+ * @throws {Error} Als het element niet wordt gevonden binnen de timeout
+ */
 function waitForElement(selector, timeout = 10000) {
   return new Promise((resolve, reject) => {
     const startTime = Date.now();
@@ -370,7 +513,15 @@ function waitForElement(selector, timeout = 10000) {
   });
 }
 
-// Helper function to wait for element by text content
+/**
+ * Wacht tot een element (link) met de opgegeven tekstinhoud verschijnt.
+ * Zoekt specifiek naar <a> elementen die de zoektekst bevatten.
+ *
+ * @param {string} searchText - De tekst om naar te zoeken in link elementen
+ * @param {number} timeout - Maximale wachttijd in milliseconden (standaard: 10000)
+ * @returns {Promise<Element>} Het gevonden link element
+ * @throws {Error} Als het element niet wordt gevonden binnen de timeout
+ */
 function waitForElementByText(searchText, timeout = 10000) {
   return new Promise((resolve, reject) => {
     const startTime = Date.now();
@@ -395,13 +546,21 @@ function waitForElementByText(searchText, timeout = 10000) {
   });
 }
 
-// Helper function to click element
+/**
+ * Klikt op een element met mensachtig gedrag.
+ * Scrolt eerst het element in beeld, wacht even, en klikt dan.
+ * Controleert voor en tijdens elke stap of de automatisering is gepauzeerd of gestopt.
+ *
+ * @param {string|Element} selectorOrElement - CSS selector of het element zelf
+ */
 async function clickElement(selectorOrElement) {
+  // Controleer of automatisering is gepauzeerd of gestopt
   if (automationPaused || automationStopped) {
     console.log('⏸ Click cancelled - automation paused or stopped');
     return;
   }
 
+  // Verkrijg het element (ofwel via selector ofwel gebruik direct element)
   let element;
   if (typeof selectorOrElement === 'string') {
     element = await waitForElement(selectorOrElement);
@@ -409,42 +568,62 @@ async function clickElement(selectorOrElement) {
     element = selectorOrElement;
   }
 
+  // Controleer opnieuw na wachten
   if (automationPaused || automationStopped) {
     console.log('⏸ Click cancelled - automation paused or stopped');
     return;
   }
 
+  // Scroll element in beeld (mensachtig gedrag)
   element.scrollIntoView({behavior: 'smooth', block: 'center'});
   await new Promise(r => setTimeout(r, 500));
 
+  // Laatste controle voor de klik
   if (automationPaused || automationStopped) {
     console.log('⏸ Click cancelled - automation paused or stopped');
     return;
   }
 
+  // Voer de klik uit en wacht daarna
   element.click();
   await new Promise(r => setTimeout(r, 1000));
 }
 
-// Helper function to fill input - paste entire value instantly
+/**
+ * Vult een invoerveld met de opgegeven waarde.
+ * Simuleert mensachtig gedrag door:
+ * - Element in beeld te scrollen
+ * - Willekeurige vertragingen toe te voegen
+ * - Veld te focussen voor het invullen
+ * - Input events te triggeren
+ *
+ * Bevat speciale sanitatie logica voor:
+ * - Telefoonnummers (verwijdert spaties, streepjes)
+ * - IBAN nummers (corrigeert OCR fouten, verwijdert BIC codes)
+ *
+ * @param {string} selector - CSS selector van het invoerveld
+ * @param {string} value - De waarde om in te vullen
+ */
 async function fillInput(selector, value) {
   if (!value) return;
 
+  // Controleer of automatisering is gepauzeerd of gestopt
   if (automationPaused || automationStopped) {
     console.log('⏸ Fill cancelled - automation paused or stopped');
     return;
   }
 
+  // Wacht op het element en scroll in beeld
   const element = await waitForElement(selector);
   element.scrollIntoView({behavior: 'smooth', block: 'center'});
-  await new Promise(r => setTimeout(r, 400 + Math.random() * 200)); // Wait before interacting
+  await new Promise(r => setTimeout(r, 400 + Math.random() * 200)); // Willekeurige wachttijd voor mensachtig gedrag
 
   if (automationPaused || automationStopped) {
     console.log('⏸ Fill cancelled - automation paused or stopped');
     return;
   }
 
-  // Focus the field first
+  // Focus het veld eerst (mensachtig gedrag)
   element.focus();
   await new Promise(r => setTimeout(r, 250 + Math.random() * 150));
 
@@ -453,36 +632,42 @@ async function fillInput(selector, value) {
     return;
   }
 
-  // Clear existing value first
+  // Wis bestaande waarde eerst
   element.value = '';
   element.dispatchEvent(new Event('input', { bubbles: true }));
   await new Promise(r => setTimeout(r, 150 + Math.random() * 100));
 
-  // Sanitize values based on field type
+  // Saniteer waarden op basis van veldtype
   let sanitizedValue = value;
 
-  // Phone number sanitization - remove dashes, spaces, and other punctuation
+  // -------------------------------------------------------------------------
+  // Telefoonnummer sanitatie
+  // -------------------------------------------------------------------------
+  // Verwijdert streepjes, spaties en andere leestekens uit telefoonnummers
   if (selector.includes('Telefoon') || selector.includes('telefoon')) {
-    // Remove all characters except digits and +
+    // Behoud alleen cijfers en het + teken
     sanitizedValue = value.replace(/[^0-9+]/g, '');
     console.log(`📞 Sanitized phone: "${value}" → "${sanitizedValue}"`);
   }
 
-  // IBAN sanitization - fix common OCR errors and remove BIC codes
+  // -------------------------------------------------------------------------
+  // IBAN sanitatie
+  // -------------------------------------------------------------------------
+  // Corrigeert veelvoorkomende OCR fouten en verwijdert BIC codes
   if (selector.includes('IBAN') || selector.includes('iban')) {
     console.log(`🏦 Original IBAN value: "${value}"`);
 
-    // Remove dots/periods that OCR might add
+    // Verwijder punten/perioden die OCR mogelijk heeft toegevoegd
     sanitizedValue = sanitizedValue.replace(/\./g, '');
 
-    // Remove BIC codes (like RABONL2U, ABNANL2A, etc.)
-    // BIC is 8-11 characters: 4 letters (bank) + 2 letters (country) + 2 chars (location) + optional 3 chars (branch)
-    // Common pattern: RABONL2U, ABNANL2A, INGBNL2A
-    // Remove any trailing uppercase sequence that looks like a BIC after the IBAN
+    // Verwijder BIC codes (zoals RABONL2U, ABNANL2A, etc.)
+    // BIC is 8-11 tekens: 4 letters (bank) + 2 letters (land) + 2 tekens (locatie) + optioneel 3 tekens (filiaal)
+    // Veelvoorkomend patroon: RABONL2U, ABNANL2A, INGBNL2A
+    // Verwijder elke achtergebleven hoofdletter reeks die lijkt op een BIC na het IBAN
     sanitizedValue = sanitizedValue.replace(/([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?)$/g, '');
 
-    // Fix OCR errors: O→0, I/l→1, S→5
-    // Only fix these in the digits section (after NL)
+    // Corrigeer OCR fouten: O→0, I/l→1, S→5
+    // Pas dit alleen toe in het cijfergedeelte (na NL)
     if (sanitizedValue.toUpperCase().startsWith('NL')) {
       // Remove all spaces first to work with clean IBAN
       const cleanIban = sanitizedValue.replace(/\s/g, '');
@@ -542,27 +727,36 @@ async function fillInput(selector, value) {
   await new Promise(r => setTimeout(r, 300 + Math.random() * 200)); // Wait after to let validation complete
 }
 
-// Helper function to upload a file
+/**
+ * Upload een bestand naar een file input veld.
+ * Converteert base64 data naar een File object en simuleert een bestandsselectie.
+ *
+ * @param {Object} fileData - Object met bestandsgegevens
+ * @param {string} fileData.data - Base64 encoded bestandsdata
+ * @param {string} fileData.name - Bestandsnaam
+ * @param {string} fileData.type - MIME type van het bestand
+ * @throws {Error} Als het uploaden mislukt
+ */
 async function uploadFile(fileData) {
   if (!fileData) return;
 
   try {
-    // Find the file input element (it's inside the modal)
+    // Zoek het file input element (zit in de modal)
     const fileInput = await waitForElement('#lip_modalWindow div.content input[type="file"], #lip_attachments_resumable input[type="file"]', 5000);
 
-    // Convert base64 data to Blob
+    // Converteer base64 data naar Blob
     const response = await fetch(fileData.data);
     const blob = await response.blob();
 
-    // Create a File object from the Blob
+    // Creëer een File object van de Blob
     const file = new File([blob], fileData.name, { type: fileData.type });
 
-    // Create DataTransfer to simulate file selection
+    // Creëer DataTransfer om bestandsselectie te simuleren
     const dataTransfer = new DataTransfer();
     dataTransfer.items.add(file);
     fileInput.files = dataTransfer.files;
 
-    // Trigger change event to notify the form
+    // Trigger change event om het formulier te notificeren
     fileInput.dispatchEvent(new Event('change', { bubbles: true }));
 
     console.log('File uploaded successfully:', fileData.name);
@@ -572,9 +766,15 @@ async function uploadFile(fileData) {
   }
 }
 
-// Fill current page based on detected fields
+/**
+ * Vult de huidige pagina met gegevens uit de configuratie.
+ * Wordt gebruikt voor testen of handmatig invullen.
+ * Zoekt naar bekende velden en vult deze in met de juiste waarden.
+ *
+ * @param {Object} config - Configuratie object met gebruikersgegevens
+ */
 function fillCurrentPage(config) {
-  // Personal info and company fields
+  // Persoonlijke informatie en bedrijfsvelden
   const fields = [
     ['#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edBSNnummer', config.bsn],
     ['#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edVoorletters2', config.initials],
@@ -647,19 +847,61 @@ function fillCurrentPage(config) {
   });
 }
 
-// Detect current page/step by looking at DOM elements
-// This is the PRIMARY way to determine where we are - more reliable than sessionStorage
-function detectCurrentStep() {
-  // Check from most specific to least specific to avoid false matches
+// ============================================================================
+// SECTIE 6: STAP DETECTIE FUNCTIE
+// ============================================================================
 
-  // Step 20: Final terms (must have both checkbox AND submit button)
+/**
+ * Detecteert de huidige stap in het aanvraagproces door de DOM te analyseren.
+ * Dit is de PRIMAIRE manier om te bepalen waar we zijn - betrouwbaarder dan sessionStorage.
+ *
+ * De functie controleert van meest specifiek naar minst specifiek om false positives te voorkomen.
+ *
+ * Stappenlijst (in volgorde van controle):
+ * 1. final_confirmed - Eindvoorwaarden pagina met indienen knop
+ * 2. final_review_page - Finale review pagina (Verzenden tab)
+ * 3. final_confirmation - Finale bevestigingsvraag
+ * 4. vervolgstap_modal - Vervolgstap modal na bestand upload
+ * 5. measure_confirmation_dialog - "Zijn alle maatregelen toegevoegd?" dialoog
+ * 6. final_measure_overview - Finale maatregel overzicht met subsidiebedrag
+ * 7. measure_overview - Maatregel toegevoegd pagina
+ * 8. meldcode_selected - Bestand upload pagina
+ * 9. meldcode_lookup_opened - Meldcode lookup tabel/modal
+ * 10. date_continued - Meldcode lookup knop zichtbaar
+ * 11. meldcode_search_in_wizard - Meldcode zoeken binnen warmtepomp wizard
+ * 12. warmtepomp_selected - Installatie datum modal
+ * 13. measure_added - Warmtepomp selectie modal
+ * 14. bag_different_done - Maatregel toevoegen pagina
+ * 15. bag_address_form - Installatie adres formulier
+ * 16. address_different_done - BAG pagina
+ * 17. correspondence_done - Adres pagina
+ * 18. personal_info_done - Intermediair pagina
+ * 19. info_acknowledged - Persoonlijke gegevens pagina
+ * 20. declarations_done - Info bevestiging pagina
+ * 21. first_volgende_clicked - Verklaringen pagina
+ * 22. isde_selected - Eerste Volgende pagina
+ * 23. nieuwe_aanvraag_clicked - ISDE catalogus pagina
+ * 24. start - Hoofdpagina
+ * 25. unknown - Geen overeenkomende elementen gevonden
+ *
+ * @returns {string} De gedetecteerde stap naam
+ */
+function detectCurrentStep() {
+  // Controleer van meest specifiek naar minst specifiek om false matches te voorkomen
+
+  // -------------------------------------------------------------------------
+  // Stap 20: Eindvoorwaarden pagina
+  // -------------------------------------------------------------------------
+  // Moet BEIDE elementen hebben: akkoord checkbox EN indienen knop
   if (document.querySelector('#cbAccoord') && document.querySelector('input[value="Indienen"]')) {
     console.log('🎯 Detected: final_confirmed - Terms page with submit button');
     return 'final_confirmed';
   }
 
-  // Step 19.5: Final review page (Verzenden tab - "Controleer uw gegevens")
-  // CHECK THIS EARLY to avoid false positives from earlier steps
+  // -------------------------------------------------------------------------
+  // Stap 19.5: Finale review pagina (Verzenden tab - "Controleer uw gegevens")
+  // -------------------------------------------------------------------------
+  // CONTROLEER DIT VROEG om false positives van eerdere stappen te voorkomen
   const hasControleerGegevens = Array.from(document.querySelectorAll('*')).some(el =>
     el.textContent && el.textContent.includes('Controleer uw gegevens')
   );
@@ -907,16 +1149,45 @@ function detectCurrentStep() {
   return 'unknown';
 }
 
-// Main automation function following the exact recording
+// ============================================================================
+// SECTIE 7: HOOFD AUTOMATISERING FUNCTIE
+// ============================================================================
+
+/**
+ * Hoofdfunctie voor volledige ISDE subsidie automatisering.
+ * Volgt exact de opgenomen workflow door alle stappen heen.
+ *
+ * Werking:
+ * 1. Controleert of automatisering gestopt/gepauzeerd is
+ * 2. Detecteert huidige stap via DOM analyse
+ * 3. Vergelijkt met sessionStorage voor betrouwbaarheid
+ * 4. Voert loop detectie uit om infinite loops te voorkomen
+ * 5. Voert acties uit voor de huidige stap
+ * 6. Navigeert naar volgende stap
+ * 7. Herhaalt tot volledige aanvraag is ingediend
+ *
+ * Loop detectie:
+ * - Houdt bij hoeveel keer dezelfde stap wordt uitgevoerd
+ * - Pauzeert automatisch na MAX_STEP_RETRIES pogingen
+ * - Voorkomt infinite loops en vraagt om handmatige interventie
+ *
+ * Pauze/Stop mechanisme:
+ * - Controleert voor elke actie of gebruiker heeft gepauzeerd/gestopt
+ * - Stopt direct bij stop commando
+ * - Wacht bij pauze tot gebruiker op "Hervat" klikt
+ *
+ * @param {Object} config - Configuratie object met alle gebruikersgegevens en bestanden
+ */
 async function startFullAutomation(config) {
-  // Check if automation has been stopped by user - CRITICAL CHECK
+  // -------------------------------------------------------------------------
+  // Kritische controles: stop en pauze
+  // -------------------------------------------------------------------------
   if (automationStopped) {
     console.log('❌ Automation stopped by user, not continuing');
-    clearAllTimeouts(); // Clear any pending timeouts
+    clearAllTimeouts(); // Wis alle wachtende timeouts
     return;
   }
 
-  // Check if automation has been paused by user
   if (automationPaused) {
     console.log('⏸ Automation paused by user, waiting for resume');
     return;
@@ -926,7 +1197,7 @@ async function startFullAutomation(config) {
     const currentUrl = window.location.href;
     console.log('Current URL:', currentUrl);
 
-    // Double check automation not stopped or paused
+    // Dubbele controle dat automatisering niet gestopt of gepauzeerd is
     if (automationStopped) {
       console.log('❌ Automation stopped during execution');
       return;
@@ -937,32 +1208,39 @@ async function startFullAutomation(config) {
       return;
     }
 
-    // Detect current step from DOM rather than just sessionStorage
+    // -------------------------------------------------------------------------
+    // Stap detectie: Combineer DOM analyse met sessionStorage
+    // -------------------------------------------------------------------------
     const detectedStep = detectCurrentStep();
     const sessionStep = sessionStorage.getItem('automationStep') || 'start';
 
     console.log('Detected step from DOM:', detectedStep);
     console.log('Session step:', sessionStep);
 
-    // IMPORTANT: Only trust detection if it makes sense with session, or if session is empty
-    // This prevents detection from overwriting correct session state when page is still loading
+    // BELANGRIJK: Vertrouw detectie alleen als het logisch is met sessie, of als sessie leeg is
+    // Dit voorkomt dat detectie correcte sessie status overschrijft tijdens laden
     let currentStep;
     if (!sessionStep || sessionStep === 'start') {
-      // No session or at start - trust detection
+      // Geen sessie of bij start - vertrouw detectie
       currentStep = detectedStep !== 'unknown' ? detectedStep : sessionStep;
     } else if (detectedStep !== 'unknown' && detectedStep !== 'start') {
-      // Both have values - trust detection if it's not 'start' (common false positive)
+      // Beide hebben waarden - vertrouw detectie als het niet 'start' is (veelvoorkomende false positive)
       currentStep = detectedStep;
       sessionStorage.setItem('automationStep', detectedStep);
     } else {
-      // Detection failed or returned 'start' - trust session
+      // Detectie mislukt of retourneerde 'start' - vertrouw sessie
       console.log('⚠️ Detection unclear, trusting session storage');
       currentStep = sessionStep;
     }
 
     console.log('Using step:', currentStep);
 
-    // Loop detection: check if we're stuck on the same step
+    // Sla voortgang periodiek op voor crash recovery
+    saveProgressForRecovery();
+
+    // -------------------------------------------------------------------------
+    // Loop detectie: Voorkom infinite loops
+    // -------------------------------------------------------------------------
     if (currentStep === lastExecutedStep) {
       stepExecutionCount++;
       console.log(`⚠️ Loop detected: Step "${currentStep}" executed ${stepExecutionCount} times`);
@@ -971,7 +1249,7 @@ async function startFullAutomation(config) {
         console.log('🛑 LOOP DETECTED: Same step executed too many times, auto-pausing for manual intervention');
         automationPaused = true;
 
-        // Update UI to show pause state
+        // Update UI om pauze status te tonen
         const pauseBtn = document.getElementById('pause-automation');
         const resumeBtn = document.getElementById('continue-automation');
         if (pauseBtn) pauseBtn.style.display = 'none';
@@ -982,25 +1260,29 @@ async function startFullAutomation(config) {
           'HANDMATIG INGRIJPEN VEREIST'
         );
 
-        // Reset counter so user can try again after manual intervention
+        // Reset teller zodat gebruiker het opnieuw kan proberen na handmatige interventie
         stepExecutionCount = 0;
         lastExecutedStep = null;
         return;
       }
     } else {
-      // Different step, reset counter
+      // Andere stap, reset teller
       lastExecutedStep = currentStep;
       stepExecutionCount = 1;
     }
 
-    // Update status to show detected step
+    // Update status om gedetecteerde stap te tonen
     updateStatus('Klaar om door te gaan', currentStep, detectedStep);
 
-    // Step 1: Click "Nieuwe aanvraag" link (page_1_navigation_3_link from recording)
+    // =========================================================================
+    // STAP 1: Klik op "Nieuwe aanvraag" link
+    // =========================================================================
+    // Dit is de startpagina. We klikken op de "Nieuwe aanvraag" link om naar
+    // de cataloguspagina te navigeren waar we ISDE kunnen selecteren.
     if (currentStep === 'start') {
       console.log('Step 1: Looking for Nieuwe aanvraag link');
 
-      // Check if we already clicked recently to prevent infinite loop
+      // Controleer of we recent al geklikt hebben om infinite loop te voorkomen
       const lastClickTime = sessionStorage.getItem('lastNieuweAanvraagClick');
       const now = Date.now();
       if (lastClickTime && (now - parseInt(lastClickTime)) < 5000) {
@@ -1009,7 +1291,7 @@ async function startFullAutomation(config) {
         return;
       }
 
-      // Use exact selector from recording
+      // Gebruik exacte selector uit opname
       const nav3Link = document.querySelector('#page_1_navigation_3_link');
       console.log('Found #page_1_navigation_3_link:', !!nav3Link);
 
@@ -1017,7 +1299,7 @@ async function startFullAutomation(config) {
         console.log('Step 1: Clicking Nieuwe aanvraag link');
         updateStatus('Klik op Nieuwe aanvraag link', '1 - Navigatie');
 
-        // Mark that we clicked to prevent loops
+        // Markeer dat we geklikt hebben om loops te voorkomen
         sessionStorage.setItem('lastNieuweAanvraagClick', now.toString());
         sessionStorage.setItem('automationStep', 'nieuwe_aanvraag_clicked');
         sessionStorage.setItem('automationConfig', JSON.stringify(config));
@@ -1185,12 +1467,16 @@ async function startFullAutomation(config) {
       return;
     }
 
-    // Step 6: Personal information
+    // =========================================================================
+    // STAP 6: Persoonlijke informatie invullen
+    // =========================================================================
+    // Vult alle persoonlijke gegevens in: BSN, naam, telefoon, email, IBAN, adres.
+    // Gebruikt extra vertragingen tussen velden om robot detectie te vermijden.
     if (document.querySelector('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edBSNnummer') && currentStep === 'info_acknowledged') {
       console.log('Step 6: Filling personal information');
       updateStatus('Persoonlijke gegevens invullen', '6 - Persoonlijke Gegevens', detectedStep);
-      
-      // Fill fields with extra delays to avoid robot detection
+
+      // Vul velden met extra vertragingen om robot detectie te voorkomen
       await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edBSNnummer', config.bsn);
       await new Promise(r => setTimeout(r, 1000 + Math.random() * 500));
       
@@ -1842,13 +2128,21 @@ async function startFullAutomation(config) {
       }, 1500);
       return;
     }
-    
-    // Step 18: File upload page
+
+    // =========================================================================
+    // STAP 18: Documenten uploaden
+    // =========================================================================
+    // Upload betaalbewijs (verplicht) en factuur (verplicht).
+    // Voor elk bestand:
+    // 1. Klik op "Toevoegen bijlage" knop
+    // 2. Wacht op modal
+    // 3. Upload bestand via file input
+    // 4. Wacht op upload voltooiing
     if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.0\\.btn_ToevoegenBijlage') && currentStep === 'meldcode_selected') {
       console.log('Step 18: File upload page');
       updateStatus('Documenten uploaden', '18 - Documenten Uploaden', detectedStep);
 
-      // Upload betaalbewijs (payment proof) - first document
+      // Upload betaalbewijs (betaalbewijs) - eerste document (VERPLICHT)
       if (config.betaalbewijs) {
         console.log('Uploading betaalbewijs:', config.betaalbewijs.name);
         await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.0\\.btn_ToevoegenBijlage');
@@ -1857,7 +2151,7 @@ async function startFullAutomation(config) {
         await new Promise(r => setTimeout(r, 2000));
       }
 
-      // Upload factuur (invoice) - second document
+      // Upload factuur (factuur) - tweede document (VERPLICHT)
       if (config.factuur) {
         console.log('Uploading factuur:', config.factuur.name);
         await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.1\\.btn_ToevoegenBijlage');
@@ -1866,10 +2160,11 @@ async function startFullAutomation(config) {
         await new Promise(r => setTimeout(r, 2000));
       }
 
+      // Controleer of verplichte documenten aanwezig zijn
       if (!config.betaalbewijs || !config.factuur) {
         console.log('Missing documents - manual intervention required');
         updateStatus('Upload ontbrekende documenten handmatig', '18 - Handmatige upload vereist');
-        alert('Please upload betaalbewijs and/or factuur manually, then click Continue.');
+        alert('Upload betaalbewijs en/of factuur handmatig, en klik daarna op Hervat.');
         return;
       }
 
@@ -2160,12 +2455,19 @@ async function startFullAutomation(config) {
       return;
     }
 
-    // Step 20: Accept terms - scroll to bottom for manual review
+    // =========================================================================
+    // STAP 20: Eindvoorwaarden accepteren - LAATSTE STAP
+    // =========================================================================
+    // Dit is de LAATSTE stap van de automatisering.
+    // We scrollen naar beneden zodat de gebruiker de voorwaarden kan controleren.
+    // De gebruiker moet HANDMATIG de checkbox aanvinken en op "Indienen" klikken
+    // voor de finale verzending. Dit is opzettelijk handmatig om de gebruiker
+    // volledige controle te geven over de uiteindelijke indiening.
     if (document.querySelector('#cbAccoord') && currentStep === 'final_confirmed') {
       console.log('Step 20: Laatste pagina bereikt, scrollen naar beneden voor handmatige controle');
       updateStatus('✅ Voltooid! Controleer en verstuur', '20 - Eindcontrole', detectedStep);
 
-      // Scroll naar beneden
+      // Scroll naar beneden zodat gebruiker voorwaarden kan zien
       window.scrollTo({
         top: document.body.scrollHeight,
         behavior: 'smooth'
@@ -2193,19 +2495,257 @@ async function startFullAutomation(config) {
   }
 }
 
-// Check if we need to continue automation after page load
-window.addEventListener('load', () => {
-  // Don't continue if automation has been stopped
+// ============================================================================
+// SECTIE 8: CRASH RECOVERY & PAGE LOAD EVENT LISTENER
+// ============================================================================
+
+/**
+ * Sla voortgang periodiek op voor crash recovery.
+ * Dit gebeurt in chrome.storage.local (persistent) zodat na een crash
+ * de voortgang hersteld kan worden.
+ *
+ * MULTI-TAB SUPPORT:
+ * Gebruikt sessionId (uniek per tab) om recovery data te isoleren.
+ * Dit voorkomt dat meerdere tabs elkaars recovery data overschrijven.
+ */
+async function saveProgressForRecovery() {
+  const config = sessionStorage.getItem('automationConfig');
+  const step = sessionStorage.getItem('automationStep');
+
+  if (config && step) {
+    // Haal sessionId op van de config (uniek per tab)
+    let sessionId = null;
+    try {
+      const configObj = JSON.parse(config);
+      sessionId = configObj.sessionId;
+    } catch (e) {
+      console.warn('Could not parse config for sessionId');
+    }
+
+    // Gebruik sessionId als we die hebben, anders een fallback
+    // Dit zorgt voor multi-tab support
+    const recoveryKey = sessionId ? `automation_recovery_${sessionId}` : 'automation_recovery';
+
+    const recoveryData = {
+      config: config,
+      step: step,
+      timestamp: Date.now(),
+      url: window.location.href,
+      sessionId: sessionId
+    };
+
+    await chrome.storage.local.set({ [recoveryKey]: recoveryData });
+    console.log(`💾 Progress saved for recovery (${sessionId || 'default'}):`, step);
+  }
+}
+
+/**
+ * Probeer te herstellen van een crash.
+ * Toont een dialoog aan de gebruiker om te kiezen tussen hervatten of opnieuw starten.
+ *
+ * MULTI-TAB SUPPORT:
+ * Zoekt naar recovery data voor alle sessies, maar geeft prioriteit aan de meest recente
+ * die niet te oud is. Dit voorkomt conflicten tussen meerdere tabs.
+ *
+ * @returns {boolean} True als recovery succesvol, false als gebruiker opnieuw wil starten
+ */
+function attemptCrashRecovery() {
+  return new Promise((resolve) => {
+    // Haal ALLE recovery data op (voor multi-tab support)
+    chrome.storage.local.get(null, (allData) => {
+      // Filter alle recovery keys
+      const recoveryKeys = Object.keys(allData).filter(key =>
+        key.startsWith('automation_recovery')
+      );
+
+      if (recoveryKeys.length === 0) {
+        console.log('ℹ️ Geen recovery data gevonden');
+        resolve(false);
+        return;
+      }
+
+      // Vind de meest recente recovery data die niet te oud is
+      let mostRecentData = null;
+      let mostRecentKey = null;
+      let mostRecentTimestamp = 0;
+
+      for (const key of recoveryKeys) {
+        const data = allData[key];
+        const age = Date.now() - data.timestamp;
+
+        // Skip te oude data (max 1 uur)
+        if (age > 3600000) {
+          console.log(`⚠️ Recovery data te oud (${key}), wordt genegeerd`);
+          chrome.storage.local.remove(key);
+          continue;
+        }
+
+        // Check of dit de meest recente is
+        if (data.timestamp > mostRecentTimestamp) {
+          mostRecentTimestamp = data.timestamp;
+          mostRecentData = data;
+          mostRecentKey = key;
+        }
+      }
+
+      // Geen bruikbare recovery data gevonden
+      if (!mostRecentData) {
+        console.log('ℹ️ Geen bruikbare recovery data (alles te oud)');
+        resolve(false);
+        return;
+      }
+
+      const recoveryData = mostRecentData;
+      const recoveryKey = mostRecentKey;
+
+      // Maak recovery panel
+      const panel = document.createElement('div');
+      panel.id = 'crash-recovery-panel';
+      panel.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: white;
+        border: 3px solid #ff9800;
+        border-radius: 16px;
+        padding: 30px;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+        z-index: 9999999;
+        max-width: 450px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      `;
+
+      panel.innerHTML = `
+        <div style="text-align: center;">
+          <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
+          <h2 style="margin: 0 0 16px 0; color: #ff9800; font-size: 20px;">Automatisering Onderbroken</h2>
+          <p style="color: #666; margin-bottom: 8px; font-size: 14px;">
+            De automatisering werd onderbroken bij stap:
+          </p>
+          <p style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-weight: 600; color: #212529;">
+            ${recoveryData.step.replace(/_/g, ' ')}
+          </p>
+          <p style="color: #666; font-size: 13px; margin-bottom: 24px;">
+            Wil je doorgaan vanaf deze stap of opnieuw beginnen?
+          </p>
+          <div style="display: flex; gap: 12px; justify-content: center;">
+            <button id="recovery-resume" style="
+              background: #28a745;
+              color: white;
+              border: none;
+              padding: 12px 24px;
+              border-radius: 8px;
+              font-size: 14px;
+              font-weight: 600;
+              cursor: pointer;
+              transition: all 0.2s;
+            ">✓ Hervatten</button>
+            <button id="recovery-restart" style="
+              background: #6c757d;
+              color: white;
+              border: none;
+              padding: 12px 24px;
+              border-radius: 8px;
+              font-size: 14px;
+              font-weight: 600;
+              cursor: pointer;
+              transition: all 0.2s;
+            ">⟳ Opnieuw Beginnen</button>
+          </div>
+        </div>
+      `;
+
+      document.body.appendChild(panel);
+
+      // Add hover effects
+      const style = document.createElement('style');
+      style.textContent = `
+        #recovery-resume:hover { background: #218838 !important; transform: translateY(-1px); }
+        #recovery-restart:hover { background: #5a6268 !important; transform: translateY(-1px); }
+      `;
+      document.head.appendChild(style);
+
+      // Event listeners
+      document.getElementById('recovery-resume').addEventListener('click', () => {
+        console.log('✅ Gebruiker kiest: Hervatten vanaf', recoveryData.step);
+        panel.remove();
+        style.remove();
+
+        // Herstel session storage
+        sessionStorage.setItem('automationConfig', recoveryData.config);
+        sessionStorage.setItem('automationStep', recoveryData.step);
+
+        // Verwijder deze specifieke recovery data (niet alle recovery data!)
+        chrome.storage.local.remove(recoveryKey);
+
+        resolve(true);
+      });
+
+      document.getElementById('recovery-restart').addEventListener('click', () => {
+        console.log('🔄 Gebruiker kiest: Opnieuw beginnen');
+        panel.remove();
+        style.remove();
+
+        // Verwijder alle automation data voor deze sessie
+        sessionStorage.removeItem('automationConfig');
+        sessionStorage.removeItem('automationStep');
+        chrome.storage.local.remove(recoveryKey);
+
+        resolve(false);
+      });
+    });
+  });
+}
+
+/**
+ * Event listener die automatisering hervat na een pagina navigatie.
+ *
+ * CRASH RECOVERY:
+ * - Als sessionStorage leeg is maar recovery data bestaat → vraag gebruiker
+ * - Als recovery data oud is (>1 uur) → negeer en start normaal
+ * - Gebruiker kan kiezen: hervatten of opnieuw beginnen
+ *
+ * NORMALE NAVIGATIE:
+ * - sessionStorage blijft behouden → hervat automatisch
+ * - Voortgang wordt periodiek opgeslagen als backup
+ *
+ * Dit zorgt ervoor dat de automatisering naadloos door het hele proces kan navigeren,
+ * zelfs over meerdere pagina's heen, en kan herstellen van crashes.
+ */
+window.addEventListener('load', async () => {
+  // Stop niet als automatisering is gestopt door gebruiker
   if (automationStopped) {
     console.log('❌ Automation stopped, not continuing on page load');
     return;
   }
 
-  const automationConfig = sessionStorage.getItem('automationConfig');
+  let automationConfig = sessionStorage.getItem('automationConfig');
+  let currentStep = sessionStorage.getItem('automationStep');
+
+  // CRASH RECOVERY: als sessionStorage leeg is, probeer te herstellen
+  if (!automationConfig || !currentStep) {
+    console.log('🔍 SessionStorage leeg, checking for crash recovery...');
+    const recovered = await attemptCrashRecovery();
+
+    if (recovered) {
+      // Herstel was succesvol, haal data opnieuw op
+      automationConfig = sessionStorage.getItem('automationConfig');
+      currentStep = sessionStorage.getItem('automationStep');
+      console.log('✅ Crash recovery succesvol, hervatten vanaf:', currentStep);
+    } else {
+      console.log('ℹ️ Geen recovery of gebruiker koos opnieuw beginnen');
+      return;
+    }
+  }
+
   if (automationConfig) {
     const config = JSON.parse(automationConfig);
-    const currentStep = sessionStorage.getItem('automationStep');
     console.log('Automatisering doorgaan na pagina laden, stap:', currentStep);
+
+    // Sla voortgang op voor crash recovery
+    await saveProgressForRecovery();
+
     // Recreate status panel after page load
     createStatusPanel();
 
