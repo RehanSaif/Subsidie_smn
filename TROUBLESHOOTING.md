@@ -756,7 +756,7 @@ IMPORTANT: Extract the FILLED-IN customer data, NOT the company information
 (like SAMAN, Gouwepoort, Zierikzee).
 
 Look for customer details after these labels:
-- "Achternaam en voorletters" or "Saif" - extract last name and initials
+- "Achternaam en voorletters" - extract last name and initials
 - "Geslacht" - return "male" for "Man/M" or "female" for "Vrouw/V"
 ...`
 ```
