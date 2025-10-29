@@ -189,7 +189,7 @@ Overlay UI die:
 - clickElement()               → simuleer klik
 - fillInput()                  → vul veld in met sanitization
   ├── Telefoon: verwijder spaties/streepjes
-  ├── IBAN: fix OCR fouten (O→0, I→1, S→5), verwijder BIC
+  ├── IBAN: fix OCR fouten ALLEEN in cijfer delen (niet in bankcode RABO/INGB)
   └── Random delays voor menselijk gedrag
 
 // 3. Stap Detectie (regels 652-908)
@@ -292,25 +292,31 @@ sanitizedValue = value.replace(/[^0-9+]/g, '');
 // "06-1234 5678" → "0612345678"
 ```
 
-**IBAN** (`fillInput` in content.js, regel ~472):
+**IBAN** (`fillInput` in content.js, regel ~670):
 ```javascript
-// 1. Verwijder punten
-sanitizedValue = sanitizedValue.replace(/\./g, '');
+// IBAN structuur: NL + 2 cijfers + 4 LETTERS + 10 cijfers
+// Voorbeeld: NL84RABO0123456789
 
-// 2. Verwijder BIC codes (bijv. RABONL2U)
+// 1. Verwijder punten en spaties
+sanitizedValue = sanitizedValue.replace(/\./g, '').replace(/\s/g, '');
+
+// 2. Verwijder BIC codes (bijv. RABONL2U aan het einde)
 sanitizedValue = sanitizedValue.replace(/([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?)$/g, '');
 
-// 3. Fix OCR fouten in cijfers sectie
-// O → 0, I/l → 1, S → 5
-const fixed = rest
-  .replace(/O/g, '0')  // Hoofdletter O naar nul
-  .replace(/[Il]/g, '1') // I of l naar een
-  .replace(/S/g, '5');  // S naar vijf (alleen in cijfer sectie)
-
-// 4. Extract alleen IBAN (NL + 2 cijfers + 4 letters + 10 cijfers)
+// 3. Extract IBAN delen
 const ibanMatch = cleanIban.match(/^(NL[0-9]{2}[A-Z]{4}[0-9]{10})/i);
 
+// 4. Fix OCR fouten ALLEEN in cijfer delen, NIET in bankcode
+const nlPrefix = 'NL';                    // Landcode
+const checkDigits = ...;                  // 2 cijfers → fix O→0, I→1
+const bankCode = ...;                     // 4 LETTERS → BLIJFT LETTERS (RABO, INGB, etc.)
+const accountNumber = ...;                // 10 cijfers → fix O→0, I→1, S→5
+
+// 5. Herstel IBAN
+sanitizedValue = nlPrefix + checkDigits + bankCode + accountNumber;
+
 // "NL33 INGB 0682.4030.59 RABONL2U" → "NL33INGB0682403059"
+// "NL84 RABO 0123456789" → "NL84RABO0123456789" (RABO blijft met O!)
 ```
 
 ### 3. Stap Detectie Logica
@@ -575,6 +581,11 @@ START
 3. **Scroll Behavior**: Elk element wordt eerst in beeld gescrolled (`scrollIntoView`) voordat er op geklikt wordt.
 
 4. **Finale Stap is Handmatig**: De extensie stopt voor het indienen om de gebruiker de kans te geven alles te controleren.
+
+5. **Chrome Tab Throttling**: Chrome vertraagt inactive tabs drastisch (~1000ms extra delay). Voor optimale snelheid:
+   - ✅ **1 aanvraag**: Houd het tabblad actief
+   - ✅ **Meerdere aanvragen**: Open meerdere **WINDOWS** (niet tabs)
+   - ❌ Meerdere tabs in 1 window worden vertraagd (3-5x langzamer)
 
 ---
 

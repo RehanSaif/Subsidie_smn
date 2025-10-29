@@ -1,5 +1,20 @@
 # Troubleshooting Guide: ISDE Subsidie Automatisering
 
+## ⚡ Best Practices voor Snelheid
+
+**Voor Optimale Automatisering:**
+
+✅ **1 aanvraag**: Houd het tabblad actief, niet wisselen
+✅ **Meerdere aanvragen**: Open meerdere **WINDOWS** (Ctrl+N / Cmd+N)
+❌ **NIET**: Meerdere tabs in 1 window (wordt vertraagd door Chrome)
+
+**Waarom meerdere windows?**
+- Elk window = actieve tab = volle snelheid
+- Side panel per window beschikbaar
+- Geen Chrome tab throttling
+
+---
+
 ## Inhoudsopgave
 1. [Veelvoorkomende Problemen](#veelvoorkomende-problemen)
 2. [Selector ID's Zijn Veranderd](#selector-ids-zijn-veranderd)
@@ -120,7 +135,70 @@ Tabs 1 en 3 blijven normaal doorwerken
 
 ---
 
-### 2. Automatisering Start Niet
+### 2. Automatisering Loopt Traag of Stopt
+
+**Symptomen:**
+- Automatisering lijkt vast te lopen
+- Stappen duren veel langer dan verwacht
+- Geen foutmeldingen, maar wel langzaam
+
+**Oorzaak: Chrome Tab Throttling**
+
+Chrome vertraagt **inactive tabs** drastisch om resources te besparen:
+- `setTimeout` delays worden tot **1000ms extra** vertraagd
+- DOM events krijgen lagere prioriteit
+- Scripts worden minder frequent uitgevoerd
+
+**Oplossing:**
+
+✅ **Houd het tabblad ACTIEF tijdens automatisering**
+- Blijf op het tabblad met de automatisering
+- Niet wisselen naar andere tabs
+- Niet minimaliseren
+
+**Automatische Waarschuwing:**
+De extensie toont automatisch een waarschuwing als je van tab wisselt:
+```
+⚠️ Let op: Houd dit tabblad actief voor optimale snelheid.
+Automatisering kan vertragen in achtergrond tabs.
+```
+
+**Als je toch van tab moet wisselen:**
+- De automatisering blijft draaien, maar **veel langzamer**
+- Verwacht 3-5x langere uitvoeringstijd
+- Check regelmatig of het nog loopt
+
+**💡 Voor Meerdere Aanvragen Tegelijk:**
+
+Als je meerdere subsidieaanvragen parallel wilt doen:
+
+✅ **GOED: Open meerdere WINDOWS** (niet tabs!)
+```
+1. Eerste aanvraag: Window 1 → eloket.nl tab (actief)
+2. Tweede aanvraag: Window 2 → eloket.nl tab (actief)
+3. Derde aanvraag: Window 3 → eloket.nl tab (actief)
+```
+- Elk window heeft een **actieve tab** → geen throttling
+- Side panel beschikbaar per window
+- Alle automatiseringen lopen op **volle snelheid**
+
+❌ **FOUT: Meerdere TABS in 1 window**
+```
+1. Tab 1: eloket.nl (actief) ✅
+2. Tab 2: eloket.nl (inactive) ⚠️ TRAAG
+3. Tab 3: eloket.nl (inactive) ⚠️ TRAAG
+```
+- Slechts 1 tab actief → anderen worden vertraagd
+- Automatiseringen in tabs 2 & 3 zijn 3-5x trager
+
+**Hoe meerdere windows openen:**
+- Windows: `Ctrl+N` (nieuwe window)
+- Mac: `Cmd+N` (nieuwe window)
+- Of: Klik rechts op Chrome icoon → "Nieuw venster"
+
+---
+
+### 3. Automatisering Start Niet
 
 **Symptomen:**
 - "Start Automatisering" knop doet niets

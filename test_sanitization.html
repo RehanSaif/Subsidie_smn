@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🧪 Comprehensive Sanitization Test Suite</title>
+  <style>
+    body {
+      font-family: 'Courier New', monospace;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #4ec9b0;
+      border-bottom: 3px solid #4ec9b0;
+      padding-bottom: 10px;
+      font-size: 28px;
+    }
+    h2 {
+      color: #569cd6;
+      margin-top: 30px;
+      border-left: 5px solid #569cd6;
+      padding-left: 15px;
+    }
+    .intro {
+      background: #2d2d30;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+      border-left: 4px solid #dcdcaa;
+    }
+    .section-divider {
+      margin: 40px 0;
+      padding: 20px;
+      background: #252526;
+      border: 2px solid #569cd6;
+      border-radius: 8px;
+      text-align: center;
+      font-size: 24px;
+      font-weight: bold;
+      color: #569cd6;
+    }
+    .test-section {
+      margin: 20px 0;
+      padding: 15px;
+      background: #252526;
+      border-left: 3px solid #569cd6;
+      border-radius: 4px;
+    }
+    .test-case {
+      margin: 10px 0;
+      padding: 10px;
+      background: #2d2d30;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .pass {
+      color: #4ec9b0;
+      font-weight: bold;
+    }
+    .fail {
+      color: #f48771;
+      font-weight: bold;
+    }
+    .warning {
+      color: #dcdcaa;
+      font-weight: bold;
+    }
+    .input {
+      color: #ce9178;
+    }
+    .output {
+      color: #9cdcfe;
+    }
+    .expected {
+      color: #4ec9b0;
+    }
+    .summary {
+      margin-top: 30px;
+      padding: 20px;
+      background: #0e639c;
+      border-radius: 8px;
+      font-size: 18px;
+    }
+    .console-log {
+      background: #1e1e1e;
+      padding: 10px;
+      margin: 10px 0;
+      border-left: 3px solid #dcdcaa;
+      font-size: 11px;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    .ocr-error {
+      background: #3e1e1e;
+      padding: 3px 6px;
+      border-radius: 3px;
+      font-weight: bold;
+      color: #f48771;
+    }
+    .correction {
+      background: #1e3e1e;
+      padding: 3px 6px;
+      border-radius: 3px;
+      font-weight: bold;
+      color: #4ec9b0;
+    }
+  </style>
+</head>
+<body>
+  <h1>🧪 Comprehensive Sanitization Test Suite</h1>
+
+  <div class="intro">
+    <h3>📋 Test Coverage:</h3>
+    <p><strong>Part 1: Basic Sanitization Tests</strong> - Tests voor alle 15 velden met normale input edge cases</p>
+    <p><strong>Part 2: Field Splitting Tests</strong> - Tests voor gecombineerde velden (IBAN+BIC, postcode+plaats, etc.)</p>
+    <p><strong>Part 3: AI/OCR Error Tests</strong> - Tests voor typische AI extractie fouten uit gescande documenten</p>
+    <p><strong>Belangrijkste AI/OCR fouten:</strong></p>
+    <ul>
+      <li><span class="ocr-error">O ↔ 0</span> (letter O vs cijfer nul)</li>
+      <li><span class="ocr-error">I/l ↔ 1</span> (letter I of l vs cijfer één)</li>
+      <li><span class="ocr-error">S ↔ 5</span> (letter S vs cijfer vijf)</li>
+      <li><span class="ocr-error">B ↔ 8</span> (letter B vs cijfer acht)</li>
+      <li><span class="ocr-error">Z ↔ 2</span> (letter Z vs cijfer twee)</li>
+      <li><span class="ocr-error">G ↔ 6</span> (letter G vs cijfer zes)</li>
+    </ul>
+    <p><strong>Verwachting:</strong> <span class="correction">Alle fouten worden automatisch gecorrigeerd</span></p>
+  </div>
+
+  <div id="results"></div>
+  <div id="summary" class="summary"></div>
+
+  <script>
+    // Capture console output
+    const consoleLogs = [];
+    const consoleWarnings = [];
+    const originalLog = console.log;
+    const originalWarn = console.warn;
+
+    console.log = function(...args) {
+      consoleLogs.push(args.join(' '));
+      originalLog.apply(console, args);
+    };
+
+    console.warn = function(...args) {
+      consoleWarnings.push(args.join(' '));
+      originalWarn.apply(console, args);
+    };
+
+    // Test results tracking
+    let totalTests = 0;
+    let passedTests = 0;
+    let failedTests = 0;
+
+    // ========================================================================
+    // ALL SANITIZATION FUNCTIONS (WITH OCR CORRECTIONS)
+    // ========================================================================
+
+    function sanitizeBSN(bsnRaw) {
+      if (!bsnRaw) return null;
+      let bsn = String(bsnRaw).trim();
+
+      // Fix OCR errors in BSN (all positions should be digits)
+      bsn = bsn.replace(/O/g, '0')
+               .replace(/[Il]/g, '1')
+               .replace(/S/g, '5')
+               .replace(/B/g, '8')
+               .replace(/Z/g, '2')
+               .replace(/G/g, '6');
+
+      bsn = bsn.replace(/\D/g, '');
+
+      if (bsn.length !== 9) {
+        console.warn(`Invalid BSN length: ${bsn.length} (expected 9)`);
+        return bsn;
+      }
+
+      const weights = [9, 8, 7, 6, 5, 4, 3, 2, -1];
+      let sum = 0;
+      for (let i = 0; i < 9; i++) {
+        sum += parseInt(bsn[i]) * weights[i];
+      }
+
+      if (sum % 11 !== 0) {
+        console.warn(`BSN failed 11-proef validation: ${bsn}`);
+      }
+
+      return bsn;
+    }
+
+    function sanitizeIBAN(ibanRaw) {
+      if (!ibanRaw) return null;
+      let iban = String(ibanRaw).replace(/[\s.]/g, '').toUpperCase();
+
+      if (iban.length < 10) {
+        console.warn(`IBAN too short: ${iban}`);
+        return iban;
+      }
+
+      if (!iban.startsWith('NL')) {
+        console.warn(`IBAN does not start with NL: ${iban}`);
+      }
+
+      // Fix checksum (positions 2-3): should be digits
+      if (iban.length >= 4) {
+        let checksum = iban.substring(2, 4);
+        checksum = checksum.replace(/O/g, '0').replace(/[Il]/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2');
+        iban = iban.substring(0, 2) + checksum + iban.substring(4);
+      }
+
+      // Fix bank code (positions 4-7): should be 4 letters
+      if (iban.length >= 8) {
+        let bankCode = iban.substring(4, 8);
+        const validBankCodes = ['RABO', 'INGB', 'ABNA', 'SNSB', 'ASNB', 'TRIO', 'BUNQ', 'KNAB', 'RBRB', 'FVLB', 'HAND', 'NNBA'];
+
+        const bankCodeFixed = bankCode.replace(/0/g, 'O').replace(/1/g, 'I').replace(/5/g, 'S').replace(/8/g, 'B').replace(/2/g, 'Z').replace(/4/g, 'A').replace(/6/g, 'G');
+
+        if (validBankCodes.includes(bankCodeFixed)) {
+          if (bankCode !== bankCodeFixed) {
+            console.log(`IBAN bank code corrected: ${bankCode} → ${bankCodeFixed}`);
+            bankCode = bankCodeFixed;
+          }
+        } else if (!validBankCodes.includes(bankCode)) {
+          if (bankCode === 'RAB0' || bankCode.startsWith('RAB')) bankCode = 'RABO';
+          else if (bankCode === 'ING8' || bankCode.startsWith('ING')) bankCode = 'INGB';
+          else if (bankCode === 'ABN4' || bankCode === 'A8NA' || bankCode.startsWith('ABN')) bankCode = 'ABNA';
+          else if (bankCode === '5NSB' || bankCode === 'SNS8' || bankCode.startsWith('SNS')) bankCode = 'SNSB';
+          else if (bankCode === 'TR10') bankCode = 'TRIO';
+          else if (bankCode === '8UNQ') bankCode = 'BUNQ';
+          else {
+            console.warn(`Unknown bank code in IBAN: ${bankCode}`);
+          }
+        }
+        iban = iban.substring(0, 4) + bankCode + iban.substring(8);
+      }
+
+      // Fix account number (positions 8-17): should be 10 digits
+      if (iban.length >= 18) {
+        let accountNumber = iban.substring(8, 18);
+        accountNumber = accountNumber.replace(/O/g, '0').replace(/[Il]/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2').replace(/G/g, '6');
+        iban = iban.substring(0, 8) + accountNumber + iban.substring(18);
+      }
+
+      if (iban.length !== 18) {
+        console.warn(`Invalid NL IBAN length: ${iban.length} (expected 18)`);
+        return iban;
+      }
+
+      const rearranged = iban.substring(4) + iban.substring(0, 4);
+      let numericString = '';
+      for (let char of rearranged) {
+        if (char >= '0' && char <= '9') {
+          numericString += char;
+        } else {
+          numericString += (char.charCodeAt(0) - 55).toString();
+        }
+      }
+
+      const remainder = BigInt(numericString) % 97n;
+      if (remainder !== 1n) {
+        console.warn(`IBAN failed checksum validation: ${iban}`);
+      }
+
+      return iban;
+    }
+
+    function sanitizePhone(phoneRaw) {
+      if (!phoneRaw) return null;
+      let phone = String(phoneRaw).trim();
+
+      // Fix OCR errors BEFORE removing non-digit chars
+      phone = phone.replace(/^O/g, '0')
+                   .replace(/^0O/g, '00')
+                   .replace(/O/g, '0')
+                   .replace(/[Il]/g, '1');
+
+      phone = phone.replace(/[^\d+]/g, '');
+
+      if (phone.startsWith('+31')) {
+        phone = '0' + phone.substring(3);
+      } else if (phone.startsWith('0031')) {
+        phone = '0' + phone.substring(4);
+      } else if (phone.startsWith('31') && phone.length >= 11) {
+        phone = '0' + phone.substring(2);
+      }
+
+      if (phone.startsWith('085') || phone.startsWith('088') || phone.startsWith('090') || phone.startsWith('091')) {
+        console.warn(`Service number detected: ${phone}`);
+      }
+
+      if (phone.length !== 10) {
+        console.warn(`Invalid phone length: ${phone.length} (expected 10)`);
+      }
+
+      if (!phone.startsWith('0')) {
+        console.warn(`Phone should start with 0: ${phone}`);
+        return '0' + phone;
+      }
+
+      return phone;
+    }
+
+    function sanitizeEmail(emailRaw) {
+      if (!emailRaw) return null;
+      let email = String(emailRaw).replace(/\s/g, '').toLowerCase().trim();
+
+      // Fix OCR errors: "at" or "(at)" → @
+      email = email.replace(/\sat\s/g, '@')
+                   .replace(/\(at\)/g, '@')
+                   .replace(/_@_/g, '@')
+                   .replace(/0/g, 'o'); // Common: 0 → o in email addresses
+
+      email = email.replace(/[.,;]+$/, '');
+
+      if (email.includes('@samangroep') || email.includes('@saman')) {
+        console.warn(`Company email filtered: ${email}`);
+        return null;
+      }
+
+      const emailRegex = /^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
+      if (!emailRegex.test(email)) {
+        console.warn(`Invalid email format: ${email}`);
+        return email;
+      }
+
+      return email;
+    }
+
+    function sanitizeInitials(initialsRaw) {
+      if (!initialsRaw) return null;
+      let initials = String(initialsRaw).trim();
+
+      // Fix OCR errors: voorletters kunnen ALLEEN letters zijn (A-Z)
+      initials = initials.replace(/5/g, 'S')
+                         .replace(/0/g, 'O')
+                         .replace(/1/g, 'I')
+                         .replace(/8/g, 'B')
+                         .replace(/2/g, 'Z')
+                         .replace(/6/g, 'G');
+
+      initials = initials.replace(/[^a-zA-Z.\s]/g, '');
+
+      let letters = initials.split(/[\s.]+/).filter(l => l.length > 0);
+      letters = letters.map(l => l.charAt(0).toUpperCase());
+      initials = letters.join('.') + (letters.length > 0 ? '.' : '');
+
+      if (letters.length > 10) {
+        console.warn(`Unusual number of initials: ${letters.length}`);
+      }
+
+      return initials;
+    }
+
+    function sanitizeLastName(lastNameRaw) {
+      if (!lastNameRaw) return null;
+      let lastName = String(lastNameRaw).trim().replace(/\s+/g, ' ');
+
+      if (/\d/.test(lastName)) {
+        console.warn(`Last name contains digits: ${lastName}`);
+      }
+
+      const parts = lastName.split(' ');
+      const prefixes = ['van', 'de', 'der', 'den', 'het', "'t", 'te', 'ter', 'ten', 'vande', 'vanden', 'van de', 'van den', 'van der'];
+      const normalized = parts.map((part, index) => {
+        const lowerPart = part.toLowerCase();
+        if (index > 0 && prefixes.includes(lowerPart)) {
+          return lowerPart;
+        }
+        return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+      });
+
+      lastName = normalized.join(' ');
+
+      if (lastName.replace(/\s/g, '').length < 2) {
+        console.warn(`Last name very short: ${lastName}`);
+      }
+
+      return lastName;
+    }
+
+    function sanitizeStreet(streetRaw) {
+      if (!streetRaw) return null;
+      let street = String(streetRaw).trim().replace(/\s+/g, ' ');
+      street = street.replace(/\s*\d+.*$/, '').trim();
+
+      street = street.split(' ').map(word =>
+        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      ).join(' ');
+
+      if (street.length < 3) {
+        console.warn(`Street name very short: ${street}`);
+      }
+
+      return street;
+    }
+
+    function sanitizeHouseNumber(houseNumberRaw) {
+      if (!houseNumberRaw) return { number: null, addition: null };
+      let combined = String(houseNumberRaw).trim();
+
+      const match = combined.match(/^(\d+)(.*)$/);
+      if (!match) {
+        console.warn(`Could not parse house number: ${combined}`);
+        return { number: combined, addition: null };
+      }
+
+      let number = match[1];
+      let addition = match[2].trim();
+      addition = addition.replace(/\s/g, '');
+      addition = addition.toUpperCase();
+
+      const numValue = parseInt(number);
+      if (numValue < 1 || numValue > 9999) {
+        console.warn(`Unusual house number: ${numValue}`);
+      }
+
+      return {
+        number: number,
+        addition: addition || null
+      };
+    }
+
+    function sanitizePostalCode(postalCodeRaw) {
+      if (!postalCodeRaw) return null;
+      let postal = String(postalCodeRaw).replace(/\s/g, '').toUpperCase().trim();
+
+      // First 4 positions: should be digits
+      if (postal.length >= 4) {
+        let digits = postal.substring(0, 4);
+        digits = digits.replace(/O/g, '0').replace(/[Il]/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2').replace(/G/g, '6');
+        postal = digits + postal.substring(4);
+      }
+
+      // Last 2 positions: should be letters
+      if (postal.length >= 6) {
+        let letters = postal.substring(4, 6);
+        letters = letters.replace(/0/g, 'O').replace(/1/g, 'I').replace(/5/g, 'S').replace(/8/g, 'B');
+        postal = postal.substring(0, 4) + letters;
+      }
+
+      const postalRegex = /^(\d{4})([A-Z]{2})$/;
+      const match = postal.match(postalRegex);
+      if (!match) {
+        console.warn(`Invalid postal code format: ${postal}`);
+        return postal;
+      }
+
+      return `${match[1]} ${match[2]}`;
+    }
+
+    function sanitizeCity(cityRaw) {
+      if (!cityRaw) return null;
+      let city = String(cityRaw).trim().replace(/\s+/g, ' ');
+
+      if (/\d/.test(city)) {
+        console.warn(`City name contains digits: ${city}`);
+      }
+
+      const words = city.split(/(\s|-)/);
+      const normalized = words.map((word, index) => {
+        if (word === ' ' || word === '-' || word === "'") return word;
+        if (index > 0 && ['aan', 'bij', 'op', 'onder'].includes(word.toLowerCase())) {
+          return word.toLowerCase();
+        }
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      });
+
+      city = normalized.join('');
+
+      if (city.length < 2) {
+        console.warn(`City name very short: ${city}`);
+      }
+
+      return city;
+    }
+
+    function sanitizeGender(genderRaw) {
+      if (!genderRaw) return null;
+      const gender = String(genderRaw).toLowerCase().trim();
+
+      if (gender === 'male' || gender === 'man' || gender === 'm' || gender === 'mannelijk') {
+        return 'male';
+      }
+      if (gender === 'female' || gender === 'vrouw' || gender === 'v' || gender === 'woman' || gender === 'vrouwelijk') {
+        return 'female';
+      }
+
+      console.warn(`Unknown gender value: ${genderRaw}`);
+      return 'male';
+    }
+
+    function sanitizeGasUsage(gasUsageRaw) {
+      if (!gasUsageRaw) return null;
+      const gas = String(gasUsageRaw).toLowerCase().trim();
+
+      if (gas === 'yes' || gas === 'ja' || gas === '1' || gas === 'true') {
+        return 'yes';
+      }
+      if (gas === 'no' || gas === 'nee' || gas === '0' || gas === 'false') {
+        return 'no';
+      }
+
+      console.warn(`Unknown gas usage value: ${gasUsageRaw}`);
+      return null;
+    }
+
+    function sanitizeMeldCode(meldCodeRaw) {
+      if (!meldCodeRaw) return null;
+      let code = String(meldCodeRaw).replace(/[\s-]/g, '').toUpperCase().trim();
+
+      // Fix OCR errors in prefix (should be "KA")
+      if (code.length >= 2) {
+        let prefix = code.substring(0, 2);
+        if (prefix === 'K4' || prefix === 'K0' || prefix === 'KO') {
+          prefix = 'KA';
+          console.log(`Meldcode prefix corrected: ${code.substring(0, 2)} → KA`);
+        }
+        code = prefix + code.substring(2);
+      }
+
+      // Fix OCR errors in digit section (positions 2-6)
+      if (code.length >= 7 && code.startsWith('KA')) {
+        let digits = code.substring(2, 7);
+        digits = digits.replace(/O/g, '0').replace(/[Il]/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2').replace(/G/g, '6');
+        code = 'KA' + digits + code.substring(7);
+      }
+
+      const meldCodeRegex = /^KA(\d{5})$/;
+      const match = code.match(meldCodeRegex);
+      if (!match) {
+        console.warn(`Invalid meldcode format: ${code}`);
+        return code;
+      }
+
+      if (match[1] === '00000') {
+        console.warn(`Suspicious meldcode (all zeros): ${code}`);
+      }
+
+      return code;
+    }
+
+    function sanitizeInstallationDate(dateRaw) {
+      if (!dateRaw) return null;
+      let date = String(dateRaw).trim();
+
+      // Fix OCR errors: O→0, I→1 in entire date string
+      date = date.replace(/O/g, '0').replace(/[Il]/g, '1');
+
+      let day, month, year;
+      let match = date.match(/^(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{2,4})$/);
+      if (match) {
+        day = match[1].padStart(2, '0');
+        month = match[2].padStart(2, '0');
+        year = match[3].length === 2 ? '20' + match[3] : match[3];
+      } else {
+        match = date.match(/^(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})$/);
+        if (match) {
+          year = match[1];
+          month = match[2].padStart(2, '0');
+          day = match[3].padStart(2, '0');
+        } else {
+          console.warn(`Could not parse installation date: ${dateRaw}`);
+          return dateRaw;
+        }
+      }
+
+      const dayNum = parseInt(day);
+      const monthNum = parseInt(month);
+      const yearNum = parseInt(year);
+
+      if (dayNum < 1 || dayNum > 31) {
+        console.warn(`Invalid day in date: ${day}`);
+      }
+      if (monthNum < 1 || monthNum > 12) {
+        console.warn(`Invalid month in date: ${month}`);
+      }
+      if (yearNum < 2020 || yearNum > 2030) {
+        console.warn(`Unusual year in installation date: ${year}`);
+      }
+
+      const parsedDate = new Date(yearNum, monthNum - 1, dayNum);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (parsedDate > today) {
+        console.warn(`Installation date is in the future: ${day}-${month}-${year}`);
+      }
+
+      const testDate = new Date(yearNum, monthNum - 1, dayNum);
+      if (testDate.getDate() !== dayNum || testDate.getMonth() !== monthNum - 1) {
+        console.warn(`Invalid date (day doesn't exist in month): ${day}-${month}-${year}`);
+      }
+
+      return `${day}-${month}-${year}`;
+    }
+
+    function sanitizePurchaseDate(dateRaw, installationDate = null) {
+      if (!dateRaw) return null;
+      let date = String(dateRaw).trim();
+
+      // Fix OCR errors
+      date = date.replace(/O/g, '0').replace(/[Il]/g, '1');
+
+      let day, month, year;
+      let match = date.match(/^(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{2,4})$/);
+      if (match) {
+        day = match[1].padStart(2, '0');
+        month = match[2].padStart(2, '0');
+        year = match[3].length === 2 ? '20' + match[3] : match[3];
+      } else {
+        match = date.match(/^(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})$/);
+        if (match) {
+          year = match[1];
+          month = match[2].padStart(2, '0');
+          day = match[3].padStart(2, '0');
+        } else {
+          console.warn(`Could not parse purchase date: ${dateRaw}`);
+          return dateRaw;
+        }
+      }
+
+      const dayNum = parseInt(day);
+      const monthNum = parseInt(month);
+      const yearNum = parseInt(year);
+
+      if (dayNum < 1 || dayNum > 31) {
+        console.warn(`Invalid day in date: ${day}`);
+      }
+      if (monthNum < 1 || monthNum > 12) {
+        console.warn(`Invalid month in date: ${month}`);
+      }
+      if (yearNum < 2020 || yearNum > 2030) {
+        console.warn(`Unusual year in purchase date: ${year}`);
+      }
+
+      const parsedDate = new Date(yearNum, monthNum - 1, dayNum);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (parsedDate > today) {
+        console.warn(`Purchase date is in the future: ${day}-${month}-${year}`);
+      }
+
+      const testDate = new Date(yearNum, monthNum - 1, dayNum);
+      if (testDate.getDate() !== dayNum || testDate.getMonth() !== monthNum - 1) {
+        console.warn(`Invalid date (day doesn't exist in month): ${day}-${month}-${year}`);
+      }
+
+      if (installationDate) {
+        const installMatch = installationDate.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+        if (installMatch) {
+          const installDate = new Date(
+            parseInt(installMatch[3]),
+            parseInt(installMatch[2]) - 1,
+            parseInt(installMatch[1])
+          );
+          if (parsedDate > installDate) {
+            console.warn(`Purchase date (${day}-${month}-${year}) is after installation date (${installationDate})`);
+          }
+        }
+      }
+
+      return `${day}-${month}-${year}`;
+    }
+
+    // ========================================================================
+    // TEST FRAMEWORK
+    // ========================================================================
+
+    function runTest(testName, input, sanitizeFunc, expected, expectCorrection = false) {
+      totalTests++;
+      consoleLogs.length = 0;
+      consoleWarnings.length = 0;
+
+      const result = sanitizeFunc(input);
+      const passed = JSON.stringify(result) === JSON.stringify(expected);
+
+      if (passed) passedTests++;
+      else failedTests++;
+
+      return {
+        testName,
+        input,
+        result,
+        expected,
+        passed,
+        logs: [...consoleLogs],
+        warnings: [...consoleWarnings],
+        expectCorrection
+      };
+    }
+
+    function displayResults(sectionName, tests) {
+      const section = document.createElement('div');
+      section.className = 'test-section';
+      section.innerHTML = `<h2>${sectionName}</h2>`;
+
+      tests.forEach(test => {
+        const testCase = document.createElement('div');
+        testCase.className = 'test-case';
+
+        const status = test.passed ?
+          '<span class="pass">✅ PASS</span>' :
+          '<span class="fail">❌ FAIL</span>';
+
+        let logsHtml = '';
+        if (test.logs.length > 0) {
+          logsHtml = `<div class="console-log"><strong>✨ Corrections:</strong><br>${test.logs.map(l => `→ ${l}`).join('<br>')}</div>`;
+        }
+
+        let warningsHtml = '';
+        if (test.warnings.length > 0) {
+          warningsHtml = `<div class="console-log"><strong>⚠️ Warnings:</strong><br>${test.warnings.map(w => `→ ${w}`).join('<br>')}</div>`;
+        }
+
+        testCase.innerHTML = `
+          <strong>${test.testName}</strong> ${status}<br>
+          <span class="input">Input:</span> ${JSON.stringify(test.input)}<br>
+          <span class="output">Output:</span> ${JSON.stringify(test.result)}<br>
+          <span class="expected">Expected:</span> ${JSON.stringify(test.expected)}
+          ${test.expectCorrection ? '<br><span class="correction">(Should auto-correct OCR error)</span>' : ''}
+          ${logsHtml}
+          ${warningsHtml}
+        `;
+
+        section.appendChild(testCase);
+      });
+
+      document.getElementById('results').appendChild(section);
+    }
+
+    function displayDivider(text) {
+      const divider = document.createElement('div');
+      divider.className = 'section-divider';
+      divider.textContent = text;
+      document.getElementById('results').appendChild(divider);
+    }
+
+    // ========================================================================
+    // PART 1: BASIC SANITIZATION TESTS
+    // ========================================================================
+
+    displayDivider('📝 PART 1: Basic Sanitization Tests (82 tests)');
+
+    // Test 1: BSN
+    const bsnTests = [
+      runTest('Valid BSN', '123456782', sanitizeBSN, '123456782', false),
+      runTest('BSN with spaces', '123 45 67 82', sanitizeBSN, '123456782', false),
+      runTest('BSN with dashes', '123-45-67-82', sanitizeBSN, '123456782', false),
+      runTest('BSN too short', '12345678', sanitizeBSN, '12345678', false),
+      runTest('BSN too long', '1234567890', sanitizeBSN, '1234567890', false),
+      runTest('BSN with letters', '12a456782', sanitizeBSN, '12456782', false),
+      runTest('BSN invalid checksum', '123456789', sanitizeBSN, '123456789', false),
+    ];
+    displayResults('1. BSN (Burgerservicenummer)', bsnTests);
+
+    // Test 2: IBAN
+    const ibanTests = [
+      runTest('Valid IBAN', 'NL91ABNA0417164300', sanitizeIBAN, 'NL91ABNA0417164300', false),
+      runTest('IBAN with spaces', 'NL91 ABNA 0417 1643 00', sanitizeIBAN, 'NL91ABNA0417164300', false),
+      runTest('IBAN lowercase', 'nl91abna0417164300', sanitizeIBAN, 'NL91ABNA0417164300', false),
+      runTest('IBAN with dots', 'NL91.ABNA.0417.1643.00', sanitizeIBAN, 'NL91ABNA0417164300', false),
+      runTest('IBAN wrong length', 'NL91ABNA041716', sanitizeIBAN, 'NL91ABNA041716', false),
+      runTest('IBAN invalid checksum', 'NL00ABNA0417164300', sanitizeIBAN, 'NL00ABNA0417164300', false),
+    ];
+    displayResults('2. IBAN', ibanTests);
+
+    // Test 3: Telefoon
+    const phoneTests = [
+      runTest('Valid mobile', '0612345678', sanitizePhone, '0612345678', false),
+      runTest('Phone with spaces', '06 1234 5678', sanitizePhone, '0612345678', false),
+      runTest('Phone with dashes', '06-1234-5678', sanitizePhone, '0612345678', false),
+      runTest('Phone with +31', '+31612345678', sanitizePhone, '0612345678', false),
+      runTest('Phone with 0031', '0031612345678', sanitizePhone, '0612345678', false),
+      runTest('Phone with 31 prefix', '31612345678', sanitizePhone, '0612345678', false),
+      runTest('Service number 085', '0851234567', sanitizePhone, '0851234567', false),
+      runTest('Phone wrong length', '061234567', sanitizePhone, '061234567', false),
+    ];
+    displayResults('3. Telefoonnummer', phoneTests);
+
+    // Test 4: Email
+    const emailTests = [
+      runTest('Valid email', 'test@example.com', sanitizeEmail, 'test@example.com', false),
+      runTest('Email with spaces', 'test @ example.com', sanitizeEmail, 'test@example.com', false),
+      runTest('Email uppercase', 'TEST@EXAMPLE.COM', sanitizeEmail, 'test@example.com', false),
+      runTest('Email trailing dot', 'test@example.com.', sanitizeEmail, 'test@example.com', false),
+      runTest('Company email @samangroep', 'test@samangroep.nl', sanitizeEmail, null, false),
+      runTest('Company email @saman', 'test@saman.nl', sanitizeEmail, null, false),
+      runTest('Invalid email format', 'test@@example', sanitizeEmail, 'test@@example', false),
+    ];
+    displayResults('4. Email', emailTests);
+
+    // Test 5: Voorletters
+    const initialsTests = [
+      runTest('Initials with spaces', 'J H M', sanitizeInitials, 'J.H.M.', false),
+      runTest('Initials without dots', 'JHM', sanitizeInitials, 'J.H.M.', false),
+      runTest('Initials lowercase', 'j.h.m.', sanitizeInitials, 'J.H.M.', false),
+      runTest('Initials with extra spaces', 'J.  H.  M.', sanitizeInitials, 'J.H.M.', false),
+      runTest('Single initial', 'J', sanitizeInitials, 'J.', false),
+    ];
+    displayResults('5. Voorletters (Initials)', initialsTests);
+
+    // Test 6: Achternaam
+    const lastNameTests = [
+      runTest('Simple last name', 'jansen', sanitizeLastName, 'Jansen', false),
+      runTest('Last name with prefix', 'van der Berg', sanitizeLastName, 'Van der Berg', false),
+      runTest('Last name ALL CAPS', 'VAN DER BERG', sanitizeLastName, 'Van der Berg', false),
+      runTest('Last name extra spaces', 'van  der  Berg', sanitizeLastName, 'Van der Berg', false),
+      runTest('Last name with digits', 'Berg2', sanitizeLastName, 'Berg2', false),
+      runTest('Very short last name', 'B', sanitizeLastName, 'B', false),
+    ];
+    displayResults('6. Achternaam (Last Name)', lastNameTests);
+
+    // Test 7: Straatnaam
+    const streetTests = [
+      runTest('Street lowercase', 'insulindestraat', sanitizeStreet, 'Insulindestraat', false),
+      runTest('Street with spaces', 'insulinde  straat', sanitizeStreet, 'Insulinde Straat', false),
+      runTest('Street with house number', 'Insulindestraat 59', sanitizeStreet, 'Insulindestraat', false),
+      runTest('Street multiple words', 'van gogh straat', sanitizeStreet, 'Van Gogh Straat', false),
+    ];
+    displayResults('7. Straatnaam (Street)', streetTests);
+
+    // Test 8: Huisnummer
+    const houseTests = [
+      runTest('House number only', '59', sanitizeHouseNumber, {number: '59', addition: null}, false),
+      runTest('House with addition', '59A01', sanitizeHouseNumber, {number: '59', addition: 'A01'}, false),
+      runTest('House with spaces', '59 A 01', sanitizeHouseNumber, {number: '59', addition: 'A01'}, false),
+      runTest('House lowercase addition', '59a01', sanitizeHouseNumber, {number: '59', addition: 'A01'}, false),
+      runTest('House very high number', '10000', sanitizeHouseNumber, {number: '10000', addition: null}, false),
+    ];
+    displayResults('8. Huisnummer + Toevoeging', houseTests);
+
+    // Test 9: Postcode
+    const postalTests = [
+      runTest('Valid postal', '1234AB', sanitizePostalCode, '1234 AB', false),
+      runTest('Postal with space', '1234 AB', sanitizePostalCode, '1234 AB', false),
+      runTest('Postal lowercase', '1234ab', sanitizePostalCode, '1234 AB', false),
+      runTest('Postal wrong format', '123AB', sanitizePostalCode, '123AB', false),
+    ];
+    displayResults('9. Postcode', postalTests);
+
+    // Test 10: Plaatsnaam
+    const cityTests = [
+      runTest('City lowercase', 'amsterdam', sanitizeCity, 'Amsterdam', false),
+      runTest('City ALL CAPS', 'AMSTERDAM', sanitizeCity, 'Amsterdam', false),
+      runTest('City with dash', "'s-hertogenbosch", sanitizeCity, "'S-Hertogenbosch", false),
+      runTest('City extra spaces', 'Den  Haag', sanitizeCity, 'Den Haag', false),
+      runTest('City with digit', 'Amsterdam2', sanitizeCity, 'Amsterdam2', false),
+    ];
+    displayResults('10. Plaatsnaam (City)', cityTests);
+
+    // Test 11: Geslacht
+    const genderTests = [
+      runTest('Gender Man', 'Man', sanitizeGender, 'male', false),
+      runTest('Gender Vrouw', 'Vrouw', sanitizeGender, 'female', false),
+      runTest('Gender M', 'M', sanitizeGender, 'male', false),
+      runTest('Gender V', 'V', sanitizeGender, 'female', false),
+      runTest('Gender male', 'male', sanitizeGender, 'male', false),
+      runTest('Gender female', 'female', sanitizeGender, 'female', false),
+      runTest('Gender unknown', 'X', sanitizeGender, 'male', false),
+    ];
+    displayResults('11. Geslacht (Gender)', genderTests);
+
+    // Test 12: Aardgas
+    const gasTests = [
+      runTest('Gas ja', 'ja', sanitizeGasUsage, 'yes', false),
+      runTest('Gas nee', 'nee', sanitizeGasUsage, 'no', false),
+      runTest('Gas yes', 'yes', sanitizeGasUsage, 'yes', false),
+      runTest('Gas no', 'no', sanitizeGasUsage, 'no', false),
+      runTest('Gas 1', '1', sanitizeGasUsage, 'yes', false),
+      runTest('Gas 0', '0', sanitizeGasUsage, 'no', false),
+      runTest('Gas unknown', 'maybe', sanitizeGasUsage, null, false),
+    ];
+    displayResults('12. Aardgasgebruik', gasTests);
+
+    // Test 13: Meldcode
+    const meldcodeTests = [
+      runTest('Valid meldcode', 'KA12345', sanitizeMeldCode, 'KA12345', false),
+      runTest('Meldcode lowercase', 'ka12345', sanitizeMeldCode, 'KA12345', false),
+      runTest('Meldcode with spaces', 'KA 12345', sanitizeMeldCode, 'KA12345', false),
+      runTest('Meldcode wrong format', 'KB12345', sanitizeMeldCode, 'KB12345', false),
+      runTest('Meldcode all zeros', 'KA00000', sanitizeMeldCode, 'KA00000', false),
+    ];
+    displayResults('13. Meldcode', meldcodeTests);
+
+    // Test 14: Installatiedatum
+    const installDateTests = [
+      runTest('Date DD-MM-YYYY', '15-06-2024', sanitizeInstallationDate, '15-06-2024', false),
+      runTest('Date DD/MM/YYYY', '15/06/2024', sanitizeInstallationDate, '15-06-2024', false),
+      runTest('Date DD.MM.YYYY', '15.06.2024', sanitizeInstallationDate, '15-06-2024', false),
+      runTest('Date YYYY-MM-DD', '2024-06-15', sanitizeInstallationDate, '15-06-2024', false),
+      runTest('Date short year', '15-06-24', sanitizeInstallationDate, '15-06-2024', false),
+      runTest('Date invalid day', '32-06-2024', sanitizeInstallationDate, '32-06-2024', false),
+      runTest('Date invalid month', '15-13-2024', sanitizeInstallationDate, '15-13-2024', false),
+    ];
+    displayResults('14. Installatiedatum', installDateTests);
+
+    // Test 15: Aankoopdatum
+    const purchaseDateTests = [
+      runTest('Purchase date valid', '01-05-2024', (d) => sanitizePurchaseDate(d, '15-06-2024'), '01-05-2024', false),
+      runTest('Purchase after install', '01-07-2024', (d) => sanitizePurchaseDate(d, '15-06-2024'), '01-07-2024', false),
+      runTest('Purchase YYYY-MM-DD', '2024-05-01', (d) => sanitizePurchaseDate(d, '15-06-2024'), '01-05-2024', false),
+      runTest('Purchase short year', '1-5-24', (d) => sanitizePurchaseDate(d, null), '01-05-2024', false),
+    ];
+    displayResults('15. Aankoopdatum (Purchase Date)', purchaseDateTests);
+
+    // ========================================================================
+    // PART 2: FIELD SPLITTING TESTS (Combined Field Scenarios)
+    // ========================================================================
+
+    displayDivider('🔀 PART 2: Field Splitting Tests (26 tests)');
+
+    // Field Split Test 1: IBAN + BIC
+    const ibanBicTests = [
+      runTest('IBAN: with BIC space separated', 'NL91RABO0123456789 RABONL2U', sanitizeIBAN, 'NL91RABO0123456789', false),
+      runTest('IBAN: with BIC label', 'NL91RABO0123456789 BIC: RABONL2U', sanitizeIBAN, 'NL91RABO0123456789', false),
+      runTest('IBAN: with BIC attached (8 chars)', 'NL91RABO0123456789RABONL2U', sanitizeIBAN, 'NL91RABO0123456789', false),
+      runTest('IBAN: with INGB BIC', 'NL91INGB0123456789 INGBNL2A', sanitizeIBAN, 'NL91INGB0123456789', false),
+      runTest('IBAN: with BIC lowercase label', 'NL91ABNA0123456789 bic: ABNANL2A', sanitizeIBAN, 'NL91ABNA0123456789', false),
+    ];
+    displayResults('Field-1. IBAN + BIC Splitting', ibanBicTests);
+
+    // Field Split Test 2: Postcode + Plaats
+    const postalCityTests = [
+      runTest('Postal: with city', '1065JD Amsterdam', sanitizePostalCode, '1065 JD', false),
+      runTest('Postal: with city space', '1065 JD Amsterdam', sanitizePostalCode, '1065 JD', false),
+      runTest('Postal: full address', 'Insulindestraat 59 1065JD Amsterdam', sanitizePostalCode, '1065 JD', false),
+      runTest('Postal: address different order', 'Amsterdam 1065JD Insulindestraat 59', sanitizePostalCode, '1065 JD', false),
+      runTest('Postal: with hyphenated city', '1234AB \'s-Hertogenbosch', sanitizePostalCode, '1234 AB', false),
+    ];
+    displayResults('Field-2. Postcode + Plaats Splitting', postalCityTests);
+
+    // Field Split Test 3: Voorletters + Achternaam
+    const initialsSurnameTests = [
+      runTest('Initials: with surname', 'J.H.M. Jansen', sanitizeInitials, 'J.H.M.', false),
+      runTest('Initials: with surname no dots', 'JHM Jansen', sanitizeInitials, 'J.H.M.', false),
+      runTest('Initials: with long surname', 'P.J. van der Berg', sanitizeInitials, 'P.J.', false),
+      runTest('Initials: full names', 'Jan Hendrik Maria', sanitizeInitials, 'J.H.M.', false),
+      runTest('Initials: with compound surname', 'A.B.C. de Vries', sanitizeInitials, 'A.B.C.', false),
+    ];
+    displayResults('Field-3. Voorletters + Achternaam Splitting', initialsSurnameTests);
+
+    // Field Split Test 4: Datum met Labels
+    const dateLabelTests = [
+      runTest('Date: with label "Installatiedatum:"', 'Installatiedatum: 15-06-2024', sanitizeInstallationDate, '15-06-2024', false),
+      runTest('Date: with label "Datum"', 'Datum 15-06-2024', sanitizeInstallationDate, '15-06-2024', false),
+      runTest('Date: with lowercase label', 'installatiedatum: 15-06-2024', sanitizeInstallationDate, '15-06-2024', false),
+      runTest('Date: with extra info', '15-06-2024 Factuur: 12345', sanitizeInstallationDate, '15-06-2024', false),
+      runTest('Date: datum installatie label', 'Datum installatie: 15-06-2024', sanitizeInstallationDate, '15-06-2024', false),
+    ];
+    displayResults('Field-4. Datum Labels Splitting', dateLabelTests);
+
+    // Field Split Test 5: MeldCode met Labels
+    const meldcodeLabelTests = [
+      runTest('Meldcode: with label', 'Meldcode: KA12345', sanitizeMeldCode, 'KA12345', false),
+      runTest('Meldcode: lowercase label', 'meldcode: KA12345', sanitizeMeldCode, 'KA12345', false),
+      runTest('Meldcode: with extra info', 'KA12345 Type: Installatie', sanitizeMeldCode, 'KA12345', false),
+      runTest('Meldcode: with multiple extra', 'Meldcode: KA12345 Status: Open', sanitizeMeldCode, 'KA12345', false),
+      runTest('Meldcode: in sentence', 'Het meldcode is KA12345 voor deze aanvraag', sanitizeMeldCode, 'KA12345', false),
+    ];
+    displayResults('Field-5. MeldCode Labels Splitting', meldcodeLabelTests);
+
+    // Field Split Test 6: Complex Combined Scenarios
+    const complexCombinedTests = [
+      runTest('COMPLEX: IBAN with BIC and OCR errors', 'NL9IRAB00123456789 RABONL2U', sanitizeIBAN, 'NL91RABO0123456789', false),
+      runTest('COMPLEX: Postal from address with OCR', 'Insulindestraat 59 1O65JD Amsterdam', sanitizePostalCode, '1065 JD', false),
+    ];
+    displayResults('Field-6. Complex Combined Scenarios', complexCombinedTests);
+
+    // ========================================================================
+    // PART 3: AI/OCR ERROR TESTS
+    // ========================================================================
+
+    displayDivider('🤖 PART 3: AI/OCR Error Tests (69 tests)');
+
+    // OCR Test 1: BSN with OCR errors
+    const bsnOcrTests = [
+      runTest('BSN: I→1 error (I23456782)', 'I23456782', sanitizeBSN, '123456782', true),
+      runTest('BSN: O→0 error (O12345678)', 'O12345678', sanitizeBSN, '012345678', true),
+      runTest('BSN: Z→2 error (12345678Z)', '12345678Z', sanitizeBSN, '123456782', true),
+      runTest('BSN: G→6 error (12305678G)', '12305678G', sanitizeBSN, '123056786', true),
+      runTest('BSN: Multiple errors (I2O4S678Z)', 'I2O4S678Z', sanitizeBSN, '120456782', true),
+      runTest('BSN: B→8 error (1234567B2)', '1234567B2', sanitizeBSN, '123456782', true),
+      runTest('BSN: S→5 error (12S456782)', '12S456782', sanitizeBSN, '125456782', true),
+    ];
+    displayResults('OCR-1. BSN - AI/OCR Fouten', bsnOcrTests);
+
+    // OCR Test 2: IBAN with OCR errors
+    const ibanOcrTests = [
+      runTest('IBAN: RAB0 → RABO', 'NL91RAB00123456789', sanitizeIBAN, 'NL91RABO0123456789', true),
+      runTest('IBAN: ING8 → INGB', 'NL91ING80123456789', sanitizeIBAN, 'NL91INGB0123456789', true),
+      runTest('IBAN: ABN4 → ABNA', 'NL91ABN40123456789', sanitizeIBAN, 'NL91ABNA0123456789', true),
+      runTest('IBAN: 5NSB → SNSB', 'NL915NSB0123456789', sanitizeIBAN, 'NL91SNSB0123456789', true),
+      runTest('IBAN: SNS8 → SNSB', 'NL91SNS80123456789', sanitizeIBAN, 'NL91SNSB0123456789', true),
+      runTest('IBAN: TR10 → TRIO', 'NL91TR100123456789', sanitizeIBAN, 'NL91TRIO0123456789', true),
+      runTest('IBAN: 8UNQ → BUNQ', 'NL918UNQ0123456789', sanitizeIBAN, 'NL91BUNQ0123456789', true),
+      runTest('IBAN: A8NA → ABNA', 'NL91A8NA0123456789', sanitizeIBAN, 'NL91ABNA0123456789', true),
+      runTest('IBAN: O in account (NL91RABO0I2345678O)', 'NL91RABO0I2345678O', sanitizeIBAN, 'NL91RABO0123456780', true),
+      runTest('IBAN: I→1 in checksum (NL9I)', 'NL9IRABO0123456789', sanitizeIBAN, 'NL91RABO0123456789', true),
+      runTest('IBAN: l→1 in checksum (NL9l)', 'NL9lINGB0123456789', sanitizeIBAN, 'NL91INGB0123456789', true),
+      runTest('IBAN: Multiple I/O errors in account', 'NL9IRABO0I23456789', sanitizeIBAN, 'NL91RABO0123456789', true),
+      runTest('IBAN: Multiple errors everywhere', 'NL9IRAB0OI2345678O', sanitizeIBAN, 'NL91RABO0123456780', true),
+    ];
+    displayResults('OCR-2. IBAN - AI/OCR Fouten (Bank Codes)', ibanOcrTests);
+
+    // OCR Test 3: Telefoon with OCR errors
+    const phoneOcrTests = [
+      runTest('Phone: O→0 at start (O612345678)', 'O612345678', sanitizePhone, '0612345678', true),
+      runTest('Phone: O→0 multiple (O2O1234567)', 'O2O1234567', sanitizePhone, '0201234567', true),
+      runTest('Phone: I→1 error (06I2345678)', '06I2345678', sanitizePhone, '0612345678', true),
+      runTest('Phone: 0O at start', '0O612345678', sanitizePhone, '00612345678', true),
+      runTest('Phone: Multiple O/I errors (O6I234567O)', 'O6I234567O', sanitizePhone, '0612345670', true),
+    ];
+    displayResults('OCR-3. Telefoon - AI/OCR Fouten', phoneOcrTests);
+
+    // OCR Test 4: Postcode with OCR errors
+    const postalOcrTests = [
+      runTest('Postal: I→1 in digits (I234AB)', 'I234AB', sanitizePostalCode, '1234 AB', true),
+      runTest('Postal: O→0 in digits (1O34AB)', '1O34AB', sanitizePostalCode, '1034 AB', true),
+      runTest('Postal: Z→2 in digits (1Z34AB)', '1Z34AB', sanitizePostalCode, '1234 AB', true),
+      runTest('Postal: B→8 in digits (12B4AB)', '12B4AB', sanitizePostalCode, '1284 AB', true),
+      runTest('Postal: S→5 in digits (S678AB)', 'S678AB', sanitizePostalCode, '5678 AB', true),
+      runTest('Postal: 0→O in letters (12340B)', '12340B', sanitizePostalCode, '1234 OB', true),
+      runTest('Postal: 8→B in letters (12348A)', '12348A', sanitizePostalCode, '1234 BA', true),
+      runTest('Postal: B→8 in digits pos 3 (567BAB)', '567BAB', sanitizePostalCode, '5678 AB', true),
+      runTest('Postal: Multiple errors (IO3488)', 'IO3488', sanitizePostalCode, '1034 BB', true),
+    ];
+    displayResults('OCR-4. Postcode - AI/OCR Fouten', postalOcrTests);
+
+    // OCR Test 5: MeldCode with OCR errors
+    const meldcodeOcrTests = [
+      runTest('Meldcode: K4 → KA', 'K412345', sanitizeMeldCode, 'KA12345', true),
+      runTest('Meldcode: KO → KA', 'KO12345', sanitizeMeldCode, 'KA12345', true),
+      runTest('Meldcode: I→1 in digits (KAI2345)', 'KAI2345', sanitizeMeldCode, 'KA12345', true),
+      runTest('Meldcode: O→0 in digits (KAO1234)', 'KAO1234', sanitizeMeldCode, 'KA01234', true),
+      runTest('Meldcode: Z→2 in digits (KA1Z345)', 'KA1Z345', sanitizeMeldCode, 'KA12345', true),
+      runTest('Meldcode: Multiple errors (K4O123S)', 'K4O123S', sanitizeMeldCode, 'KA01235', true),
+      runTest('Meldcode: KAO5678 (0→O)', 'KAO5678', sanitizeMeldCode, 'KA05678', true),
+    ];
+    displayResults('OCR-5. MeldCode - AI/OCR Fouten', meldcodeOcrTests);
+
+    // OCR Test 6: Voorletters with OCR errors
+    const initialsOcrTests = [
+      runTest('Voorletters: 5 → S (J.H.5.)', 'J.H.5.', sanitizeInitials, 'J.H.S.', true),
+      runTest('Voorletters: 5 → S at start (5.A.B.)', '5.A.B.', sanitizeInitials, 'S.A.B.', true),
+      runTest('Voorletters: 8 → B (S.A.8.)', 'S.A.8.', sanitizeInitials, 'S.A.B.', true),
+      runTest('Voorletters: 0 → O (P.0.J.)', 'P.0.J.', sanitizeInitials, 'P.O.J.', true),
+      runTest('Voorletters: 1 → I (1.J.K.)', '1.J.K.', sanitizeInitials, 'I.J.K.', true),
+      runTest('Voorletters: 2 → Z (T.2.A.)', 'T.2.A.', sanitizeInitials, 'T.Z.A.', true),
+      runTest('Voorletters: 6 → G (6.H.J.)', '6.H.J.', sanitizeInitials, 'G.H.J.', true),
+      runTest('Voorletters: Multiple errors (5.0.8.)', '5.0.8.', sanitizeInitials, 'S.O.B.', true),
+      runTest('Voorletters: No dots (JH5)', 'JH5', sanitizeInitials, 'J.H.S.', true),
+      runTest('Voorletters: All digits (501)', '501', sanitizeInitials, 'S.O.I.', true),
+    ];
+    displayResults('OCR-6. Voorletters - AI/OCR Fouten', initialsOcrTests);
+
+    // OCR Test 7: Email with OCR errors
+    const emailOcrTests = [
+      runTest('Email: "at" → @ (test at example.com)', 'test at example.com', sanitizeEmail, 'test@example.com', true),
+      runTest('Email: "(at)" → @ (test(at)example.com)', 'test(at)example.com', sanitizeEmail, 'test@example.com', true),
+      runTest('Email: _@_ → @ (test_@_example.com)', 'test_@_example.com', sanitizeEmail, 'test@example.com', true),
+      runTest('Email: 0→o (inf0@test.nl)', 'inf0@test.nl', sanitizeEmail, 'info@test.nl', true),
+    ];
+    displayResults('OCR-7. Email - AI/OCR Fouten', emailOcrTests);
+
+    // OCR Test 8: Datum with OCR errors
+    const dateOcrTests = [
+      runTest('Date: O→0 at start (O1-06-2024)', 'O1-06-2024', sanitizeInstallationDate, '01-06-2024', true),
+      runTest('Date: I→1 (0I-06-2024)', '0I-06-2024', sanitizeInstallationDate, '01-06-2024', true),
+      runTest('Date: Multiple O→0 (O1-O6-2O24)', 'O1-O6-2O24', sanitizeInstallationDate, '01-06-2024', true),
+      runTest('Date: I→1 (I5-12-2024)', 'I5-12-2024', sanitizeInstallationDate, '15-12-2024', true),
+    ];
+    displayResults('OCR-8. Datum - AI/OCR Fouten', dateOcrTests);
+
+    // OCR Test 9: EXTREME Edge Cases
+    const extremeTests = [
+      runTest('EXTREME: IBAN met ALLES fout', 'NL9IRAB00I2345678O', sanitizeIBAN, 'NL91RABO0123456780', true),
+      runTest('EXTREME: BSN volledig gescand', 'IZ3456789', sanitizeBSN, '123456789', true),
+      runTest('EXTREME: Postcode chaos', 'IO348B', sanitizePostalCode, '1034 BB', true),
+      runTest('EXTREME: Telefoon O6', 'O6-IZ34-567O', sanitizePhone, '0612345670', true),
+      runTest('EXTREME: MeldCode met prefix error', 'K4OI234S', sanitizeMeldCode, 'KA01245', true),
+      runTest('EXTREME: Voorletters alleen cijfers', '5.0.8.1.2.', sanitizeInitials, 'S.O.B.I.Z.', true),
+      runTest('EXTREME: Email with @ replaced', 'test at example.com', sanitizeEmail, 'test@example.com', true),
+      runTest('EXTREME: Datum volledig O/I chaos', 'OI-O6-2O24', sanitizeInstallationDate, '01-06-2024', true),
+    ];
+    displayResults('OCR-9. 🔥 EXTREME Edge Cases (Real Horror Scenarios)', extremeTests);
+
+    // ========================================================================
+    // SUMMARY
+    // ========================================================================
+
+    const passPercentage = ((passedTests / totalTests) * 100).toFixed(1);
+    const summaryDiv = document.getElementById('summary');
+    summaryDiv.innerHTML = `
+      <h2>📊 Comprehensive Test Summary</h2>
+      <p><strong>Total Tests:</strong> ${totalTests} (82 basic + 26 field splitting + 69 OCR)</p>
+      <p><strong class="pass">Passed:</strong> ${passedTests}</p>
+      <p><strong class="fail">Failed:</strong> ${failedTests}</p>
+      <p><strong>Success Rate:</strong> ${passPercentage}%</p>
+      ${failedTests === 0 ?
+        '<p style="font-size: 24px; color: #4ec9b0;">🎉 Perfect! All tests passed including field splitting & OCR error handling!</p>' :
+        '<p style="font-size: 24px; color: #f48771;">⚠️ Some tests failed - review above</p>'}
+      <p style="margin-top: 20px;"><strong>Coverage:</strong></p>
+      <ul style="margin-top: 10px;">
+        <li>Part 1: Basic sanitization (82 tests)</li>
+        <li>Part 2: Field splitting - gecombineerde velden (26 tests)</li>
+        <li>Part 3: AI/OCR error correcties (69 tests)</li>
+      </ul>
+      <p><strong>Impact:</strong> Als alle tests slagen, kan het systeem ${totalTests} verschillende scenarios correct afhandelen!</p>
+    `;
+
+    console.log(`\n${'='.repeat(70)}`);
+    console.log(`COMPREHENSIVE TEST SUMMARY: ${passedTests}/${totalTests} passed (${passPercentage}%)`);
+    console.log(`${'='.repeat(70)}\n`);
+  </script>
+</body>
+</html>

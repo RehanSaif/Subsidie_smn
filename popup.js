@@ -42,6 +42,967 @@ let factuurData = null;
 let machtigingsbewijsData = null;
 
 // ============================================================================
+// FORMULIERVELDEN CONFIGURATIE
+// ============================================================================
+/**
+ * Centrale configuratie voor alle formuliervelden.
+ * Gebruikt voor validatie, reset, en event listener setup.
+ */
+const FORM_FIELDS = {
+  personal: ['bsn', 'initials', 'lastName', 'gender'],
+  contact: ['phone', 'email', 'iban'],
+  address: ['street', 'houseNumber', 'houseAddition', 'postalCode', 'city'],
+  installation: ['purchaseDate', 'installationDate', 'meldCode', 'gasUsage']
+};
+
+/**
+ * Labels voor alle verplichte velden (exclusief houseAddition).
+ */
+const FIELD_LABELS = {
+  bsn: 'BSN',
+  initials: 'Voorletters',
+  lastName: 'Achternaam',
+  phone: 'Telefoonnummer',
+  email: 'E-mailadres',
+  iban: 'IBAN',
+  street: 'Straatnaam',
+  houseNumber: 'Huisnummer',
+  postalCode: 'Postcode',
+  city: 'Plaats',
+  purchaseDate: 'Aankoopdatum',
+  installationDate: 'Installatiedatum',
+  meldCode: 'Meldcode',
+  gasUsage: 'Aardgas gebruik'
+};
+
+/**
+ * Haalt alle veld IDs op uit de configuratie.
+ * @returns {Array<string>} Array met alle veld IDs
+ */
+function getAllFieldIds() {
+  return Object.values(FORM_FIELDS).flat();
+}
+
+/**
+ * Haalt alle verplichte veld IDs op (exclusief houseAddition).
+ * @returns {Array<string>} Array met verplichte veld IDs
+ */
+function getRequiredFieldIds() {
+  return Object.keys(FIELD_LABELS);
+}
+
+// ============================================================================
+// SANITIZATION FUNCTIONS
+// ============================================================================
+/**
+ * Deze sectie bevat alle sanitization/validatie functies voor formuliervelden.
+ * Elke functie:
+ * - Normaliseert het format (spaties, hoofdletters, etc.)
+ * - Corrigeert veelvoorkomende OCR fouten (O/0 verwarring)
+ * - Valideert de input (lengte, checksums, ranges)
+ * - Logt warnings bij ongeldige waarden
+ * - Retourneert genormaliseerde waarde of null
+ */
+
+/**
+ * Sanitize BSN (Burgerservicenummer).
+ * - Verwijdert alle niet-cijfer karakters
+ * - Valideert lengte (moet exact 9 cijfers zijn)
+ * - Valideert 11-proef checksum
+ * @param {string|number} bsnRaw - Ruwe BSN input
+ * @returns {string|null} Gesanitized BSN of null
+ */
+function sanitizeBSN(bsnRaw) {
+  if (!bsnRaw) return null;
+
+  let bsn = String(bsnRaw).trim();
+
+  // Fix OCR errors in BSN (all positions should be digits)
+  // Common OCR mistakes: O→0, I/l→1, S→5, B→8, Z→2, G→6
+  bsn = bsn.replace(/O/g, '0')    // O → 0
+           .replace(/[Il]/g, '1')  // I or l → 1
+           .replace(/S/g, '5')     // S → 5
+           .replace(/B/g, '8')     // B → 8
+           .replace(/Z/g, '2')     // Z → 2
+           .replace(/G/g, '6');    // G → 6
+
+  // Verwijder alle niet-cijfer karakters
+  bsn = bsn.replace(/\D/g, '');
+
+  // Valideer lengte
+  if (bsn.length !== 9) {
+    console.warn(`Invalid BSN length: ${bsn.length} (expected 9)`);
+    return bsn; // Return anyway maar log warning
+  }
+
+  // 11-proef validatie (BSN checksum)
+  const weights = [9, 8, 7, 6, 5, 4, 3, 2, -1];
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    sum += parseInt(bsn[i]) * weights[i];
+  }
+
+  if (sum % 11 !== 0) {
+    console.warn(`BSN failed 11-proef validation: ${bsn}`);
+    // Return anyway - sommige speciale BSN's kunnen afwijken
+  }
+
+  return bsn;
+}
+
+/**
+ * Sanitize IBAN (bankrekeningnummer).
+ * - Verwijdert spaties en punten
+ * - Maakt uppercase
+ * - Corrigeert AI/OCR fouten (O/0, I/1, S/5, B/8, etc.)
+ * - Valideert en corrigeert bank codes (RABO, INGB, ABNA, etc.)
+ * - Valideert NL IBAN formaat (18 karakters)
+ * - Valideert IBAN modulo-97 checksum
+ * @param {string} ibanRaw - Ruwe IBAN input
+ * @returns {string|null} Gesanitized IBAN of null
+ */
+function sanitizeIBAN(ibanRaw) {
+  if (!ibanRaw) return null;
+
+  let iban = String(ibanRaw).trim();
+
+  // ⚡ FIELD SPLITTING: Verwijder BIC code indien gecombineerd
+  // Common patterns:
+  // - "NL91RABO0123456789 RABONL2U" (spatie gescheiden)
+  // - "NL91RABO0123456789 BIC: RABONL2U" (met label)
+  // - "NL91RABO0123456789RABONL2U" (direct aan elkaar - BIC is 8 of 11 chars)
+
+  // Remove "BIC:" label eerst
+  iban = iban.replace(/\s*BIC\s*:\s*/gi, ' ');
+
+  // Als er spaties zijn, zoek het deel dat begint met NL
+  if (iban.includes(' ')) {
+    const parts = iban.split(/\s+/);
+    // Neem het deel dat begint met NL en ongeveer 18 chars is
+    const ibanPart = parts.find(part => part.toUpperCase().startsWith('NL') && part.length >= 16 && part.length <= 20);
+    if (ibanPart) {
+      iban = ibanPart;
+    } else {
+      iban = parts[0]; // Fallback: neem eerste deel
+    }
+  }
+
+  // Verwijder spaties, punten, maak uppercase
+  iban = iban.replace(/[\s.]/g, '').toUpperCase();
+
+  // Als IBAN langer is dan 18 chars, check voor BIC aan het einde
+  if (iban.length > 18 && iban.startsWith('NL')) {
+    const potentialBic = iban.substring(18);
+    // Check of wat overblijft lijkt op een BIC (8 of 11 chars, bevat NL2)
+    if ((potentialBic.length === 8 || potentialBic.length === 11) && potentialBic.includes('NL2')) {
+      console.log(`IBAN contained BIC code, removed: ${potentialBic}`);
+      iban = iban.substring(0, 18);
+    }
+  }
+
+  // Valideer minimale lengte
+  if (iban.length < 10) {
+    console.warn(`IBAN too short: ${iban}`);
+    return iban;
+  }
+
+  // Valideer NL IBAN formaat
+  if (!iban.startsWith('NL')) {
+    console.warn(`IBAN does not start with NL: ${iban}`);
+  }
+
+  // NL IBAN format: NL + 2 digits (checksum) + 4 letters (bank) + 10 digits (account)
+  // Position:      0-1  2-3                 4-7                8-17
+
+  // Fix OCR errors per section:
+  // 1. Checksum (positions 2-3): should be digits
+  if (iban.length >= 4) {
+    let checksum = iban.substring(2, 4);
+    checksum = checksum.replace(/O/g, '0')
+                       .replace(/[Il]/g, '1')
+                       .replace(/S/g, '5')
+                       .replace(/B/g, '8')
+                       .replace(/Z/g, '2');
+    iban = iban.substring(0, 2) + checksum + iban.substring(4);
+  }
+
+  // 2. Bank code (positions 4-7): should be 4 letters
+  //    Fix common OCR errors and validate against known bank codes
+  if (iban.length >= 8) {
+    let bankCode = iban.substring(4, 8);
+
+    // List of valid Dutch bank codes
+    const validBankCodes = [
+      'RABO', 'INGB', 'ABNA', 'SNSB', 'ASNB', 'TRIO', 'BUNQ', 'KNAB',
+      'RBRB', 'FVLB', 'HAND', 'NNBA', 'REVOLT', 'AEGO', 'BITSNL', 'ISBK'
+    ];
+
+    // Try to fix OCR errors in bank code (digits → letters)
+    const bankCodeFixed = bankCode.replace(/0/g, 'O')
+                                   .replace(/1/g, 'I')
+                                   .replace(/5/g, 'S')
+                                   .replace(/8/g, 'B')
+                                   .replace(/2/g, 'Z')
+                                   .replace(/4/g, 'A')
+                                   .replace(/6/g, 'G');
+
+    // Check if fixed bank code is valid
+    if (validBankCodes.includes(bankCodeFixed)) {
+      if (bankCode !== bankCodeFixed) {
+        console.log(`IBAN bank code corrected: ${bankCode} → ${bankCodeFixed}`);
+        bankCode = bankCodeFixed;
+      }
+    } else if (!validBankCodes.includes(bankCode)) {
+      // Try common specific corrections
+      if (bankCode === 'RAB0' || bankCode === 'RABO') bankCode = 'RABO';
+      else if (bankCode.startsWith('RAB') && bankCode.length === 4) bankCode = 'RABO';
+      else if (bankCode === 'ING8' || bankCode === 'INGB') bankCode = 'INGB';
+      else if (bankCode.startsWith('ING') && bankCode.length === 4) bankCode = 'INGB';
+      else if (bankCode === 'ABN4' || bankCode === 'A8NA') bankCode = 'ABNA';
+      else if (bankCode.startsWith('ABN') && bankCode.length === 4) bankCode = 'ABNA';
+      else if (bankCode === '5NSB' || bankCode === 'SNS8') bankCode = 'SNSB';
+      else if (bankCode.startsWith('SNS') && bankCode.length === 4) bankCode = 'SNSB';
+      else if (bankCode === 'TR10') bankCode = 'TRIO';
+      else if (bankCode === '8UNQ') bankCode = 'BUNQ';
+      else {
+        console.warn(`Unknown bank code in IBAN: ${bankCode} (expected RABO, INGB, ABNA, SNSB, etc.)`);
+      }
+    }
+
+    iban = iban.substring(0, 4) + bankCode + iban.substring(8);
+  }
+
+  // 3. Account number (positions 8-17): should be 10 digits
+  if (iban.length >= 18) {
+    let accountNumber = iban.substring(8, 18);
+    accountNumber = accountNumber.replace(/O/g, '0')
+                                 .replace(/[Il]/g, '1')
+                                 .replace(/S/g, '5')
+                                 .replace(/B/g, '8')
+                                 .replace(/Z/g, '2')
+                                 .replace(/G/g, '6');
+    iban = iban.substring(0, 8) + accountNumber + iban.substring(18);
+  }
+
+  // Validate total length
+  if (iban.length !== 18) {
+    console.warn(`Invalid NL IBAN length: ${iban.length} (expected 18)`);
+    return iban; // Return anyway
+  }
+
+  // IBAN modulo-97 checksum validatie
+  const rearranged = iban.substring(4) + iban.substring(0, 4);
+  let numericString = '';
+  for (let char of rearranged) {
+    if (char >= '0' && char <= '9') {
+      numericString += char;
+    } else {
+      numericString += (char.charCodeAt(0) - 55).toString(); // A=10, B=11, etc
+    }
+  }
+
+  // BigInt voor grote getallen
+  const remainder = BigInt(numericString) % 97n;
+  if (remainder !== 1n) {
+    console.warn(`IBAN failed checksum validation: ${iban}`);
+  }
+
+  return iban;
+}
+
+/**
+ * Sanitize telefoonnummer.
+ * - Verwijdert alle niet-cijfer karakters (behalve + voor landcode)
+ * - Converteert +31 naar 0 prefix
+ * - Valideert lengte (10 cijfers)
+ * - Waarschuwt voor service nummers (085, 088, 090, 091)
+ * @param {string} phoneRaw - Ruwe telefoon input
+ * @returns {string|null} Gesanitized telefoon of null
+ */
+function sanitizePhone(phoneRaw) {
+  if (!phoneRaw) return null;
+
+  let phone = String(phoneRaw).trim();
+
+  // Fix OCR errors BEFORE removing non-digit chars
+  // Common mistakes at start: O→0, I→1
+  phone = phone.replace(/^O/g, '0')      // O at start → 0
+               .replace(/^0O/g, '00')     // 0O at start → 00
+               .replace(/O/g, '0')        // All O → 0
+               .replace(/[Il]/g, '1');    // I or l → 1
+
+  // Verwijder alle niet-cijfer karakters behalve +
+  phone = phone.replace(/[^\d+]/g, '');
+
+  // Handle +31 landcode
+  if (phone.startsWith('+31')) {
+    phone = '0' + phone.substring(3);
+  } else if (phone.startsWith('0031')) {
+    phone = '0' + phone.substring(4);
+  } else if (phone.startsWith('31') && phone.length >= 11) {
+    phone = '0' + phone.substring(2);
+  }
+
+  // Filter ongewenste nummers
+  if (phone.startsWith('085') || phone.startsWith('088') ||
+      phone.startsWith('090') || phone.startsWith('091')) {
+    console.warn(`Service number detected, may not be personal: ${phone}`);
+  }
+
+  // Valideer lengte (NL nummers zijn 10 cijfers met leading 0)
+  if (phone.length !== 10) {
+    console.warn(`Invalid phone length: ${phone.length} (expected 10)`);
+  }
+
+  // Valideer start (moet 06 of 0xx zijn)
+  if (!phone.startsWith('0')) {
+    console.warn(`Phone should start with 0: ${phone}`);
+    return '0' + phone; // Auto-fix
+  }
+
+  return phone;
+}
+
+/**
+ * Sanitize email adres.
+ * - Verwijdert spaties
+ * - Maakt lowercase
+ * - Verwijdert trailing leestekens (OCR errors)
+ * - Filtert bedrijfsemail (@samangroep, @saman)
+ * - Valideert email format
+ * @param {string} emailRaw - Ruwe email input
+ * @returns {string|null} Gesanitized email of null
+ */
+function sanitizeEmail(emailRaw) {
+  if (!emailRaw) return null;
+
+  // Verwijder spaties, maak lowercase
+  let email = String(emailRaw).replace(/\s/g, '').toLowerCase().trim();
+
+  // Verwijder trailing punt/komma (OCR errors)
+  email = email.replace(/[.,;]+$/, '');
+
+  // Filter bedrijfsemail
+  if (email.includes('@samangroep') || email.includes('@saman')) {
+    console.warn(`Company email filtered: ${email}`);
+    return null;
+  }
+
+  // Basic email validatie
+  const emailRegex = /^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
+  if (!emailRegex.test(email)) {
+    console.warn(`Invalid email format: ${email}`);
+    return email; // Return anyway voor handmatige correctie
+  }
+
+  // Check for common OCR errors
+  email = email.replace(/,/g, '.'); // Komma → punt in domein
+
+  return email;
+}
+
+/**
+ * Sanitize voorletters.
+ * - Corrigeert OCR fouten (cijfers → letters)
+ * - Verwijdert overblijvende cijfers en speciale tekens
+ * - Normaliseert format naar "J.H.M." (met punten)
+ * - Maakt uppercase
+ * @param {string} initialsRaw - Ruwe voorletters input
+ * @returns {string|null} Gesanitized voorletters of null
+ */
+function sanitizeInitials(initialsRaw) {
+  if (!initialsRaw) return null;
+
+  let initials = String(initialsRaw).trim();
+
+  // ⚡ FIELD SPLITTING: Extract alleen initials als achternaam erbij staat
+  // Patterns:
+  // - "J.H.M. Jansen" (initials + achternaam)
+  // - "Jan Hendrik Maria" (volledige voornamen - neem eerste letters)
+
+  // Fix OCR errors EERST: voorletters kunnen ALLEEN letters zijn (A-Z)
+  // Common OCR mistakes: cijfers → letters
+  initials = initials.replace(/5/g, 'S')   // 5 → S (zeer vaak in voorletters!)
+                     .replace(/0/g, 'O')   // 0 → O
+                     .replace(/1/g, 'I')   // 1 → I
+                     .replace(/8/g, 'B')   // 8 → B
+                     .replace(/2/g, 'Z')   // 2 → Z
+                     .replace(/6/g, 'G');  // 6 → G
+
+  // Verwijder alles behalve letters, punten en spaties
+  initials = initials.replace(/[^a-zA-Z.\s]/g, '');
+
+  // Als er meerdere woorden zijn EN laatste woord begint met hoofdletter
+  // → extract alleen voorletters (niet achternaam)
+  const words = initials.split(/\s+/).filter(w => w.length > 0);
+  if (words.length > 1) {
+    // Als laatste woord > 2 chars en geen punten heeft → waarschijnlijk achternaam
+    const lastWord = words[words.length - 1];
+    if (lastWord.length > 2 && !lastWord.includes('.')) {
+      console.log(`Extracted initials from combined field, removed surname: ${lastWord}`);
+      // Neem alleen eerste woorden (voor de achternaam)
+      initials = words.slice(0, -1).join(' ');
+    }
+  }
+
+  // Split op spaties/punten
+  let letters = initials.split(/[\s.]+/).filter(l => l.length > 0);
+
+  // Maak uppercase en voeg punten toe
+  letters = letters.map(l => l.charAt(0).toUpperCase());
+
+  // Join met punt tussen elke letter
+  initials = letters.join('.') + (letters.length > 0 ? '.' : '');
+
+  // Valideer: maximaal 10 voorletters is realistisch
+  if (letters.length > 10) {
+    console.warn(`Unusual number of initials: ${letters.length}`);
+  }
+
+  return initials;
+}
+
+/**
+ * Sanitize achternaam.
+ * - Normaliseert spaties
+ * - Capitaliseert correct met Nederlandse voorvoegsels (van, de, der, etc)
+ * - Waarschuwt bij cijfers
+ * @param {string} lastNameRaw - Ruwe achternaam input
+ * @returns {string|null} Gesanitized achternaam of null
+ */
+function sanitizeLastName(lastNameRaw) {
+  if (!lastNameRaw) return null;
+
+  // Trim en normaliseer spaties
+  let lastName = String(lastNameRaw).trim().replace(/\s+/g, ' ');
+
+  // Warn als cijfers aanwezig
+  if (/\d/.test(lastName)) {
+    console.warn(`Last name contains digits: ${lastName}`);
+  }
+
+  // Split op spaties voor voorvoegsel handling
+  const parts = lastName.split(' ');
+
+  // Nederlandse voorvoegsels (lowercase)
+  const prefixes = ['van', 'de', 'der', 'den', 'het', "'t", 'te', 'ter', 'ten', 'vande', 'vanden', 'van de', 'van den', 'van der'];
+
+  // Capitalize eerste deel, lowercase voor voorvoegsels
+  const normalized = parts.map((part, index) => {
+    const lowerPart = part.toLowerCase();
+    if (index > 0 && prefixes.includes(lowerPart)) {
+      return lowerPart;
+    }
+    return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+  });
+
+  lastName = normalized.join(' ');
+
+  // Valideer minimale lengte
+  if (lastName.replace(/\s/g, '').length < 2) {
+    console.warn(`Last name very short: ${lastName}`);
+  }
+
+  return lastName;
+}
+
+/**
+ * Sanitize straatnaam.
+ * - Normaliseert spaties
+ * - Capitaliseert elk woord
+ * - Verwijdert huisnummer als het erbij zit
+ * @param {string} streetRaw - Ruwe straat input
+ * @returns {string|null} Gesanitized straat of null
+ */
+function sanitizeStreet(streetRaw) {
+  if (!streetRaw) return null;
+
+  // Trim en normaliseer spaties
+  let street = String(streetRaw).trim().replace(/\s+/g, ' ');
+
+  // Verwijder huisnummer als het erbij zit (cijfers aan eind)
+  street = street.replace(/\s*\d+.*$/, '').trim();
+
+  // Capitalize elk woord
+  street = street.split(' ').map(word =>
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join(' ');
+
+  // Valideer minimale lengte
+  if (street.length < 3) {
+    console.warn(`Street name very short: ${street}`);
+  }
+
+  return street;
+}
+
+/**
+ * Sanitize huisnummer en toevoeging.
+ * - Split nummer en toevoeging
+ * - Verwijdert spaties uit toevoeging
+ * - Maakt toevoeging uppercase
+ * - Valideert nummer range (1-9999)
+ * @param {string} houseNumberRaw - Ruwe huisnummer input
+ * @returns {Object} {number: string, addition: string|null}
+ */
+function sanitizeHouseNumber(houseNumberRaw) {
+  if (!houseNumberRaw) return { number: null, addition: null };
+
+  // Verwijder leading/trailing spaties
+  let combined = String(houseNumberRaw).trim();
+
+  // Match nummer en toevoeging
+  const match = combined.match(/^(\d+)(.*)$/);
+
+  if (!match) {
+    console.warn(`Could not parse house number: ${combined}`);
+    return { number: combined, addition: null };
+  }
+
+  let number = match[1];
+  let addition = match[2].trim();
+
+  // Verwijder spaties uit toevoeging
+  addition = addition.replace(/\s/g, '');
+
+  // Uppercase toevoeging
+  addition = addition.toUpperCase();
+
+  // Valideer nummer range (1-9999 is realistisch)
+  const numValue = parseInt(number);
+  if (numValue < 1 || numValue > 9999) {
+    console.warn(`Unusual house number: ${numValue}`);
+  }
+
+  return {
+    number: number,
+    addition: addition || null
+  };
+}
+
+/**
+ * Sanitize postcode.
+ * - Verwijdert spaties
+ * - Maakt uppercase
+ * - Corrigeert O/0 verwarring in cijfer gedeelte
+ * - Valideert NL format (4 cijfers + 2 letters)
+ * - Retourneert format "1234 AB" met spatie
+ * @param {string} postalCodeRaw - Ruwe postcode input
+ * @returns {string|null} Gesanitized postcode of null
+ */
+function sanitizePostalCode(postalCodeRaw) {
+  if (!postalCodeRaw) return null;
+
+  let postal = String(postalCodeRaw).toUpperCase().trim();
+
+  // ⚡ FIELD SPLITTING: Extract postcode uit volledig adres
+  // Patterns:
+  // - "1065JD Amsterdam" (postcode + plaats)
+  // - "Insulindestraat 59 1065JD Amsterdam" (volledig adres)
+  // Nederlandse postcode = 4 cijfers + 2 letters (herkenbaar patroon)
+
+  // Zoek postcode patroon: 4 cijfers gevolgd door 2 letters
+  const postalMatch = postal.match(/\b(\d{4}\s?[A-Z]{2})\b/);
+  if (postalMatch) {
+    console.log(`Extracted postal code from combined field: ${postalMatch[1]}`);
+    postal = postalMatch[1];
+  }
+
+  // Verwijder alle spaties
+  postal = postal.replace(/\s/g, '');
+
+  // Fix OCR errors per section:
+  // First 4 positions: should be digits (fix O→0, I→1, S→5, B→8, Z→2, G→6)
+  if (postal.length >= 4) {
+    let digits = postal.substring(0, 4);
+    digits = digits.replace(/O/g, '0')
+                   .replace(/[Il]/g, '1')
+                   .replace(/S/g, '5')
+                   .replace(/B/g, '8')
+                   .replace(/Z/g, '2')
+                   .replace(/G/g, '6');
+    postal = digits + postal.substring(4);
+  }
+
+  // Last 2 positions: should be letters (fix 0→O, 1→I, 5→S, 8→B)
+  // But only if they're actually digits (don't fix if already correct)
+  if (postal.length >= 6) {
+    let letters = postal.substring(4, 6);
+    // Only convert if digit is found in letter position
+    letters = letters.replace(/0/g, 'O')
+                     .replace(/1/g, 'I')
+                     .replace(/5/g, 'S')
+                     .replace(/8/g, 'B');
+    postal = postal.substring(0, 4) + letters;
+  }
+
+  // Valideer NL postcode format: 4 cijfers + 2 letters
+  const postalRegex = /^(\d{4})([A-Z]{2})$/;
+  const match = postal.match(postalRegex);
+
+  if (!match) {
+    console.warn(`Invalid postal code format: ${postal} (expected: 1234AB)`);
+    return postal; // Return anyway voor handmatige correctie
+  }
+
+  // Return met standaard spatie: "1234 AB"
+  return `${match[1]} ${match[2]}`;
+}
+
+/**
+ * Sanitize plaatsnaam.
+ * - Normaliseert spaties
+ * - Capitaliseert elk woord
+ * - Behoudt speciale karakters ('-', apostroffen)
+ * - Waarschuwt bij cijfers
+ * @param {string} cityRaw - Ruwe plaatsnaam input
+ * @returns {string|null} Gesanitized plaatsnaam of null
+ */
+function sanitizeCity(cityRaw) {
+  if (!cityRaw) return null;
+
+  // Trim en normaliseer spaties
+  let city = String(cityRaw).trim().replace(/\s+/g, ' ');
+
+  // Warn als cijfers aanwezig
+  if (/\d/.test(city)) {
+    console.warn(`City name contains digits: ${city}`);
+  }
+
+  // Capitalize elk woord, behalve tussenvoegsels
+  const words = city.split(/(\s|-)/); // Split op spaties en streepjes maar behoud delimiters
+
+  const normalized = words.map((word, index) => {
+    if (word === ' ' || word === '-' || word === "'") return word;
+
+    // Kleine woorden lowercase (tenzij eerste woord)
+    if (index > 0 && ['aan', 'bij', 'op', 'onder'].includes(word.toLowerCase())) {
+      return word.toLowerCase();
+    }
+
+    // Capitalize
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  });
+
+  city = normalized.join('');
+
+  // Valideer minimale lengte
+  if (city.length < 2) {
+    console.warn(`City name very short: ${city}`);
+  }
+
+  return city;
+}
+
+/**
+ * Sanitize geslacht.
+ * - Normaliseert verschillende varianten naar "male" of "female"
+ * - Accepteert: man/vrouw, M/V, male/female, mannelijk/vrouwelijk
+ * - Default fallback naar "male" bij onbekende waarde
+ * @param {string} genderRaw - Ruwe geslacht input
+ * @returns {string|null} "male", "female", of null
+ */
+function sanitizeGender(genderRaw) {
+  if (!genderRaw) return null;
+
+  // Lowercase voor matching
+  const gender = String(genderRaw).toLowerCase().trim();
+
+  // Map naar male/female
+  if (gender === 'male' || gender === 'man' || gender === 'm' || gender === 'mannelijk') {
+    return 'male';
+  }
+
+  if (gender === 'female' || gender === 'vrouw' || gender === 'v' || gender === 'woman' || gender === 'vrouwelijk') {
+    return 'female';
+  }
+
+  console.warn(`Unknown gender value: ${genderRaw}`);
+  return 'male'; // Default fallback
+}
+
+/**
+ * Sanitize aardgasgebruik.
+ * - Normaliseert verschillende varianten naar "yes" of "no"
+ * - Accepteert: ja/nee, yes/no, 1/0, true/false
+ * - Retourneert null bij onbekende waarde (voor handmatige invul)
+ * @param {string} gasUsageRaw - Ruwe aardgas input
+ * @returns {string|null} "yes", "no", of null
+ */
+function sanitizeGasUsage(gasUsageRaw) {
+  if (!gasUsageRaw) return null;
+
+  // Lowercase voor matching
+  const gas = String(gasUsageRaw).toLowerCase().trim();
+
+  // Map naar yes/no
+  if (gas === 'yes' || gas === 'ja' || gas === '1' || gas === 'true') {
+    return 'yes';
+  }
+
+  if (gas === 'no' || gas === 'nee' || gas === '0' || gas === 'false') {
+    return 'no';
+  }
+
+  console.warn(`Unknown gas usage value: ${gasUsageRaw}`);
+  return null; // Laat leeg voor handmatige invul
+}
+
+/**
+ * Sanitize meldcode.
+ * - Verwijdert spaties en streepjes
+ * - Maakt uppercase
+ * - Corrigeert O/0 verwarring in cijfer gedeelte
+ * - Valideert format: KA + exact 5 cijfers
+ * - Waarschuwt bij verdachte codes (KA00000)
+ * @param {string} meldCodeRaw - Ruwe meldcode input
+ * @returns {string|null} Gesanitized meldcode of null
+ */
+function sanitizeMeldCode(meldCodeRaw) {
+  if (!meldCodeRaw) return null;
+
+  let code = String(meldCodeRaw).trim();
+
+  // ⚡ FIELD SPLITTING: Verwijder labels en extra info
+  // Patterns:
+  // - "Meldcode: KA12345"
+  // - "KA12345 Type: Installatie"
+
+  // Verwijder "Meldcode:" label
+  code = code.replace(/^Meldcode\s*:\s*/i, '');
+
+  // Extract alleen KA##### patroon
+  const meldCodeMatch = code.match(/\b(K[A04O]\d{5})\b/i);
+  if (meldCodeMatch) {
+    code = meldCodeMatch[1];
+  }
+
+  // Verwijder spaties en streepjes, maak uppercase
+  code = code.replace(/[\s-]/g, '').toUpperCase();
+
+  // Fix OCR errors in prefix (should be "KA")
+  // Common mistakes: K4 → KA, KÅ → KA
+  if (code.length >= 2) {
+    let prefix = code.substring(0, 2);
+    if (prefix === 'K4' || prefix === 'K0' || prefix === 'KO') {
+      prefix = 'KA';
+      console.log(`Meldcode prefix corrected: ${code.substring(0, 2)} → KA`);
+    }
+    code = prefix + code.substring(2);
+  }
+
+  // Fix OCR errors in digit section (positions 2-6: should be 5 digits)
+  if (code.length >= 7 && code.startsWith('KA')) {
+    let digits = code.substring(2, 7);
+    digits = digits.replace(/O/g, '0')
+                   .replace(/[Il]/g, '1')
+                   .replace(/S/g, '5')
+                   .replace(/B/g, '8')
+                   .replace(/Z/g, '2')
+                   .replace(/G/g, '6');
+    code = 'KA' + digits + code.substring(7);
+  }
+
+  // Valideer format: KA + exact 5 cijfers
+  const meldCodeRegex = /^KA(\d{5})$/;
+  const match = code.match(meldCodeRegex);
+
+  if (!match) {
+    console.warn(`Invalid meldcode format: ${code} (expected: KA#####, like KA12345)`);
+    return code; // Return anyway voor handmatige correctie
+  }
+
+  // Extra validatie: cijfers mogen niet allemaal 0 zijn
+  if (match[1] === '00000') {
+    console.warn(`Suspicious meldcode (all zeros): ${code}`);
+  }
+
+  return code;
+}
+
+/**
+ * Sanitize installatiedatum.
+ * - Converteert verschillende datum formaten naar DD-MM-YYYY
+ * - Accepteert: DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY, YYYY-MM-DD
+ * - Corrigeert O/0 verwarring
+ * - Valideert datum geldigheid (geen 31 feb)
+ * - Valideert realistische range (2020-2030)
+ * - Waarschuwt bij toekomstige datums
+ * @param {string} dateRaw - Ruwe datum input
+ * @returns {string|null} Datum in format DD-MM-YYYY of null
+ */
+function sanitizeInstallationDate(dateRaw) {
+  if (!dateRaw) return null;
+
+  let date = String(dateRaw).trim();
+
+  // ⚡ FIELD SPLITTING: Verwijder labels en extra info
+  // Patterns:
+  // - "Installatiedatum: 15-06-2024"
+  // - "Datum 15-06-2024"
+  // - "15-06-2024 Factuur: 12345"
+
+  // Verwijder bekende labels
+  date = date.replace(/^(Installatie)?[Dd]atum\s*:\s*/i, '')
+             .replace(/^Datum\s+(installatie)?\s*:\s*/i, '');
+
+  // Extract eerste datum patroon (DD-MM-YYYY of varianten)
+  const datePatternMatch = date.match(/(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/);
+  if (datePatternMatch) {
+    date = datePatternMatch[1];
+  }
+
+  // Fix O/0 verwarring
+  date = date.replace(/O/g, '0');
+
+  // Parse verschillende formaten naar DD-MM-YYYY
+  let day, month, year;
+
+  // Probeer DD-MM-YYYY of DD/MM/YYYY of DD.MM.YYYY
+  let match = date.match(/^(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{2,4})$/);
+  if (match) {
+    day = match[1].padStart(2, '0');
+    month = match[2].padStart(2, '0');
+    year = match[3].length === 2 ? '20' + match[3] : match[3];
+  } else {
+    // Probeer YYYY-MM-DD (ISO format)
+    match = date.match(/^(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})$/);
+    if (match) {
+      year = match[1];
+      month = match[2].padStart(2, '0');
+      day = match[3].padStart(2, '0');
+    } else {
+      console.warn(`Could not parse installation date: ${dateRaw}`);
+      return dateRaw;
+    }
+  }
+
+  // Valideer ranges
+  const dayNum = parseInt(day);
+  const monthNum = parseInt(month);
+  const yearNum = parseInt(year);
+
+  if (dayNum < 1 || dayNum > 31) {
+    console.warn(`Invalid day in date: ${day}`);
+  }
+  if (monthNum < 1 || monthNum > 12) {
+    console.warn(`Invalid month in date: ${month}`);
+  }
+  if (yearNum < 2020 || yearNum > 2030) {
+    console.warn(`Unusual year in installation date: ${year} (expected 2020-2030)`);
+  }
+
+  // Check of datum in toekomst is
+  const parsedDate = new Date(yearNum, monthNum - 1, dayNum);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0); // Reset tijd voor vergelijking
+
+  if (parsedDate > today) {
+    console.warn(`Installation date is in the future: ${day}-${month}-${year}`);
+  }
+
+  // Valideer dat datum bestaat (geen 31 feb etc)
+  const testDate = new Date(yearNum, monthNum - 1, dayNum);
+  if (testDate.getDate() !== dayNum || testDate.getMonth() !== monthNum - 1) {
+    console.warn(`Invalid date (day doesn't exist in month): ${day}-${month}-${year}`);
+  }
+
+  // Return in NL format: DD-MM-YYYY
+  return `${day}-${month}-${year}`;
+}
+
+/**
+ * Sanitize aankoopdatum.
+ * - Converteert verschillende datum formaten naar DD-MM-YYYY
+ * - Accepteert: DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY, YYYY-MM-DD
+ * - Corrigeert O/0 verwarring
+ * - Valideert datum geldigheid
+ * - Valideert realistische range (2020-2030)
+ * - Waarschuwt bij toekomstige datums
+ * - Valideert logische volgorde: aankoop <= installatie
+ * @param {string} dateRaw - Ruwe datum input
+ * @param {string} installationDate - Installatiedatum voor volgorde check (optioneel)
+ * @returns {string|null} Datum in format DD-MM-YYYY of null
+ */
+function sanitizePurchaseDate(dateRaw, installationDate = null) {
+  if (!dateRaw) return null;
+
+  // Verwijder spaties, fix O/0 verwarring
+  let date = String(dateRaw).trim().replace(/O/g, '0');
+
+  // Parse verschillende formaten naar DD-MM-YYYY
+  let day, month, year;
+
+  // Probeer DD-MM-YYYY of DD/MM/YYYY of DD.MM.YYYY
+  let match = date.match(/^(\d{1,2})[-\/\.](\d{1,2})[-\/\.](\d{2,4})$/);
+  if (match) {
+    day = match[1].padStart(2, '0');
+    month = match[2].padStart(2, '0');
+    year = match[3].length === 2 ? '20' + match[3] : match[3];
+  } else {
+    // Probeer YYYY-MM-DD (ISO format)
+    match = date.match(/^(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})$/);
+    if (match) {
+      year = match[1];
+      month = match[2].padStart(2, '0');
+      day = match[3].padStart(2, '0');
+    } else {
+      console.warn(`Could not parse purchase date: ${dateRaw}`);
+      return dateRaw;
+    }
+  }
+
+  // Valideer ranges
+  const dayNum = parseInt(day);
+  const monthNum = parseInt(month);
+  const yearNum = parseInt(year);
+
+  if (dayNum < 1 || dayNum > 31) {
+    console.warn(`Invalid day in date: ${day}`);
+  }
+  if (monthNum < 1 || monthNum > 12) {
+    console.warn(`Invalid month in date: ${month}`);
+  }
+  if (yearNum < 2020 || yearNum > 2030) {
+    console.warn(`Unusual year in purchase date: ${year} (expected 2020-2030)`);
+  }
+
+  // Check of datum in toekomst is
+  const parsedDate = new Date(yearNum, monthNum - 1, dayNum);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (parsedDate > today) {
+    console.warn(`Purchase date is in the future: ${day}-${month}-${year}`);
+  }
+
+  // Valideer dat datum bestaat
+  const testDate = new Date(yearNum, monthNum - 1, dayNum);
+  if (testDate.getDate() !== dayNum || testDate.getMonth() !== monthNum - 1) {
+    console.warn(`Invalid date (day doesn't exist in month): ${day}-${month}-${year}`);
+  }
+
+  // Als installationDate bekend is, valideer dat aankoop <= installatie
+  if (installationDate) {
+    const installMatch = installationDate.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (installMatch) {
+      const installDate = new Date(
+        parseInt(installMatch[3]),
+        parseInt(installMatch[2]) - 1,
+        parseInt(installMatch[1])
+      );
+
+      if (parsedDate > installDate) {
+        console.warn(`Purchase date (${day}-${month}-${year}) is after installation date (${installationDate})`);
+      }
+    }
+  }
+
+  // Return in NL format: DD-MM-YYYY
+  return `${day}-${month}-${year}`;
+}
+
+// ============================================================================
 // EVENT LISTENER: MACHTIGINGSFORMULIER UPLOAD
 // ============================================================================
 /**
@@ -76,130 +1037,30 @@ document.getElementById('machtigingsformulier').addEventListener('change', async
     console.log('📎 Machtigingsformulier uploaded (session only):', file.name);
 
     // Toon extractie status aan gebruiker
-    const statusDiv = document.getElementById('extractionStatus');
-    statusDiv.textContent = '🔄 Gegevens worden geëxtraheerd...';
-    statusDiv.style.display = 'block';
-    statusDiv.style.color = '#FFC012';
+    showExtractionStatus('🔄 Gegevens worden geëxtraheerd...', 'extractionStatus', 'processing', 0);
 
     try {
       // Voer OCR extractie uit op het machtigingsformulier
       const extractedData = await extractDataFromForm(file);
-
       console.log('Extracted data result:', extractedData);
 
-      // Tel hoeveel velden succesvol zijn gevonden
-      let fieldsFound = 0;
-
-      // Vul BSN veld in
-      if (extractedData.bsn) {
-        document.getElementById('bsn').value = extractedData.bsn;
-        fieldsFound++;
-      }
-
-      // Vul voorletters veld in
-      if (extractedData.initials) {
-        document.getElementById('initials').value = extractedData.initials;
-        fieldsFound++;
-      }
-
-      // Vul achternaam veld in
-      if (extractedData.lastName) {
-        document.getElementById('lastName').value = extractedData.lastName;
-        fieldsFound++;
-      }
-
-      // Vul geslacht veld in (male/female)
-      if (extractedData.gender) {
-        document.getElementById('gender').value = extractedData.gender;
-        fieldsFound++;
-      }
-
-      // Vul telefoonnummer veld in
-      if (extractedData.phone) {
-        document.getElementById('phone').value = extractedData.phone;
-        fieldsFound++;
-      }
-
-      // Vul e-mailadres veld in
-      if (extractedData.email) {
-        document.getElementById('email').value = extractedData.email;
-        fieldsFound++;
-      }
-
-      // Vul IBAN bankrekeningnummer in
-      if (extractedData.iban) {
-        document.getElementById('iban').value = extractedData.iban;
-        fieldsFound++;
-      }
-
-      // Vul straatnaam veld in
-      if (extractedData.street) {
-        document.getElementById('street').value = extractedData.street;
-        fieldsFound++;
-      }
-
-      // Vul postcode veld in
-      if (extractedData.postalCode) {
-        document.getElementById('postalCode').value = extractedData.postalCode;
-        fieldsFound++;
-      }
-
-      // Vul plaatsnaam veld in
-      if (extractedData.city) {
-        document.getElementById('city').value = extractedData.city;
-        fieldsFound++;
-      }
-
-      // Splits huisnummer in nummer en toevoeging
-      // Bijvoorbeeld: "59A01" wordt gesplitst in "59" en "A01"
-      if (extractedData.houseNumber) {
-        // Match: cijfers aan het begin (59) en alles daarna (A01)
-        const houseNumberMatch = extractedData.houseNumber.match(/^(\d+)(.*)$/);
-        if (houseNumberMatch) {
-          const number = houseNumberMatch[1];
-          const addition = houseNumberMatch[2];
-
-          document.getElementById('houseNumber').value = number;
-          if (addition) {
-            document.getElementById('houseAddition').value = addition;
-            fieldsFound++;
-          }
-          fieldsFound++;
-        } else {
-          // Als geen match, gebruik de hele waarde
-          document.getElementById('houseNumber').value = extractedData.houseNumber;
-          fieldsFound++;
-        }
-      }
-
-      // Vul aardgasgebruik veld in (yes/no)
-      if (extractedData.gasUsage) {
-        document.getElementById('gasUsage').value = extractedData.gasUsage;
-        fieldsFound++;
-      }
+      // Vul formuliervelden in met geëxtraheerde data
+      const fieldsFound = fillFormFields(extractedData);
 
       // Toon succesbericht met aantal gevonden velden
       if (fieldsFound > 0) {
-        statusDiv.textContent = `✅ ${fieldsFound} veld(en) succesvol ingevuld!`;
-        statusDiv.style.color = '#2b8a3e';
+        showExtractionStatus(`✅ ${fieldsFound} veld(en) succesvol ingevuld!`, 'extractionStatus', 'success', 5000);
       } else {
-        statusDiv.textContent = '⚠️ Geen gegevens gevonden. Controleer de console voor details.';
-        statusDiv.style.color = '#f59f00';
+        showExtractionStatus('⚠️ Geen gegevens gevonden. Controleer de console voor details.', 'extractionStatus', 'warning', 5000);
       }
 
       // Update de status van de "Start Automatisering" knop
       updateStartButtonState();
-
-      // Verberg status na 5 seconden
-      setTimeout(() => {
-        statusDiv.style.display = 'none';
-      }, 5000);
     } catch (error) {
       // Behandel extractie fouten
       console.error('Extraction error:', error);
       console.error('Error stack:', error.stack);
-      statusDiv.textContent = `❌ Fout: ${error.message}`;
-      statusDiv.style.color = '#c92a2a';
+      showExtractionStatus(`❌ Fout: ${error.message}`, 'extractionStatus', 'error', 0);
 
       // Update knop status ook bij fout
       updateStartButtonState();
@@ -275,12 +1136,7 @@ document.getElementById('factuurDoc').addEventListener('change', async (e) => {
     console.log('✓ Factuur ready for automation (will be cleared after use)');
 
     // Toon extractie status voor meldcode en datum
-    const statusDiv = document.getElementById('factuurExtractionStatus');
-    if (statusDiv) {
-      statusDiv.textContent = '🔄 Meldcode wordt geëxtraheerd uit factuur...';
-      statusDiv.style.display = 'block';
-      statusDiv.style.color = '#FFC012';
-    }
+    showExtractionStatus('🔄 Meldcode wordt geëxtraheerd uit factuur...', 'factuurExtractionStatus', 'processing', 0);
 
     try {
       // Voer meldcode en datum extractie uit
@@ -304,22 +1160,9 @@ document.getElementById('factuurDoc').addEventListener('change', async (e) => {
 
       // Toon succesmelding met gevonden gegevens
       if (fieldsFound.length > 0) {
-        if (statusDiv) {
-          statusDiv.textContent = `✅ Gevonden: ${fieldsFound.join(', ')}`;
-          statusDiv.style.color = '#2b8a3e';
-          setTimeout(() => {
-            statusDiv.style.display = 'none';
-          }, 3000);
-        }
+        showExtractionStatus(`✅ Gevonden: ${fieldsFound.join(', ')}`, 'factuurExtractionStatus', 'success', 3000);
       } else {
-        // Waarschuwing als geen gegevens gevonden
-        if (statusDiv) {
-          statusDiv.textContent = '⚠️ Geen meldcode of datum gevonden in factuur';
-          statusDiv.style.color = '#f59f00';
-          setTimeout(() => {
-            statusDiv.style.display = 'none';
-          }, 3000);
-        }
+        showExtractionStatus('⚠️ Geen meldcode of datum gevonden in factuur', 'factuurExtractionStatus', 'warning', 3000);
       }
 
       // Update de status van de "Start Automatisering" knop
@@ -327,20 +1170,199 @@ document.getElementById('factuurDoc').addEventListener('change', async (e) => {
     } catch (error) {
       // Behandel extractie fouten
       console.error('Factuur extraction error:', error);
-      if (statusDiv) {
-        statusDiv.textContent = `❌ Fout bij extraheren factuur: ${error.message}`;
-        statusDiv.style.color = '#c92a2a';
-        setTimeout(() => {
-          statusDiv.style.display = 'none';
-        }, 5000);
-      }
+      showExtractionStatus(`❌ Fout bij extraheren factuur: ${error.message}`, 'factuurExtractionStatus', 'error', 5000);
       updateStartButtonState();
     }
-
-    // Update knop status na factuur upload
-    updateStartButtonState();
   }
 });
+
+// ============================================================================
+// HULPFUNCTIE: MISTRAL API ERROR HANDLING
+// ============================================================================
+/**
+ * Uniforme error handling voor Mistral API responses.
+ *
+ * @param {Response} response - De fetch response object
+ * @throws {Error} Met geformatteerde foutmelding
+ *
+ * FUNCTIONALITEIT:
+ * - Parseert error response van Mistral API
+ * - Geeft specifieke melding bij rate limiting (429)
+ * - Gooit Error met status code en bericht
+ */
+async function handleMistralApiError(response) {
+  let errorMessage = response.statusText;
+  try {
+    const errorData = await response.json();
+    errorMessage = errorData.error?.message || errorMessage;
+  } catch (e) {
+    // Kon error response niet parsen
+  }
+
+  if (response.status === 429) {
+    throw new Error('Mistral API rate limit bereikt. Wacht even (30-60 seconden) voordat je het opnieuw probeert.');
+  }
+
+  throw new Error(`Mistral API error (${response.status}): ${errorMessage}`);
+}
+
+// ============================================================================
+// HULPFUNCTIE: STATUS DIV WEERGAVE
+// ============================================================================
+/**
+ * Toont status bericht met automatische timeout.
+ *
+ * @param {string} message - Het te tonen bericht
+ * @param {string} statusDivId - ID van het status div element
+ * @param {string} type - Type: 'processing', 'success', 'warning', of 'error'
+ * @param {number} autohideDuration - Tijd in ms voordat bericht verdwijnt (0 = niet verbergen)
+ */
+function showExtractionStatus(message, statusDivId, type = 'processing', autohideDuration = 3000) {
+  const statusDiv = document.getElementById(statusDivId);
+  if (!statusDiv) return;
+
+  const colors = {
+    processing: '#FFC012',
+    success: '#2b8a3e',
+    warning: '#f59f00',
+    error: '#c92a2a'
+  };
+
+  statusDiv.textContent = message;
+  statusDiv.style.display = 'block';
+  statusDiv.style.color = colors[type] || colors.processing;
+
+  if (autohideDuration > 0) {
+    setTimeout(() => {
+      statusDiv.style.display = 'none';
+    }, autohideDuration);
+  }
+}
+
+// ============================================================================
+// HULPFUNCTIE: FORMULIERVELDEN INVULLEN
+// ============================================================================
+/**
+ * Vult formuliervelden in met geëxtraheerde data.
+ *
+ * @param {Object} extractedData - Object met geëxtraheerde velden
+ * @returns {number} Aantal succesvol ingevulde velden
+ */
+function fillFormFields(extractedData) {
+  const fieldMappings = [
+    'bsn', 'initials', 'lastName', 'gender', 'phone',
+    'email', 'iban', 'street', 'postalCode', 'city', 'gasUsage'
+  ];
+
+  let fieldsFound = 0;
+
+  // Vul standaard velden in
+  fieldMappings.forEach(field => {
+    if (extractedData[field]) {
+      const element = document.getElementById(field);
+      if (element) {
+        element.value = extractedData[field];
+        fieldsFound++;
+      }
+    }
+  });
+
+  // Speciale behandeling voor huisnummer (splits logica)
+  if (extractedData.houseNumber) {
+    const houseNumberMatch = extractedData.houseNumber.match(/^(\d+)(.*)$/);
+    if (houseNumberMatch) {
+      const number = houseNumberMatch[1];
+      const addition = houseNumberMatch[2];
+
+      document.getElementById('houseNumber').value = number;
+      fieldsFound++;
+
+      if (addition) {
+        document.getElementById('houseAddition').value = addition;
+        fieldsFound++;
+      }
+    } else {
+      document.getElementById('houseNumber').value = extractedData.houseNumber;
+      fieldsFound++;
+    }
+  }
+
+  return fieldsFound;
+}
+
+// ============================================================================
+// HULPFUNCTIE: REGEX FALLBACKS VOOR DATA EXTRACTIE
+// ============================================================================
+/**
+ * Centraliseert regex patronen voor fallback extractie.
+ *
+ * @param {Object} extractedData - Object met geëxtraheerde data (kan incomplete zijn)
+ * @param {string} extractedText - De volledige geëxtraheerde tekst uit document
+ * @returns {Object} Het extractedData object aangevuld met regex fallbacks
+ */
+function applyRegexFallbacks(extractedData, extractedText) {
+  const regexFallbacks = {
+    bsn: {
+      pattern: /BSN[:\s]*(\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d)/i,
+      clean: (match) => match[1].replace(/[\s-]/g, ''),
+      field: 'bsn'
+    },
+    iban: {
+      pattern: /(?:IBAN[:\s]*)?([NL]{2}\s?[0-9]{2}\s?[A-Z]{4}\s?[0-9]{4}\s?[0-9]{4}\s?[0-9]{2})/i,
+      clean: (match) => match[1].replace(/\s/g, '').replace(/\./g, '').toUpperCase(),
+      field: 'iban'
+    },
+    phone: {
+      pattern: /(?:Telefoon|Tel)[:\s]*((?:06|0[0-9]{1,2})[\s-]?[0-9]{3,4}[\s-]?[0-9]{4})/i,
+      clean: (match) => match[1].replace(/[\s-]/g, ''),
+      field: 'phone'
+    },
+    email: {
+      pattern: /([a-z0-9._-]+@[a-z0-9._-]+\.[a-z]{2,6})/gi,
+      clean: (matches) => {
+        // Filter bedrijfs-emails eruit
+        const personalEmail = matches.find(email =>
+          !email.toLowerCase().includes('@samangroep') &&
+          !email.toLowerCase().includes('@saman')
+        );
+        return personalEmail ? personalEmail.toLowerCase() : null;
+      },
+      field: 'email',
+      multiMatch: true
+    }
+  };
+
+  console.log('🔍 Applying regex fallbacks for missing fields...');
+
+  Object.entries(regexFallbacks).forEach(([key, { pattern, clean, field, multiMatch }]) => {
+    if (!extractedData[field]) {
+      if (multiMatch) {
+        const matches = extractedText.match(pattern);
+        if (matches) {
+          const cleanedValue = clean(matches);
+          if (cleanedValue) {
+            extractedData[field] = cleanedValue;
+            console.log(`✅ ${field} found via regex:`, extractedData[field]);
+          }
+        }
+      } else {
+        const match = extractedText.match(pattern);
+        if (match) {
+          extractedData[field] = clean(match);
+          console.log(`✅ ${field} found via regex:`, extractedData[field]);
+        }
+      }
+    }
+  });
+
+  // Maak IBAN schoon als het door AI gevonden is maar spaties/punten bevat
+  if (extractedData.iban) {
+    extractedData.iban = extractedData.iban.replace(/\s/g, '').replace(/\./g, '').toUpperCase();
+    console.log('✅ IBAN cleaned (removed spaces/dots):', extractedData.iban);
+  }
+
+  return extractedData;
+}
 
 // ============================================================================
 // HULPFUNCTIE: BESTAND NAAR BASE64 CONVERSIE
@@ -562,7 +1584,26 @@ async function extractMeldcodeFromFactuur(file) {
             messages: [{
               role: 'user',
               content: [
-                { type: 'text', text: 'Extract all text from this invoice image, including meldcode and dates.' },
+                {
+                  type: 'text',
+                  text: `Extract all text from this Dutch invoice/factuur image.
+
+PRIORITY: Look specifically for:
+1. MELDCODE: A code starting with "KA" followed by 5 digits (like KA06175, KA12345)
+2. INSTALLATION DATE (installatiedatum): The date when the heat pump was installed. Look for:
+   - "Datum" (this is the installation date!)
+   - "Installatiedatum"
+   - "Datum installatie"
+   - "Datum plaatsing"
+
+   IMPORTANT: Do NOT confuse with:
+   - "Vervaldatum" (payment due date - IGNORE THIS)
+   - "Factuurdatum" (invoice date - IGNORE THIS)
+
+   The field labeled simply "Datum" is the installation date we need.
+
+Extract ALL text but pay special attention to these two critical pieces of information.`
+                },
                 { type: 'image_url', image_url: `data:image/png;base64,${base64Data}` }
               ]
             }],
@@ -572,20 +1613,7 @@ async function extractMeldcodeFromFactuur(file) {
 
         // Behandel API fouten
         if (!response.ok) {
-          let errorMessage = response.statusText;
-          try {
-            const errorData = await response.json();
-            errorMessage = errorData.error?.message || errorMessage;
-          } catch (e) {
-            // Kon error response niet parsen
-          }
-
-          // Speciale behandeling voor rate limit fouten
-          if (response.status === 429) {
-            throw new Error(`Mistral API rate limit bereikt. Wacht even (30-60 seconden) voordat je het opnieuw probeert.`);
-          }
-
-          throw new Error(`Mistral API error (${response.status}): ${errorMessage}`);
+          await handleMistralApiError(response);
         }
 
         const data = await response.json();
@@ -609,7 +1637,26 @@ async function extractMeldcodeFromFactuur(file) {
           messages: [{
             role: 'user',
             content: [
-              { type: 'text', text: 'Extract all text from this image.' },
+              {
+                type: 'text',
+                text: `Extract all text from this Dutch invoice/factuur image.
+
+PRIORITY: Look specifically for:
+1. MELDCODE: A code starting with "KA" followed by 5 digits (like KA06175, KA12345)
+2. INSTALLATION DATE (installatiedatum): The date when the heat pump was installed. Look for:
+   - "Datum" (this is the installation date!)
+   - "Installatiedatum"
+   - "Datum installatie"
+   - "Datum plaatsing"
+
+   IMPORTANT: Do NOT confuse with:
+   - "Vervaldatum" (payment due date - IGNORE THIS)
+   - "Factuurdatum" (invoice date - IGNORE THIS)
+
+   The field labeled simply "Datum" is the installation date we need.
+
+Extract ALL text but pay special attention to these two critical pieces of information.`
+              },
               { type: 'image_url', image_url: `data:image/png;base64,${base64Data}` }
             ]
           }],
@@ -619,20 +1666,7 @@ async function extractMeldcodeFromFactuur(file) {
 
       // Behandel API fouten
       if (!response.ok) {
-        let errorMessage = response.statusText;
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error?.message || errorMessage;
-        } catch (e) {
-          // Kon error response niet parsen
-        }
-
-        // Speciale behandeling voor rate limit fouten
-        if (response.status === 429) {
-          throw new Error(`Mistral API rate limit bereikt. Wacht even (30-60 seconden) voordat je het opnieuw probeert.`);
-        }
-
-        throw new Error(`Mistral API error (${response.status}): ${errorMessage}`);
+        await handleMistralApiError(response);
       }
 
       const data = await response.json();
@@ -691,6 +1725,12 @@ async function extractMeldcodeFromFactuur(file) {
 1. Meldcode: typically starts with "KA" followed by 5 digits (e.g., KA06175)
 2. Installation date (installatiedatum): the date when the heat pump was installed
 
+IMPORTANT FOR DATE:
+- Look for fields labeled: "Datum", "Installatiedatum", "Datum installatie", "Datum plaatsing"
+- The field "Datum" (without other words) is the installation date
+- IGNORE "Vervaldatum" (payment due date)
+- IGNORE "Factuurdatum" (invoice date)
+
 Invoice text:
 ${textContent.substring(0, 2000)}
 
@@ -708,20 +1748,7 @@ Return ONLY JSON, no markdown.`
 
       // Behandel API fouten
       if (!response.ok) {
-        let errorMessage = response.statusText;
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error?.message || errorMessage;
-        } catch (e) {
-          // Kon error response niet parsen
-        }
-
-        // Speciale behandeling voor rate limit fouten
-        if (response.status === 429) {
-          throw new Error(`Mistral API rate limit bereikt. Wacht even (30-60 seconden) voordat je het opnieuw probeert.`);
-        }
-
-        throw new Error(`Mistral API error (${response.status}): ${errorMessage}`);
+        await handleMistralApiError(response);
       }
 
       const data = await response.json();
@@ -750,6 +1777,15 @@ Return ONLY JSON, no markdown.`
       }
     }
 
+    // ========================================================================
+    // APPLY SANITIZATION TO EXTRACTED FACTUUR DATA
+    // ========================================================================
+    console.log('=== Applying sanitization to factuur data ===');
+
+    if (meldcode) meldcode = sanitizeMeldCode(meldcode);
+    if (installationDate) installationDate = sanitizeInstallationDate(installationDate);
+
+    console.log('=== Final factuur data (after sanitization) ===', { meldcode, installationDate });
     return { meldcode, installationDate };
 
   } catch (error) {
@@ -818,14 +1854,11 @@ async function extractDataFromForm(file) {
       throw new Error('Geen Mistral API key ingesteld. Voer eerst je API key in via instellingen.');
     }
 
-    const statusDiv = document.getElementById('extractionStatus');
     let textContent;
 
     // Gebruik Mistral Document AI OCR voor betere extractie
     console.log('Using Mistral Document AI OCR...');
-    if (statusDiv) {
-      statusDiv.textContent = '🔄 Document OCR met Mistral AI...';
-    }
+    showExtractionStatus('🔄 Document OCR met Mistral AI...', 'extractionStatus', 'processing', 0);
 
     // Converteer bestand naar base64 voor OCR API
     let base64Document;
@@ -840,9 +1873,7 @@ async function extractDataFromForm(file) {
       base64Document = await imageToBase64(file);
     }
 
-    if (statusDiv) {
-      statusDiv.textContent = '🔄 Document wordt geanalyseerd...';
-    }
+    showExtractionStatus('🔄 Document wordt geanalyseerd...', 'extractionStatus', 'processing', 0);
 
     // Stap 1: Extraheer tekst met Mistral OCR
     console.log('Calling Mistral OCR API...');
@@ -905,9 +1936,7 @@ async function extractDataFromForm(file) {
     console.log(extractedText);
     console.log('=== END FULL OCR TEXT ===');
 
-    if (statusDiv) {
-      statusDiv.textContent = '🔄 Gegevens extraheren met AI...';
-    }
+    showExtractionStatus('🔄 Gegevens extraheren met AI...', 'extractionStatus', 'processing', 0);
 
     // Stap 2: Gebruik text model voor gestructureerde data extractie
     console.log('Calling Mistral text model for structured extraction...');
@@ -973,20 +2002,7 @@ Return ONLY JSON, no markdown.`
 
     // Behandel AI extractie API fouten
     if (!response.ok) {
-      let errorMessage = response.statusText;
-      try {
-        const errorData = await response.json();
-        errorMessage = errorData.error?.message || errorMessage;
-      } catch (e) {
-        // Kon error response niet parsen
-      }
-
-      // Speciale behandeling voor rate limit fouten
-      if (response.status === 429) {
-        throw new Error(`Mistral API rate limit bereikt. Wacht even (30-60 seconden) voordat je het opnieuw probeert.`);
-      }
-
-      throw new Error(`Mistral API error (${response.status}): ${errorMessage}`);
+      await handleMistralApiError(response);
     }
 
     const data = await response.json();
@@ -1000,64 +2016,10 @@ Return ONLY JSON, no markdown.`
     console.log('Cleaned content:', content);
 
     // Parse JSON response naar object
-    const extractedData = JSON.parse(content);
+    let extractedData = JSON.parse(content);
 
-    // ========================================================================
-    // REGEX FALLBACKS VOOR GEMISTE VELDEN
-    // ========================================================================
-    // Als AI bepaalde velden mist, proberen we ze te vinden met regex patronen
-    console.log('🔍 Applying regex fallbacks for missing fields...');
-
-    // BSN fallback: 9 cijfers, optioneel met spaties of streepjes
-    if (!extractedData.bsn) {
-      const bsnMatch = extractedText.match(/BSN[:\s]*(\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d[\s-]?\d)/i);
-      if (bsnMatch) {
-        extractedData.bsn = bsnMatch[1].replace(/[\s-]/g, ''); // Verwijder spaties en streepjes
-        console.log('✅ BSN found via regex:', extractedData.bsn);
-      }
-    }
-
-    // IBAN fallback: NL + 2 cijfers + 4 letters + 10 cijfers
-    if (!extractedData.iban) {
-      const ibanMatch = extractedText.match(/(?:IBAN[:\s]*)?([NL]{2}\s?[0-9]{2}\s?[A-Z]{4}\s?[0-9]{4}\s?[0-9]{4}\s?[0-9]{2})/i);
-      if (ibanMatch) {
-        extractedData.iban = ibanMatch[1].replace(/\s/g, '').replace(/\./g, '').toUpperCase(); // Verwijder spaties en punten
-        console.log('✅ IBAN found via regex:', extractedData.iban);
-      }
-    }
-
-    // Maak IBAN schoon als het door AI gevonden is maar spaties/punten bevat
-    if (extractedData.iban) {
-      extractedData.iban = extractedData.iban.replace(/\s/g, '').replace(/\./g, '').toUpperCase();
-      console.log('✅ IBAN cleaned (removed spaces/dots):', extractedData.iban);
-    }
-
-    // Email fallback: standaard email patroon
-    if (!extractedData.email) {
-      // Sluit bedrijfs-emails uit zoals @samangroep
-      const emailMatch = extractedText.match(/([a-z0-9._-]+@[a-z0-9._-]+\.[a-z]{2,6})/gi);
-      if (emailMatch) {
-        // Filter bedrijfs-emails eruit
-        const personalEmail = emailMatch.find(email =>
-          !email.toLowerCase().includes('@samangroep') &&
-          !email.toLowerCase().includes('@saman')
-        );
-        if (personalEmail) {
-          extractedData.email = personalEmail.toLowerCase();
-          console.log('✅ Email found via regex:', extractedData.email);
-        }
-      }
-    }
-
-    // Telefoon fallback: Nederlandse telefoonpatronen
-    if (!extractedData.phone) {
-      const phoneMatch = extractedText.match(/(?:Telefoon|Tel)[:\s]*((?:06|0[0-9]{1,2})[\s-]?[0-9]{3,4}[\s-]?[0-9]{4})/i);
-      if (phoneMatch) {
-        extractedData.phone = phoneMatch[1].replace(/[\s-]/g, ''); // Verwijder spaties en streepjes
-        console.log('✅ Phone found via regex:', extractedData.phone);
-      }
-    }
-
+    // Pas regex fallbacks toe voor gemiste velden
+    extractedData = applyRegexFallbacks(extractedData, extractedText);
     console.log('🔍 After regex fallbacks:', extractedData);
 
     // ========================================================================
@@ -1079,9 +2041,7 @@ Return ONLY JSON, no markdown.`
     if (!extractedData.gasUsage || extractedData.gasUsage === 'null') {
       console.log('Gas usage not found by AI, using Vision AI to detect checkbox...');
 
-      if (statusDiv) {
-        statusDiv.textContent = '🔄 Aardgas checkbox detecteren met Vision AI...';
-      }
+      showExtractionStatus('🔄 Aardgas checkbox detecteren met Vision AI...', 'extractionStatus', 'processing', 0);
 
       // Converteer document naar afbeelding voor vision analyse
       let visionBase64;
@@ -1227,7 +2187,36 @@ Return ONLY one word: "yes", "no", or "unknown"`
       }
     });
 
-    console.log('=== Final extracted data ===', extractedData);
+    // ========================================================================
+    // APPLY SANITIZATION TO ALL EXTRACTED FIELDS
+    // ========================================================================
+    console.log('=== Applying sanitization to extracted data ===');
+
+    // Personal data
+    if (extractedData.bsn) extractedData.bsn = sanitizeBSN(extractedData.bsn);
+    if (extractedData.initials) extractedData.initials = sanitizeInitials(extractedData.initials);
+    if (extractedData.lastName) extractedData.lastName = sanitizeLastName(extractedData.lastName);
+    if (extractedData.gender) extractedData.gender = sanitizeGender(extractedData.gender);
+
+    // Contact data
+    if (extractedData.phone) extractedData.phone = sanitizePhone(extractedData.phone);
+    if (extractedData.email) extractedData.email = sanitizeEmail(extractedData.email);
+    if (extractedData.iban) extractedData.iban = sanitizeIBAN(extractedData.iban);
+
+    // Address data
+    if (extractedData.street) extractedData.street = sanitizeStreet(extractedData.street);
+    if (extractedData.houseNumber) {
+      const houseData = sanitizeHouseNumber(extractedData.houseNumber);
+      extractedData.houseNumber = houseData.number;
+      if (houseData.addition) extractedData.houseAddition = houseData.addition;
+    }
+    if (extractedData.postalCode) extractedData.postalCode = sanitizePostalCode(extractedData.postalCode);
+    if (extractedData.city) extractedData.city = sanitizeCity(extractedData.city);
+
+    // Other fields
+    if (extractedData.gasUsage) extractedData.gasUsage = sanitizeGasUsage(extractedData.gasUsage);
+
+    console.log('=== Final extracted data (after sanitization) ===', extractedData);
     return extractedData;
 
   } catch (error) {
@@ -1253,22 +2242,12 @@ Return ONLY one word: "yes", "no", or "unknown"`
  */
 function loadConfiguration() {
   // Reset alle formuliervelden naar leeg bij opstarten
-  document.getElementById('bsn').value = '';
-  document.getElementById('initials').value = '';
-  document.getElementById('lastName').value = '';
-  document.getElementById('gender').value = 'male';
-  document.getElementById('phone').value = '';
-  document.getElementById('email').value = '';
-  document.getElementById('iban').value = '';
-  document.getElementById('street').value = '';
-  document.getElementById('postalCode').value = '';
-  document.getElementById('city').value = '';
-  document.getElementById('houseNumber').value = '';
-  document.getElementById('houseAddition').value = '';
-  document.getElementById('purchaseDate').value = '';
-  document.getElementById('installationDate').value = '';
-  document.getElementById('meldCode').value = '';
-  document.getElementById('gasUsage').value = '';
+  getAllFieldIds().forEach(fieldId => {
+    const field = document.getElementById(fieldId);
+    if (field) {
+      field.value = fieldId === 'gender' ? 'male' : '';
+    }
+  });
 
   // Reset document variabelen naar null
   betaalbewijsData = null;
@@ -1301,32 +2280,15 @@ function loadConfiguration() {
  * en om te valideren voordat automatisering start.
  */
 function validateRequiredFields() {
-  const requiredFields = [
-    { id: 'bsn', label: 'BSN' },
-    { id: 'initials', label: 'Voorletters' },
-    { id: 'lastName', label: 'Achternaam' },
-    { id: 'phone', label: 'Telefoonnummer' },
-    { id: 'email', label: 'E-mailadres' },
-    { id: 'iban', label: 'IBAN' },
-    { id: 'street', label: 'Straatnaam' },
-    { id: 'houseNumber', label: 'Huisnummer' },
-    { id: 'postalCode', label: 'Postcode' },
-    { id: 'city', label: 'Plaats' },
-    { id: 'purchaseDate', label: 'Aankoopdatum' },
-    { id: 'installationDate', label: 'Installatiedatum' },
-    { id: 'meldCode', label: 'Meldcode' },
-    { id: 'gasUsage', label: 'Aardgas gebruik' }
-  ];
-
   const missingFields = [];
 
-  // Controleer alle formuliervelden
-  for (const field of requiredFields) {
-    const value = document.getElementById(field.id).value.trim();
-    if (!value) {
-      missingFields.push(field.label);
+  // Controleer alle verplichte formuliervelden
+  getRequiredFieldIds().forEach(fieldId => {
+    const field = document.getElementById(fieldId);
+    if (field && !field.value.trim()) {
+      missingFields.push(FIELD_LABELS[fieldId]);
     }
-  }
+  });
 
   // Controleer of documenten zijn geüpload
   if (!betaalbewijsData) {
@@ -1385,19 +2347,274 @@ function updateStartButtonState() {
  * - 'change': Voor select dropdowns en datum velden
  */
 document.addEventListener('DOMContentLoaded', () => {
-  const inputFields = [
-    'bsn', 'initials', 'lastName', 'phone', 'email', 'iban',
-    'street', 'houseNumber', 'postalCode', 'city',
-    'purchaseDate', 'installationDate', 'meldCode', 'gasUsage'
-  ];
-
-  inputFields.forEach(fieldId => {
+  // Setup event listeners voor alle verplichte velden
+  getRequiredFieldIds().forEach(fieldId => {
     const field = document.getElementById(fieldId);
     if (field) {
       field.addEventListener('input', updateStartButtonState);
       field.addEventListener('change', updateStartButtonState);
     }
   });
+
+  // ========================================================================
+  // FIELD WARNING HELPER
+  // ========================================================================
+  /**
+   * Show or hide a field warning message
+   * @param {string} fieldId - ID of the input field
+   * @param {string} warningId - ID of the warning div
+   * @param {string|null} message - Warning message to show (null to hide)
+   */
+  function showFieldWarning(fieldId, warningId, message) {
+    const field = document.getElementById(fieldId);
+    const warningDiv = document.getElementById(warningId);
+
+    if (!field || !warningDiv) return;
+
+    if (message) {
+      // Show warning
+      warningDiv.textContent = message;
+      warningDiv.classList.add('visible');
+      field.classList.add('has-warning');
+    } else {
+      // Hide warning
+      warningDiv.textContent = '';
+      warningDiv.classList.remove('visible');
+      field.classList.remove('has-warning');
+    }
+  }
+
+  // ========================================================================
+  // REAL-TIME SANITIZATION EVENT LISTENERS
+  // ========================================================================
+  // Automatically sanitize field values when user leaves the field (blur event)
+
+  // BSN sanitization
+  const bsnField = document.getElementById('bsn');
+  if (bsnField) {
+    bsnField.addEventListener('blur', function() {
+      if (this.value) {
+        const originalValue = this.value;
+        const sanitized = sanitizeBSN(this.value);
+
+        if (sanitized) {
+          this.value = sanitized;
+
+          // Check for length warnings
+          const digitCount = sanitized.replace(/\D/g, '').length;
+          if (digitCount < 9) {
+            showFieldWarning('bsn', 'bsnWarning', `⚠️ BSN te kort: ${digitCount} cijfers (verwacht 9)`);
+          } else if (digitCount > 9) {
+            showFieldWarning('bsn', 'bsnWarning', `⚠️ BSN te lang: ${digitCount} cijfers (verwacht 9)`);
+          } else {
+            // Length is correct, hide warning
+            showFieldWarning('bsn', 'bsnWarning', null);
+          }
+        }
+      } else {
+        // Clear warning when field is empty
+        showFieldWarning('bsn', 'bsnWarning', null);
+      }
+    });
+  }
+
+  // IBAN sanitization
+  const ibanField = document.getElementById('iban');
+  if (ibanField) {
+    ibanField.addEventListener('blur', function() {
+      if (this.value) {
+        const sanitized = sanitizeIBAN(this.value);
+
+        if (sanitized) {
+          this.value = sanitized;
+
+          // Check for length and checksum warnings
+          if (sanitized.length !== 18) {
+            showFieldWarning('iban', 'ibanWarning', `⚠️ IBAN ongeldige lengte: ${sanitized.length} karakters (verwacht 18)`);
+          } else {
+            // Check checksum validity
+            const rearranged = sanitized.substring(4) + sanitized.substring(0, 4);
+            let numericString = '';
+            for (let char of rearranged) {
+              if (char >= '0' && char <= '9') {
+                numericString += char;
+              } else {
+                numericString += (char.charCodeAt(0) - 55).toString();
+              }
+            }
+            const remainder = BigInt(numericString) % 97n;
+
+            if (remainder !== 1n) {
+              showFieldWarning('iban', 'ibanWarning', `⚠️ IBAN checksum validatie mislukt`);
+            } else {
+              showFieldWarning('iban', 'ibanWarning', null);
+            }
+          }
+        }
+      } else {
+        showFieldWarning('iban', 'ibanWarning', null);
+      }
+    });
+  }
+
+  // Phone sanitization
+  const phoneField = document.getElementById('phone');
+  if (phoneField) {
+    phoneField.addEventListener('blur', function() {
+      if (this.value) {
+        const sanitized = sanitizePhone(this.value);
+
+        if (sanitized) {
+          this.value = sanitized;
+
+          // Check for length warnings
+          if (sanitized.length !== 10) {
+            showFieldWarning('phone', 'phoneWarning', `⚠️ Telefoonnummer ongeldige lengte: ${sanitized.length} cijfers (verwacht 10)`);
+          } else if (!sanitized.startsWith('0')) {
+            showFieldWarning('phone', 'phoneWarning', `⚠️ Telefoonnummer moet beginnen met 0`);
+          } else {
+            showFieldWarning('phone', 'phoneWarning', null);
+          }
+        }
+      } else {
+        showFieldWarning('phone', 'phoneWarning', null);
+      }
+    });
+  }
+
+  // Email sanitization
+  const emailField = document.getElementById('email');
+  if (emailField) {
+    emailField.addEventListener('blur', function() {
+      if (this.value) {
+        const sanitized = sanitizeEmail(this.value);
+
+        if (sanitized === null) {
+          // Company email filtered
+          this.value = '';
+          showFieldWarning('email', 'emailWarning', `⚠️ Bedrijfsemail niet toegestaan (@samangroep / @saman)`);
+        } else {
+          this.value = sanitized;
+
+          // Check email format
+          const emailRegex = /^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
+          if (!emailRegex.test(sanitized)) {
+            showFieldWarning('email', 'emailWarning', `⚠️ Ongeldig email formaat`);
+          } else {
+            showFieldWarning('email', 'emailWarning', null);
+          }
+        }
+      } else {
+        showFieldWarning('email', 'emailWarning', null);
+      }
+    });
+  }
+
+  // Initials sanitization
+  const initialsField = document.getElementById('initials');
+  if (initialsField) {
+    initialsField.addEventListener('blur', function() {
+      if (this.value) {
+        const sanitized = sanitizeInitials(this.value);
+        if (sanitized) this.value = sanitized;
+      }
+    });
+  }
+
+  // LastName sanitization
+  const lastNameField = document.getElementById('lastName');
+  if (lastNameField) {
+    lastNameField.addEventListener('blur', function() {
+      if (this.value) {
+        const sanitized = sanitizeLastName(this.value);
+        if (sanitized) this.value = sanitized;
+      }
+    });
+  }
+
+  // Street sanitization
+  const streetField = document.getElementById('street');
+  if (streetField) {
+    streetField.addEventListener('blur', function() {
+      if (this.value) {
+        const sanitized = sanitizeStreet(this.value);
+        if (sanitized) this.value = sanitized;
+      }
+    });
+  }
+
+  // HouseNumber sanitization
+  const houseNumberField = document.getElementById('houseNumber');
+  const houseAdditionField = document.getElementById('houseAddition');
+  if (houseNumberField) {
+    houseNumberField.addEventListener('blur', function() {
+      if (this.value) {
+        const sanitized = sanitizeHouseNumber(this.value);
+        if (sanitized.number) {
+          this.value = sanitized.number;
+          if (houseAdditionField && sanitized.addition) {
+            houseAdditionField.value = sanitized.addition;
+          }
+        }
+      }
+    });
+  }
+
+  // PostalCode sanitization
+  const postalCodeField = document.getElementById('postalCode');
+  if (postalCodeField) {
+    postalCodeField.addEventListener('blur', function() {
+      if (this.value) {
+        const sanitized = sanitizePostalCode(this.value);
+        if (sanitized) this.value = sanitized;
+      }
+    });
+  }
+
+  // City sanitization
+  const cityField = document.getElementById('city');
+  if (cityField) {
+    cityField.addEventListener('blur', function() {
+      if (this.value) {
+        const sanitized = sanitizeCity(this.value);
+        if (sanitized) this.value = sanitized;
+      }
+    });
+  }
+
+  // MeldCode sanitization
+  const meldCodeField = document.getElementById('meldCode');
+  if (meldCodeField) {
+    meldCodeField.addEventListener('blur', function() {
+      if (this.value) {
+        const sanitized = sanitizeMeldCode(this.value);
+        if (sanitized) this.value = sanitized;
+      }
+    });
+  }
+
+  // InstallationDate sanitization
+  const installationDateField = document.getElementById('installationDate');
+  if (installationDateField) {
+    installationDateField.addEventListener('blur', function() {
+      if (this.value) {
+        const sanitized = sanitizeInstallationDate(this.value);
+        if (sanitized) this.value = sanitized;
+      }
+    });
+  }
+
+  // PurchaseDate sanitization (with installationDate validation)
+  const purchaseDateField = document.getElementById('purchaseDate');
+  if (purchaseDateField) {
+    purchaseDateField.addEventListener('blur', function() {
+      if (this.value) {
+        const installDate = installationDateField ? installationDateField.value : null;
+        const sanitized = sanitizePurchaseDate(this.value, installDate);
+        if (sanitized) this.value = sanitized;
+      }
+    });
+  }
 
   // Initiële knopstatus check bij laden van de pagina
   updateStartButtonState();

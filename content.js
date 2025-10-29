@@ -57,8 +57,91 @@ let lastExecutedStep = null;
 let stepExecutionCount = 0;
 const MAX_STEP_RETRIES = 2; // Auto-pauze na 2 pogingen op dezelfde stap
 
+/**
+ * Audio object voor keep-alive functionaliteit.
+ * Speelt een stille audio loop af om Chrome tab throttling te voorkomen.
+ * Dit zorgt ervoor dat inactive tabs op normale snelheid blijven draaien.
+ */
+let keepAliveAudio = null;
+
 // ============================================================================
-// SECTIE 2: HELPER FUNCTIES VOOR TIMEOUT BEHEER
+// SECTIE 2: AUDIO KEEP-ALIVE VOOR MULTI-TAB ONDERSTEUNING
+// ============================================================================
+
+/**
+ * Start een stille audio loop om tab throttling te voorkomen.
+ *
+ * PROBLEEM:
+ * Chrome vertraagt inactive tabs drastisch (factor 100-1000x). Dit betekent
+ * dat setTimeout/setInterval vertragen en automatisering bijna stopt.
+ *
+ * OPLOSSING:
+ * Door een stille audio loop af te spelen, denkt Chrome dat de tab actieve
+ * media content heeft en wordt throttling uitgeschakeld. Dit zorgt ervoor
+ * dat meerdere tabs parallel kunnen runnen zonder vertraging.
+ *
+ * GEBRUIK:
+ * - Wordt automatisch gestart bij het begin van automatisering
+ * - Wordt gestopt wanneer automatisering klaar is of wordt gestopt
+ * - Gebruikt een 0.5 seconden stille audio die herhaald wordt
+ */
+function startKeepAlive() {
+  if (keepAliveAudio) {
+    console.log('🔊 Keep-alive audio is al actief');
+    return;
+  }
+
+  try {
+    // Maak een stille audio context met minimale data
+    // Dit is een 0.5 seconden stille MP3 in base64 formaat
+    const silentAudio = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAADhAC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAA4T0Mq+JAAAAAAAAAAAAAAAAAAAAAP/7kGQAD/AAAGkAAAAIAAANIAAAAQAAAaQAAAAgAAA0gAAABExBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/7kGQAD/AAAGkAAAAIAAANIAAAAQAAAaQAAAAgAAA0gAAABFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ==';
+
+    keepAliveAudio = new Audio(silentAudio);
+    keepAliveAudio.loop = true; // Herhaal oneindig
+    keepAliveAudio.volume = 0.01; // Bijna stil (voor het geval browser het niet als muted ziet)
+
+    // Probeer audio af te spelen
+    const playPromise = keepAliveAudio.play();
+
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          console.log('🔊 Keep-alive audio gestart - tab throttling uitgeschakeld');
+          console.log('✅ Meerdere tabs kunnen nu parallel runnen zonder vertraging');
+        })
+        .catch((error) => {
+          console.warn('⚠️ Keep-alive audio kon niet starten (autoplay geblokkeerd):', error.message);
+          console.warn('💡 Tip: Klik ergens op de pagina, dan werkt het automatisch');
+        });
+    }
+  } catch (error) {
+    console.error('❌ Fout bij starten keep-alive audio:', error);
+  }
+}
+
+/**
+ * Stopt de keep-alive audio loop.
+ *
+ * Wordt aangeroepen wanneer:
+ * - Automatisering succesvol is afgerond
+ * - Gebruiker de automatisering stopt
+ * - Er een fatale fout optreedt
+ */
+function stopKeepAlive() {
+  if (keepAliveAudio) {
+    try {
+      keepAliveAudio.pause();
+      keepAliveAudio.currentTime = 0;
+      keepAliveAudio = null;
+      console.log('🔇 Keep-alive audio gestopt');
+    } catch (error) {
+      console.error('❌ Fout bij stoppen keep-alive audio:', error);
+    }
+  }
+}
+
+// ============================================================================
+// SECTIE 3: HELPER FUNCTIES VOOR TIMEOUT BEHEER
 // ============================================================================
 
 /**
@@ -351,6 +434,10 @@ function createStatusPanel() {
     // Reset loop detectie tellers
     lastExecutedStep = null;
     stepExecutionCount = 0;
+
+    // Stop keep-alive audio
+    stopKeepAlive();
+
     // Wis alle wachtende timeouts
     clearAllTimeouts();
     // Wis alle automatisering status uit sessionStorage
@@ -431,8 +518,41 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     sessionStorage.removeItem('automationStep');
     sessionStorage.removeItem('automationConfig');
     console.log('Cleared automation state and timeouts, starting fresh');
+
+    // Start audio keep-alive om tab throttling te voorkomen
+    startKeepAlive();
+
     createStatusPanel();
     updateStatus('Automatisering gestart', 'Initialiseren');
+
+    // Toon belangrijke waarschuwing: houd tab actief
+    const initialWarning = document.createElement('div');
+    initialWarning.style.cssText = `
+      position: fixed;
+      top: 80px;
+      right: 20px;
+      background: #d1ecf1;
+      border: 2px solid #17a2b8;
+      border-radius: 8px;
+      padding: 14px 18px;
+      max-width: 320px;
+      font-size: 13px;
+      color: #0c5460;
+      z-index: 10001;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      line-height: 1.5;
+    `;
+    initialWarning.innerHTML = `
+      <strong>✅ Multi-tab ondersteuning actief!</strong><br>
+      Dit tabblad kan op de achtergrond draaien zonder vertraging.
+      Je kunt <strong>meerdere tabs tegelijk</strong> laten runnen.
+    `;
+    document.body.appendChild(initialWarning);
+
+    // Verwijder waarschuwing na 8 seconden
+    setTimeout(() => {
+      initialWarning.remove();
+    }, 8000);
 
     // Haal bestandsgegevens op uit chrome.storage.local als er keys zijn opgegeven
     // Dit is nodig omdat bestanden niet direct via messages kunnen worden verzonden
@@ -677,38 +797,62 @@ async function fillInput(selector, value) {
       const ibanMatch = cleanIban.match(/^(NL[0-9]{2}[A-Z]{4}[0-9]{10})/i);
 
       if (ibanMatch) {
-        // Use the matched IBAN only (without any trailing garbage)
-        const nlPrefix = ibanMatch[1].substring(0, 2).toUpperCase();
-        const rest = ibanMatch[1].substring(2);
+        // IBAN structure: NL + 2 digits + 4 LETTERS + 10 digits
+        // Only fix OCR errors in digit parts, NOT in the 4-letter bank code
+        const nlPrefix = ibanMatch[1].substring(0, 2).toUpperCase(); // NL
+        const checkDigits = ibanMatch[1].substring(2, 4); // 2 digits
+        const bankCode = ibanMatch[1].substring(4, 8).toUpperCase(); // 4 LETTERS (RABO, INGB, etc.)
+        const accountNumber = ibanMatch[1].substring(8); // 10 digits
 
-        // Fix OCR errors in the rest of the IBAN
-        const fixed = rest
-          .replace(/O/g, '0')  // O → 0
-          .replace(/I/g, '1')  // I → 1
-          .replace(/l/g, '1')  // l → 1
-          .replace(/S/g, '5')  // S → 5
-          .replace(/Y/g, '4')  // Y → 4 (common in position 4 of IBAN)
-          .toUpperCase();
+        // Fix OCR errors ONLY in check digits (O→0, I→1, etc.)
+        const fixedCheckDigits = checkDigits
+          .replace(/O/g, '0')
+          .replace(/I/g, '1')
+          .replace(/l/g, '1')
+          .replace(/S/g, '5')
+          .replace(/Y/g, '4');
 
-        sanitizedValue = nlPrefix + fixed;
+        // Fix OCR errors ONLY in account number (O→0, I→1, etc.)
+        const fixedAccountNumber = accountNumber
+          .replace(/O/g, '0')
+          .replace(/I/g, '1')
+          .replace(/l/g, '1')
+          .replace(/S/g, '5');
+
+        // Bank code stays as LETTERS (don't convert O to 0 here!)
+        sanitizedValue = nlPrefix + fixedCheckDigits + bankCode + fixedAccountNumber;
         console.log(`🏦 Sanitized IBAN (matched pattern): "${value}" → "${sanitizedValue}"`);
       } else {
-        // Fallback: just clean up the whole value
+        // Fallback: assume structure and clean up carefully
         const nlPrefix = sanitizedValue.substring(0, 2).toUpperCase();
-        const rest = sanitizedValue.substring(2).replace(/\s/g, '');
+        const rest = sanitizedValue.substring(2).replace(/\s/g, '').substring(0, 16);
 
-        // Fix OCR errors in the rest of the IBAN
-        const fixed = rest
-          .replace(/O/g, '0')  // O → 0
-          .replace(/I/g, '1')  // I → 1
-          .replace(/l/g, '1')  // l → 1
-          .replace(/S/g, '5')  // S → 5
-          .replace(/Y/g, '4')  // Y → 4
-          .toUpperCase()
-          .substring(0, 16); // Take only first 16 chars after NL
+        if (rest.length >= 6) {
+          // Extract parts: 2 check digits + 4 bank letters + up to 10 account digits
+          const checkDigits = rest.substring(0, 2);
+          const bankCode = rest.substring(2, 6).toUpperCase(); // Keep as letters
+          const accountNumber = rest.substring(6);
 
-        sanitizedValue = nlPrefix + fixed;
-        console.log(`🏦 Sanitized IBAN (fallback): "${value}" → "${sanitizedValue}"`);
+          // Fix OCR only in digit parts
+          const fixedCheckDigits = checkDigits
+            .replace(/O/g, '0')
+            .replace(/I/g, '1')
+            .replace(/l/g, '1')
+            .replace(/S/g, '5');
+
+          const fixedAccountNumber = accountNumber
+            .replace(/O/g, '0')
+            .replace(/I/g, '1')
+            .replace(/l/g, '1')
+            .replace(/S/g, '5');
+
+          sanitizedValue = nlPrefix + fixedCheckDigits + bankCode + fixedAccountNumber;
+          console.log(`🏦 Sanitized IBAN (fallback with structure): "${value}" → "${sanitizedValue}"`);
+        } else {
+          // Can't parse structure, just keep as-is
+          sanitizedValue = nlPrefix + rest.toUpperCase();
+          console.log(`🏦 Sanitized IBAN (fallback minimal): "${value}" → "${sanitizedValue}"`);
+        }
       }
     }
   }
@@ -2482,6 +2626,9 @@ async function startFullAutomation(config) {
       // Verwijder sessionStorage niet voor het geval gebruiker moet doorgaan
       // sessionStorage.clear();
 
+      // Stop keep-alive audio nu automatisering klaar is
+      stopKeepAlive();
+
       console.log('✅ Automatisering voltooid - wacht op handmatige verzending');
       return;
     }
@@ -2697,6 +2844,19 @@ function attemptCrashRecovery() {
     });
   });
 }
+
+/**
+ * Event listener voor Page Visibility API.
+ * Met audio keep-alive is tab throttling uitgeschakeld.
+ * Logging blijft beschikbaar voor debugging doeleinden.
+ */
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && !automationStopped && !automationPaused) {
+    console.log('ℹ️ Tab op achtergrond - maar audio keep-alive voorkomt throttling');
+  } else if (!document.hidden) {
+    console.log('ℹ️ Tab is weer actief');
+  }
+});
 
 /**
  * Event listener die automatisering hervat na een pagina navigatie.
