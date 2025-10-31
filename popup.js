@@ -164,46 +164,34 @@ function sanitizeBSN(bsnRaw) {
 function sanitizeIBAN(ibanRaw) {
   if (!ibanRaw) return null;
 
-  let iban = String(ibanRaw).trim();
+  let iban = String(ibanRaw).trim().toUpperCase();
 
-  // ⚡ FIELD SPLITTING: Verwijder BIC code indien gecombineerd
-  // Common patterns:
-  // - "NL91RABO0123456789 RABONL2U" (spatie gescheiden)
+  // ⚡ FIELD SPLITTING: Extract ALLEEN het IBAN deel (verwijder BIC indien gecombineerd)
+  // Nederlandse IBAN format: NL + 2 cijfers + 4 letters + 10 cijfers/letters = exact 18 karakters
+  // Patterns die voorkomen:
+  // - "NL91RABO0123456789 RABONL2U" (met spatie)
   // - "NL91RABO0123456789 BIC: RABONL2U" (met label)
-  // - "NL91RABO0123456789RABONL2U" (direct aan elkaar - BIC is 8 of 11 chars)
+  // - "NL91RABO0123456789RABONL2U" (direct geplakt)
+  // - "NL91INGB0123456789 INGBNL2A" (verschillende bank)
 
-  // Remove "BIC:" label eerst
-  iban = iban.replace(/\s*BIC\s*:\s*/gi, ' ');
-
-  // Als er spaties zijn, zoek het deel dat begint met NL
-  if (iban.includes(' ')) {
-    const parts = iban.split(/\s+/);
-    // Neem het deel dat begint met NL en ongeveer 18 chars is
-    const ibanPart = parts.find(part => part.toUpperCase().startsWith('NL') && part.length >= 16 && part.length <= 20);
-    if (ibanPart) {
-      iban = ibanPart;
-    } else {
-      iban = parts[0]; // Fallback: neem eerste deel
+  // Gebruik regex om ALLEEN het NL IBAN patroon te extracten
+  // NL + 2 cijfers/letters + 4 letters + 10 cijfers/letters (we fixen OCR errors later)
+  const ibanMatch = iban.match(/NL[A-Z0-9]{2}[A-Z0-9]{4}[A-Z0-9]{10}/);
+  if (ibanMatch) {
+    const extracted = ibanMatch[0];
+    if (extracted !== iban) {
+      console.log(`Extracted IBAN from combined field: ${iban} → ${extracted}`);
     }
+    iban = extracted;
   }
 
-  // Verwijder spaties, punten, maak uppercase
-  iban = iban.replace(/[\s.]/g, '').toUpperCase();
-
-  // Als IBAN langer is dan 18 chars, check voor BIC aan het einde
-  if (iban.length > 18 && iban.startsWith('NL')) {
-    const potentialBic = iban.substring(18);
-    // Check of wat overblijft lijkt op een BIC (8 of 11 chars, bevat NL2)
-    if ((potentialBic.length === 8 || potentialBic.length === 11) && potentialBic.includes('NL2')) {
-      console.log(`IBAN contained BIC code, removed: ${potentialBic}`);
-      iban = iban.substring(0, 18);
-    }
-  }
+  // Verwijder eventuele spaties en punten
+  iban = iban.replace(/[\s.]/g, '');
 
   // Valideer minimale lengte
   if (iban.length < 10) {
     console.warn(`IBAN too short: ${iban}`);
-    return iban;
+    return null;
   }
 
   // Valideer NL IBAN formaat
@@ -287,7 +275,7 @@ function sanitizeIBAN(ibanRaw) {
   // Validate total length
   if (iban.length !== 18) {
     console.warn(`Invalid NL IBAN length: ${iban.length} (expected 18)`);
-    return iban; // Return anyway
+    return null; // Reject invalid length
   }
 
   // IBAN modulo-97 checksum validatie
@@ -305,6 +293,7 @@ function sanitizeIBAN(ibanRaw) {
   const remainder = BigInt(numericString) % 97n;
   if (remainder !== 1n) {
     console.warn(`IBAN failed checksum validation: ${iban}`);
+    return null; // Reject invalid IBAN
   }
 
   return iban;
@@ -352,12 +341,13 @@ function sanitizePhone(phoneRaw) {
   // Valideer lengte (NL nummers zijn 10 cijfers met leading 0)
   if (phone.length !== 10) {
     console.warn(`Invalid phone length: ${phone.length} (expected 10)`);
+    return null; // Reject invalid length
   }
 
   // Valideer start (moet 06 of 0xx zijn)
   if (!phone.startsWith('0')) {
     console.warn(`Phone should start with 0: ${phone}`);
-    return '0' + phone; // Auto-fix
+    return null; // Reject invalid format
   }
 
   return phone;
@@ -415,11 +405,6 @@ function sanitizeInitials(initialsRaw) {
 
   let initials = String(initialsRaw).trim();
 
-  // ⚡ FIELD SPLITTING: Extract alleen initials als achternaam erbij staat
-  // Patterns:
-  // - "J.H.M. Jansen" (initials + achternaam)
-  // - "Jan Hendrik Maria" (volledige voornamen - neem eerste letters)
-
   // Fix OCR errors EERST: voorletters kunnen ALLEEN letters zijn (A-Z)
   // Common OCR mistakes: cijfers → letters
   initials = initials.replace(/5/g, 'S')   // 5 → S (zeer vaak in voorletters!)
@@ -432,34 +417,22 @@ function sanitizeInitials(initialsRaw) {
   // Verwijder alles behalve letters, punten en spaties
   initials = initials.replace(/[^a-zA-Z.\s]/g, '');
 
-  // Als er meerdere woorden zijn EN laatste woord begint met hoofdletter
-  // → extract alleen voorletters (niet achternaam)
-  const words = initials.split(/\s+/).filter(w => w.length > 0);
-  if (words.length > 1) {
-    // Als laatste woord > 2 chars en geen punten heeft → waarschijnlijk achternaam
-    const lastWord = words[words.length - 1];
-    if (lastWord.length > 2 && !lastWord.includes('.')) {
-      console.log(`Extracted initials from combined field, removed surname: ${lastWord}`);
-      // Neem alleen eerste woorden (voor de achternaam)
-      initials = words.slice(0, -1).join(' ');
+  // Extract alle letters (negeer punten en spaties)
+  const letters = [];
+  for (let char of initials) {
+    if (/[a-zA-Z]/.test(char)) {
+      letters.push(char.toUpperCase());
     }
   }
-
-  // Split op spaties/punten
-  let letters = initials.split(/[\s.]+/).filter(l => l.length > 0);
-
-  // Maak uppercase en voeg punten toe
-  letters = letters.map(l => l.charAt(0).toUpperCase());
-
-  // Join met punt tussen elke letter
-  initials = letters.join('.') + (letters.length > 0 ? '.' : '');
 
   // Valideer: maximaal 10 voorletters is realistisch
   if (letters.length > 10) {
     console.warn(`Unusual number of initials: ${letters.length}`);
+    return letters.slice(0, 10).join('.') + '.';
   }
 
-  return initials;
+  // Join met punt tussen elke letter
+  return letters.length > 0 ? letters.join('.') + '.' : null;
 }
 
 /**
@@ -476,9 +449,18 @@ function sanitizeLastName(lastNameRaw) {
   // Trim en normaliseer spaties
   let lastName = String(lastNameRaw).trim().replace(/\s+/g, ' ');
 
-  // Warn als cijfers aanwezig
-  if (/\d/.test(lastName)) {
-    console.warn(`Last name contains digits: ${lastName}`);
+  // Fix OCR errors EERST: achternamen kunnen ALLEEN letters zijn (A-Z)
+  // Common OCR mistakes: cijfers → letters
+  const hadDigits = /\d/.test(lastName);
+  lastName = lastName.replace(/0/g, 'O')   // 0 → O
+                     .replace(/1/g, 'I')   // 1 → I
+                     .replace(/2/g, 'Z')   // 2 → Z
+                     .replace(/5/g, 'S')   // 5 → S
+                     .replace(/8/g, 'B')   // 8 → B
+                     .replace(/6/g, 'G');  // 6 → G
+
+  if (hadDigits) {
+    console.log(`Last name had OCR digit errors, corrected: ${lastNameRaw} → ${lastName}`);
   }
 
   // Split op spaties voor voorvoegsel handling
@@ -599,13 +581,17 @@ function sanitizePostalCode(postalCodeRaw) {
   // Patterns:
   // - "1065JD Amsterdam" (postcode + plaats)
   // - "Insulindestraat 59 1065JD Amsterdam" (volledig adres)
+  // - "Amsterdam 1065JD Insulindestraat 59" (plaats eerst)
   // Nederlandse postcode = 4 cijfers + 2 letters (herkenbaar patroon)
 
-  // Zoek postcode patroon: 4 cijfers gevolgd door 2 letters
-  const postalMatch = postal.match(/\b(\d{4}\s?[A-Z]{2})\b/);
+  // Gebruik regex die ook OCR fouten accepteert (letters i.p.v. cijfers)
+  // Nederlandse postcode begint altijd met een cijfer (1-9)
+  // Patroon: cijfer + 3 alfanum (voor OCR errors) + optionele spatie + 2 letters
+  // Dit matcht postcodes met OCR fouten zoals "1O65JD" (O i.p.v. 0)
+  const postalMatch = postal.match(/(\d[A-Z0-9]{3})\s?([A-Z]{2})(?=\s|$)/);
   if (postalMatch) {
-    console.log(`Extracted postal code from combined field: ${postalMatch[1]}`);
-    postal = postalMatch[1];
+    console.log(`Extracted postal code from combined field: ${postalMatch[1]}${postalMatch[2]}`);
+    postal = postalMatch[1] + postalMatch[2];
   }
 
   // Verwijder alle spaties
@@ -642,7 +628,7 @@ function sanitizePostalCode(postalCodeRaw) {
 
   if (!match) {
     console.warn(`Invalid postal code format: ${postal} (expected: 1234AB)`);
-    return postal; // Return anyway voor handmatige correctie
+    return null; // Reject invalid format
   }
 
   // Return met standaard spatie: "1234 AB"
@@ -664,9 +650,19 @@ function sanitizeCity(cityRaw) {
   // Trim en normaliseer spaties
   let city = String(cityRaw).trim().replace(/\s+/g, ' ');
 
-  // Warn als cijfers aanwezig
-  if (/\d/.test(city)) {
-    console.warn(`City name contains digits: ${city}`);
+  // Fix OCR errors EERST: plaatsnamen kunnen ALLEEN letters, spaties, dashes en apostroffen
+  // Common OCR mistakes: cijfers → letters
+  const hadDigits = /\d/.test(city);
+  city = city.replace(/0/g, 'O')   // 0 → O
+             .replace(/1/g, 'I')   // 1 → I
+             .replace(/2/g, 'Z')   // 2 → Z
+             .replace(/4/g, 'A')   // 4 → A
+             .replace(/5/g, 'S')   // 5 → S
+             .replace(/8/g, 'B')   // 8 → B
+             .replace(/6/g, 'G');  // 6 → G
+
+  if (hadDigits) {
+    console.log(`City name had OCR digit errors, corrected: ${cityRaw} → ${city}`);
   }
 
   // Capitalize elk woord, behalve tussenvoegsels
@@ -678,6 +674,12 @@ function sanitizeCity(cityRaw) {
     // Kleine woorden lowercase (tenzij eerste woord)
     if (index > 0 && ['aan', 'bij', 'op', 'onder'].includes(word.toLowerCase())) {
       return word.toLowerCase();
+    }
+
+    // Special case: woorden die beginnen met apostrof (bijv. 's-Hertogenbosch)
+    if (word.startsWith("'")) {
+      // Capitalize de letter NA de apostrof
+      return "'" + word.charAt(1).toUpperCase() + word.slice(2).toLowerCase();
     }
 
     // Capitalize
@@ -698,7 +700,7 @@ function sanitizeCity(cityRaw) {
  * Sanitize geslacht.
  * - Normaliseert verschillende varianten naar "male" of "female"
  * - Accepteert: man/vrouw, M/V, male/female, mannelijk/vrouwelijk
- * - Default fallback naar "male" bij onbekende waarde
+ * - Retourneert null bij onbekende waarde (blijft leeg)
  * @param {string} genderRaw - Ruwe geslacht input
  * @returns {string|null} "male", "female", of null
  */
@@ -718,7 +720,7 @@ function sanitizeGender(genderRaw) {
   }
 
   console.warn(`Unknown gender value: ${genderRaw}`);
-  return 'male'; // Default fallback
+  return null; // Return null, laat veld leeg
 }
 
 /**
@@ -761,24 +763,27 @@ function sanitizeGasUsage(gasUsageRaw) {
 function sanitizeMeldCode(meldCodeRaw) {
   if (!meldCodeRaw) return null;
 
-  let code = String(meldCodeRaw).trim();
+  let code = String(meldCodeRaw).trim().toUpperCase();
 
-  // ⚡ FIELD SPLITTING: Verwijder labels en extra info
+  // ⚡ FIELD SPLITTING: Extract ALLEEN de meldcode uit gecombineerde input
   // Patterns:
   // - "Meldcode: KA12345"
+  // - "meldcode: KA12345" (lowercase)
   // - "KA12345 Type: Installatie"
+  // - "Meldcode: KA12345 Status: Open"
 
-  // Verwijder "Meldcode:" label
-  code = code.replace(/^Meldcode\s*:\s*/i, '');
+  // Gebruik regex om KA##### patroon te extracten
+  // Accepteer ook OCR fouten: K0, K4, KO → KA (fixen we later)
+  // Accepteer 5 alfanumerieke karakters na K[A/0/4/O]
+  const meldCodeMatch = code.match(/K[A04O][A-Z0-9]{5}/i);
 
-  // Extract alleen KA##### patroon
-  const meldCodeMatch = code.match(/\b(K[A04O]\d{5})\b/i);
   if (meldCodeMatch) {
-    code = meldCodeMatch[1];
+    code = meldCodeMatch[0];
+    console.log(`Extracted meldcode from combined field: ${meldCodeRaw} → ${code}`);
   }
 
-  // Verwijder spaties en streepjes, maak uppercase
-  code = code.replace(/[\s-]/g, '').toUpperCase();
+  // Verwijder spaties en streepjes
+  code = code.replace(/[\s-]/g, '');
 
   // Fix OCR errors in prefix (should be "KA")
   // Common mistakes: K4 → KA, KÅ → KA
@@ -809,12 +814,13 @@ function sanitizeMeldCode(meldCodeRaw) {
 
   if (!match) {
     console.warn(`Invalid meldcode format: ${code} (expected: KA#####, like KA12345)`);
-    return code; // Return anyway voor handmatige correctie
+    return null; // Reject invalid format
   }
 
   // Extra validatie: cijfers mogen niet allemaal 0 zijn
   if (match[1] === '00000') {
     console.warn(`Suspicious meldcode (all zeros): ${code}`);
+    return null; // Reject all-zero meldcode
   }
 
   return code;
@@ -836,24 +842,43 @@ function sanitizeInstallationDate(dateRaw) {
 
   let date = String(dateRaw).trim();
 
-  // ⚡ FIELD SPLITTING: Verwijder labels en extra info
+  // ⚡ FIELD SPLITTING: Extract ALLEEN de datum uit gecombineerde input
   // Patterns:
   // - "Installatiedatum: 15-06-2024"
   // - "Datum 15-06-2024"
+  // - "installatiedatum: 15-06-2024" (lowercase)
   // - "15-06-2024 Factuur: 12345"
 
-  // Verwijder bekende labels
-  date = date.replace(/^(Installatie)?[Dd]atum\s*:\s*/i, '')
-             .replace(/^Datum\s+(installatie)?\s*:\s*/i, '');
+  // Zoek eerst naar datum patroon met mogelijk OCR fouten (O i.p.v. 0)
+  // Match DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY, of YYYY-MM-DD formaten
+  // Accepteer ook letters die cijfers kunnen zijn (O→0)
+  let datePatternMatch = date.match(/(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})|(\d{4}[-\/\.]\d{1,2}[-\/\.]\d{1,2})/);
 
-  // Extract eerste datum patroon (DD-MM-YYYY of varianten)
-  const datePatternMatch = date.match(/(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})/);
   if (datePatternMatch) {
-    date = datePatternMatch[1];
+    date = datePatternMatch[0];
+    console.log(`Extracted date from combined field: ${dateRaw} → ${date}`);
+  } else {
+    // Geen datum patroon gevonden, probeer met OCR correcties eerst
+    const correctedInput = dateRaw.replace(/O/gi, '0')
+                                   .replace(/[Il]/gi, '1')
+                                   .replace(/S/gi, '5')
+                                   .replace(/B/gi, '8')
+                                   .replace(/Z/gi, '2')
+                                   .replace(/G/gi, '6');
+    datePatternMatch = correctedInput.match(/(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})|(\d{4}[-\/\.]\d{1,2}[-\/\.]\d{1,2})/);
+    if (datePatternMatch) {
+      date = datePatternMatch[0];
+      console.log(`Extracted date after OCR correction: ${dateRaw} → ${date}`);
+    }
   }
 
-  // Fix O/0 verwarring
-  date = date.replace(/O/g, '0');
+  // Fix OCR errors: datums moeten ALLEEN cijfers zijn (letters → cijfers)
+  date = date.replace(/O/gi, '0')       // O → 0
+             .replace(/[Il]/gi, '1')    // I or l → 1
+             .replace(/S/gi, '5')       // S → 5
+             .replace(/B/gi, '8')       // B → 8
+             .replace(/Z/gi, '2')       // Z → 2
+             .replace(/G/gi, '6');      // G → 6
 
   // Parse verschillende formaten naar DD-MM-YYYY
   let day, month, year;
@@ -873,7 +898,7 @@ function sanitizeInstallationDate(dateRaw) {
       day = match[3].padStart(2, '0');
     } else {
       console.warn(`Could not parse installation date: ${dateRaw}`);
-      return dateRaw;
+      return null;
     }
   }
 
@@ -884,12 +909,28 @@ function sanitizeInstallationDate(dateRaw) {
 
   if (dayNum < 1 || dayNum > 31) {
     console.warn(`Invalid day in date: ${day}`);
+    return null;
   }
   if (monthNum < 1 || monthNum > 12) {
     console.warn(`Invalid month in date: ${month}`);
+    return null;
   }
-  if (yearNum < 2020 || yearNum > 2030) {
-    console.warn(`Unusual year in installation date: ${year} (expected 2020-2030)`);
+
+  // Valideer dat datum bestaat (geen 31 feb etc)
+  const testDate = new Date(yearNum, monthNum - 1, dayNum);
+  if (testDate.getDate() !== dayNum || testDate.getMonth() !== monthNum - 1) {
+    console.warn(`Invalid date (day doesn't exist in month): ${day}-${month}-${year}`);
+    return null;
+  }
+
+  // Valideer realistisch jaar bereik (2010-heden)
+  if (yearNum < 2010) {
+    console.warn(`Installation date too far in past: ${year} (minimum 2010)`);
+    return null;
+  }
+  if (yearNum > 2030) {
+    console.warn(`Installation date too far in future: ${year} (maximum 2030)`);
+    return null;
   }
 
   // Check of datum in toekomst is
@@ -899,12 +940,7 @@ function sanitizeInstallationDate(dateRaw) {
 
   if (parsedDate > today) {
     console.warn(`Installation date is in the future: ${day}-${month}-${year}`);
-  }
-
-  // Valideer dat datum bestaat (geen 31 feb etc)
-  const testDate = new Date(yearNum, monthNum - 1, dayNum);
-  if (testDate.getDate() !== dayNum || testDate.getMonth() !== monthNum - 1) {
-    console.warn(`Invalid date (day doesn't exist in month): ${day}-${month}-${year}`);
+    return null;
   }
 
   // Return in NL format: DD-MM-YYYY
@@ -927,8 +963,42 @@ function sanitizeInstallationDate(dateRaw) {
 function sanitizePurchaseDate(dateRaw, installationDate = null) {
   if (!dateRaw) return null;
 
-  // Verwijder spaties, fix O/0 verwarring
-  let date = String(dateRaw).trim().replace(/O/g, '0');
+  let date = String(dateRaw).trim();
+
+  // ⚡ FIELD SPLITTING: Extract ALLEEN de datum uit gecombineerde input
+  // Patterns:
+  // - "Aankoopdatum: 15-06-2024"
+  // - "Datum 15-06-2024"
+  // - "15-06-2024 Factuur: 12345"
+
+  // Zoek eerst naar datum patroon
+  let datePatternMatch = date.match(/(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})|(\d{4}[-\/\.]\d{1,2}[-\/\.]\d{1,2})/);
+
+  if (datePatternMatch) {
+    date = datePatternMatch[0];
+    console.log(`Extracted date from combined field: ${dateRaw} → ${date}`);
+  } else {
+    // Geen datum patroon gevonden, probeer met OCR correcties eerst
+    const correctedInput = dateRaw.replace(/O/gi, '0')
+                                   .replace(/[Il]/gi, '1')
+                                   .replace(/S/gi, '5')
+                                   .replace(/B/gi, '8')
+                                   .replace(/Z/gi, '2')
+                                   .replace(/G/gi, '6');
+    datePatternMatch = correctedInput.match(/(\d{1,2}[-\/\.]\d{1,2}[-\/\.]\d{2,4})|(\d{4}[-\/\.]\d{1,2}[-\/\.]\d{1,2})/);
+    if (datePatternMatch) {
+      date = datePatternMatch[0];
+      console.log(`Extracted date after OCR correction: ${dateRaw} → ${date}`);
+    }
+  }
+
+  // Fix OCR errors: datums moeten ALLEEN cijfers zijn (letters → cijfers)
+  date = date.replace(/O/gi, '0')       // O → 0
+             .replace(/[Il]/gi, '1')    // I or l → 1
+             .replace(/S/gi, '5')       // S → 5
+             .replace(/B/gi, '8')       // B → 8
+             .replace(/Z/gi, '2')       // Z → 2
+             .replace(/G/gi, '6');      // G → 6
 
   // Parse verschillende formaten naar DD-MM-YYYY
   let day, month, year;
@@ -948,7 +1018,7 @@ function sanitizePurchaseDate(dateRaw, installationDate = null) {
       day = match[3].padStart(2, '0');
     } else {
       console.warn(`Could not parse purchase date: ${dateRaw}`);
-      return dateRaw;
+      return null;
     }
   }
 
@@ -959,12 +1029,28 @@ function sanitizePurchaseDate(dateRaw, installationDate = null) {
 
   if (dayNum < 1 || dayNum > 31) {
     console.warn(`Invalid day in date: ${day}`);
+    return null;
   }
   if (monthNum < 1 || monthNum > 12) {
     console.warn(`Invalid month in date: ${month}`);
+    return null;
   }
-  if (yearNum < 2020 || yearNum > 2030) {
-    console.warn(`Unusual year in purchase date: ${year} (expected 2020-2030)`);
+
+  // Valideer dat datum bestaat (geen 31 feb etc)
+  const testDate = new Date(yearNum, monthNum - 1, dayNum);
+  if (testDate.getDate() !== dayNum || testDate.getMonth() !== monthNum - 1) {
+    console.warn(`Invalid date (day doesn't exist in month): ${day}-${month}-${year}`);
+    return null;
+  }
+
+  // Valideer realistisch jaar bereik (2010-heden)
+  if (yearNum < 2010) {
+    console.warn(`Purchase date too far in past: ${year} (minimum 2010)`);
+    return null;
+  }
+  if (yearNum > 2030) {
+    console.warn(`Purchase date too far in future: ${year} (maximum 2030)`);
+    return null;
   }
 
   // Check of datum in toekomst is
@@ -974,12 +1060,7 @@ function sanitizePurchaseDate(dateRaw, installationDate = null) {
 
   if (parsedDate > today) {
     console.warn(`Purchase date is in the future: ${day}-${month}-${year}`);
-  }
-
-  // Valideer dat datum bestaat
-  const testDate = new Date(yearNum, monthNum - 1, dayNum);
-  if (testDate.getDate() !== dayNum || testDate.getMonth() !== monthNum - 1) {
-    console.warn(`Invalid date (day doesn't exist in month): ${day}-${month}-${year}`);
+    return null;
   }
 
   // Als installationDate bekend is, valideer dat aankoop <= installatie
@@ -994,6 +1075,7 @@ function sanitizePurchaseDate(dateRaw, installationDate = null) {
 
       if (parsedDate > installDate) {
         console.warn(`Purchase date (${day}-${month}-${year}) is after installation date (${installationDate})`);
+        return null;
       }
     }
   }
@@ -1283,6 +1365,15 @@ function fillFormFields(extractedData) {
       }
     } else {
       document.getElementById('houseNumber').value = extractedData.houseNumber;
+      fieldsFound++;
+    }
+  }
+
+  // Vul houseAddition apart in als het in extractedData zit
+  if (extractedData.houseAddition) {
+    document.getElementById('houseAddition').value = extractedData.houseAddition;
+    // Check of we dit veld al hebben geteld (als het uit split kwam)
+    if (!extractedData.houseNumber || !extractedData.houseNumber.match(/^(\d+)(.+)$/)) {
       fieldsFound++;
     }
   }
@@ -1862,34 +1953,45 @@ async function extractDataFromForm(file) {
 
     // Converteer bestand naar base64 voor OCR API
     let base64Document;
+    let documentType;
+    let documentKey;
+
     if (file.type === 'application/pdf') {
       // Voor PDF: converteer naar base64
       const arrayBuffer = await file.arrayBuffer();
       const bytes = new Uint8Array(arrayBuffer);
       const binary = bytes.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
       base64Document = `data:application/pdf;base64,${btoa(binary)}`;
+      documentType = 'document_url';
+      documentKey = 'document_url';
     } else {
       // Voor afbeeldingen: converteer naar base64
       base64Document = await imageToBase64(file);
+      documentType = 'image_url';
+      documentKey = 'image_url';
     }
 
     showExtractionStatus('🔄 Document wordt geanalyseerd...', 'extractionStatus', 'processing', 0);
 
     // Stap 1: Extraheer tekst met Mistral OCR
     console.log('Calling Mistral OCR API...');
+    console.log('Document type:', documentType);
+
+    const ocrRequestBody = {
+      model: 'mistral-ocr-latest',
+      document: {
+        type: documentType
+      }
+    };
+    ocrRequestBody.document[documentKey] = base64Document;
+
     const ocrResponse = await fetch('https://api.mistral.ai/v1/ocr', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${mistralApiKey}`
       },
-      body: JSON.stringify({
-        model: 'mistral-ocr-latest',
-        document: {
-          type: 'document_url',
-          document_url: base64Document
-        }
-      })
+      body: JSON.stringify(ocrRequestBody)
     });
 
     // Behandel OCR API fouten met gedetailleerde foutmeldingen
@@ -2067,7 +2169,8 @@ Return ONLY JSON, no markdown.`
         visionBase64 = canvas.toDataURL('image/jpeg', 0.8);
         console.log('PDF converted to JPEG for Vision AI, size:', visionBase64.length, 'chars');
       } else {
-        visionBase64 = base64Document;
+        // Voor afbeeldingen: converteer naar base64
+        visionBase64 = await imageToBase64(file);
       }
 
       const visionData = visionBase64.split(',')[1];
