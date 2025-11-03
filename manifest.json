@@ -14,7 +14,8 @@
     "unlimitedStorage",
     "scripting",
     "tabs",
-    "sidePanel"
+    "sidePanel",
+    "windows"
   ],
   "host_permissions": [
     "https://eloket.dienstuitvoering.nl/*"

@@ -42,6 +42,401 @@ let factuurData = null;
 let machtigingsbewijsData = null;
 
 // ============================================================================
+// MISTRAL API RATE LIMITER
+// ============================================================================
+/**
+ * Global rate limiter voor Mistral API calls om 429 errors te voorkomen.
+ * Zorgt ervoor dat er minimaal 2.5 seconden tussen elke API call zit.
+ */
+let lastMistralApiCall = 0;
+const MISTRAL_API_DELAY = 2500; // 2.5 seconden tussen calls
+
+/**
+ * Wacht tot rate limit window voorbij is voordat een nieuwe API call wordt gedaan.
+ * @returns {Promise<void>}
+ */
+async function waitForMistralRateLimit() {
+  const now = Date.now();
+  const timeSinceLastCall = now - lastMistralApiCall;
+
+  if (timeSinceLastCall < MISTRAL_API_DELAY) {
+    const waitTime = MISTRAL_API_DELAY - timeSinceLastCall;
+    console.log(`⏳ Rate limiting: wachten ${Math.round(waitTime / 1000)} seconden...`);
+    await new Promise(resolve => setTimeout(resolve, waitTime));
+  }
+
+  lastMistralApiCall = Date.now();
+}
+
+// ============================================================================
+// PER-TAB FORM DATA STORAGE
+// ============================================================================
+/**
+ * Tab-specifieke formulier data opslag.
+ * Elke tab heeft zijn eigen formulier data die automatisch wordt opgeslagen en geladen.
+ */
+
+/**
+ * Flag om aan te geven dat tab data wordt geladen.
+ * Voorkomt dat auto-save wordt getriggerd tijdens het laden van nieuwe tab data.
+ */
+let isLoadingTabData = false;
+
+/**
+ * Haalt het huidige tab ID op.
+ * Voor een popup moeten we expliciet het browser window vinden, niet het popup window.
+ * @returns {Promise<number>} Tab ID van de actieve tab
+ */
+async function getCurrentTabId() {
+  // Methode 1: Probeer alle normale browser windows te vinden
+  const windows = await chrome.windows.getAll({
+    populate: true,
+    windowTypes: ['normal']
+  });
+
+  console.log(`🔍 Found ${windows.length} browser windows`);
+
+  // Zoek het meest recent gefocuste window
+  const focusedWindow = windows.find(w => w.focused) || windows[0];
+
+  if (focusedWindow) {
+    // Vind de actieve tab in dit window
+    const activeTab = focusedWindow.tabs.find(t => t.active);
+
+    if (activeTab) {
+      console.log(`🔍 Current tab ID: ${activeTab.id}, URL: ${activeTab.url}, Window: ${focusedWindow.id}`);
+      return activeTab.id;
+    }
+  }
+
+  // Fallback: probeer direct query (zou niet moeten gebeuren)
+  console.warn('⚠️ Fallback: using direct tab query');
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  console.log(`🔍 Fallback tab ID: ${tab.id}, URL: ${tab.url}`);
+  return tab.id;
+}
+
+/**
+ * Slaat formulier data op voor een specifieke tab.
+ * @param {number} tabId - Tab ID
+ * @param {Object} formData - Formulier data om op te slaan
+ */
+async function saveFormDataForTab(tabId, formData) {
+  const key = `formData_tab_${tabId}`;
+  await chrome.storage.local.set({ [key]: formData });
+  console.log(`💾 Form data saved for tab ${tabId}:`, formData);
+}
+
+/**
+ * Laadt formulier data voor een specifieke tab.
+ * @param {number} tabId - Tab ID
+ * @returns {Promise<Object|null>} Opgeslagen formulier data of null
+ */
+async function loadFormDataForTab(tabId) {
+  const key = `formData_tab_${tabId}`;
+  const result = await chrome.storage.local.get(key);
+  console.log(`📂 Loading form data for tab ${tabId}:`, result[key] || 'No saved data');
+  return result[key] || null;
+}
+
+/**
+ * Verzamelt alle formulier data van de huidige DOM.
+ * @returns {Object} Object met alle formulier veld waarden
+ */
+function collectFormData() {
+  const formData = {};
+
+  // Verzamel alle input velden
+  getAllFieldIds().forEach(fieldId => {
+    const field = document.getElementById(fieldId);
+    if (field) {
+      formData[fieldId] = field.value;
+    }
+  });
+
+  return formData;
+}
+
+/**
+ * Auto-save functie: slaat formulier data op voor de huidige tab.
+ * Wordt aangeroepen bij elke input wijziging.
+ */
+async function autoSaveFormData() {
+  try {
+    // Skip auto-save if we're currently loading data
+    if (isLoadingTabData) {
+      console.log('⏸️ Auto-save skipped: loading tab data');
+      return;
+    }
+
+    // Use tracked tab ID instead of querying Chrome (prevents race condition)
+    const tabId = currentTrackedTabId;
+    if (tabId === null) {
+      console.warn('⚠️ Cannot auto-save: no tab ID tracked yet');
+      return;
+    }
+
+    const formData = collectFormData();
+    console.log(`💾 AUTO-SAVING for tab ${tabId}:`, Object.keys(formData).filter(k => formData[k]).length, 'fields with data');
+    await saveFormDataForTab(tabId, formData);
+  } catch (error) {
+    console.error('Error auto-saving form data:', error);
+  }
+}
+
+/**
+ * Ruimt oude formulier data op van gesloten tabs.
+ * Behoudt alleen data van open tabs.
+ */
+async function cleanupClosedTabsData() {
+  try {
+    const allTabs = await chrome.tabs.query({});
+    const openTabIds = new Set(allTabs.map(tab => tab.id));
+
+    const storage = await chrome.storage.local.get(null);
+    const keysToRemove = [];
+
+    for (const key in storage) {
+      if (key.startsWith('formData_tab_') || key.startsWith('documents_tab_')) {
+        const tabId = parseInt(key.replace('formData_tab_', '').replace('documents_tab_', ''));
+        if (!openTabIds.has(tabId)) {
+          keysToRemove.push(key);
+        }
+      }
+    }
+
+    if (keysToRemove.length > 0) {
+      await chrome.storage.local.remove(keysToRemove);
+      console.log(`🧹 Cleaned up data for ${keysToRemove.length} closed tabs`);
+    }
+  } catch (error) {
+    console.error('Error cleaning up closed tabs data:', error);
+  }
+}
+
+/**
+ * Slaat geüploade documenten op voor een specifieke tab.
+ * @param {number} tabId - Tab ID
+ * @param {Object} documents - Object met documenten: { betaalbewijs, factuur, machtigingsbewijs }
+ */
+async function saveDocumentsForTab(tabId, documents) {
+  const key = `documents_tab_${tabId}`;
+  await chrome.storage.local.set({ [key]: documents });
+  console.log(`📎 Documents saved for tab ${tabId}:`, {
+    betaalbewijs: documents.betaalbewijs?.name || null,
+    factuur: documents.factuur?.name || null,
+    machtigingsbewijs: documents.machtigingsbewijs?.name || null
+  });
+}
+
+/**
+ * Laadt geüploade documenten voor een specifieke tab.
+ * @param {number} tabId - Tab ID
+ * @returns {Promise<Object|null>} Opgeslagen documenten of null
+ */
+async function loadDocumentsForTab(tabId) {
+  const key = `documents_tab_${tabId}`;
+  const result = await chrome.storage.local.get(key);
+  console.log(`📂 Loading documents for tab ${tabId}:`, result[key] ? 'Found' : 'No documents');
+  return result[key] || null;
+}
+
+/**
+ * Slaat een enkel document op voor de huidige tab.
+ * @param {string} documentType - Type: 'betaalbewijs', 'factuur', of 'machtigingsbewijs'
+ * @param {Object} documentData - Document data object
+ */
+/**
+ * Slaat een document op voor een specifieke tab (met expliciet tab ID)
+ * @param {number} tabId - Tab ID
+ * @param {string} documentType - Type: 'betaalbewijs', 'factuur', of 'machtigingsbewijs'
+ * @param {Object} documentData - Document data object
+ */
+async function saveDocumentForTab(tabId, documentType, documentData) {
+  try {
+    if (tabId === null) {
+      console.warn('⚠️ Cannot save document: no tab ID provided');
+      return;
+    }
+
+    console.log(`💾 Saving ${documentType} for tab ${tabId}`);
+
+    // Laad huidige documenten voor deze tab
+    const existingDocuments = await loadDocumentsForTab(tabId) || {};
+
+    // Update het specifieke document
+    existingDocuments[documentType] = documentData;
+
+    // Sla alles op
+    await saveDocumentsForTab(tabId, existingDocuments);
+
+    // Update ook de globale variabelen voor backwards compatibility
+    if (documentType === 'betaalbewijs') betaalbewijsData = documentData;
+    if (documentType === 'factuur') factuurData = documentData;
+    if (documentType === 'machtigingsbewijs') machtigingsbewijsData = documentData;
+  } catch (error) {
+    console.error(`Error saving ${documentType} for tab ${tabId}:`, error);
+  }
+}
+
+async function saveDocumentForCurrentTab(documentType, documentData) {
+  // Wrapper that uses current tracked tab ID
+  return saveDocumentForTab(currentTrackedTabId, documentType, documentData);
+}
+
+/**
+ * Verwijdert een document voor een specifieke tab
+ * @param {number} tabId - Tab ID
+ * @param {string} documentType - Type document ('betaalbewijs', 'factuur', 'machtigingsbewijs')
+ */
+async function deleteDocumentForTab(tabId, documentType) {
+  const existingDocuments = await loadDocumentsForTab(tabId) || {};
+  delete existingDocuments[documentType];
+  await saveDocumentsForTab(tabId, existingDocuments);
+  console.log(`🗑️ Deleted ${documentType} for tab ${tabId}`);
+}
+
+/**
+ * Wist formuliervelden die bij een specifiek documenttype horen
+ * @param {number} tabId - Tab ID
+ * @param {string} documentType - Type document
+ */
+async function clearFieldsForDocumentType(tabId, documentType) {
+  // Laad bestaande form data en documenten
+  const existingData = await loadFormDataForTab(tabId) || {};
+  const existingDocuments = await loadDocumentsForTab(tabId) || {};
+
+  // Bepaal welke velden gewist moeten worden per documenttype
+  let fieldsToClear = [];
+
+  if (documentType === 'machtigingsbewijs') {
+    // Machtigingsformulier bevat:
+    // - Persoonlijke gegevens: BSN, naam, geslacht
+    // - Contact: telefoon, email, IBAN
+    // - Adres: straat, huisnummer, postcode, plaats
+    // - Aardgas gebruik
+    // NIET: purchaseDate, installationDate, meldCode (die worden handmatig of via factuur ingevuld)
+    fieldsToClear = [
+      'bsn', 'initials', 'lastName', 'gender',
+      'phone', 'email', 'iban',
+      'street', 'houseNumber', 'houseAddition', 'postalCode', 'city',
+      'gasUsage'
+    ];
+  } else if (documentType === 'factuur') {
+    // Factuur bevat meldCode en installationDate
+    fieldsToClear = ['meldCode', 'installationDate'];
+  } else if (documentType === 'betaalbewijs') {
+    // Betaalbewijs heeft geen OCR velden
+    fieldsToClear = [];
+  }
+
+  // Wis de velden uit form data
+  fieldsToClear.forEach(field => {
+    delete existingData[field];
+  });
+
+  // Sla bijgewerkte data op
+  await saveFormDataForTab(tabId, existingData);
+
+  // Wis de velden in de UI (alleen als we in dezelfde tab zijn)
+  if (currentTrackedTabId === tabId) {
+    fieldsToClear.forEach(fieldId => {
+      const field = document.getElementById(fieldId);
+      if (field) {
+        field.value = '';
+        // Verwijder ook warning styling
+        field.classList.remove('has-warning');
+      }
+
+      // Verberg warning message voor dit veld
+      const warningDiv = document.getElementById(`${fieldId}Warning`);
+      if (warningDiv) {
+        warningDiv.classList.remove('visible');
+        warningDiv.textContent = '';
+      }
+    });
+
+    // Verberg ook de status berichten
+    if (documentType === 'machtigingsbewijs') {
+      const statusDiv = document.getElementById('extractionStatus');
+      if (statusDiv) statusDiv.style.display = 'none';
+    } else if (documentType === 'factuur') {
+      const statusDiv = document.getElementById('factuurExtractionStatus');
+      if (statusDiv) statusDiv.style.display = 'none';
+    }
+  }
+
+  console.log(`🗑️ Cleared ${fieldsToClear.length} fields for ${documentType} in tab ${tabId}`);
+}
+
+/**
+ * Toont bestandsnaam met delete button in de UI
+ * @param {string} nameDivId - ID van het naam div element
+ * @param {string} fileName - Naam van het bestand
+ * @param {string} documentType - Type document voor delete functie
+ */
+function displayFileNameWithDelete(nameDivId, fileName, documentType) {
+  const nameDiv = document.getElementById(nameDivId);
+  if (!nameDiv) return;
+
+  // Clear existing content
+  nameDiv.innerHTML = '';
+
+  // Create text span
+  const textSpan = document.createElement('span');
+  textSpan.textContent = `✓ ${fileName}`;
+
+  // Create delete button
+  const deleteBtn = document.createElement('button');
+  deleteBtn.textContent = '×';
+  deleteBtn.className = 'file-delete-btn';
+  deleteBtn.title = 'Verwijder bestand en velden';
+  deleteBtn.onclick = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const tabId = currentTrackedTabId;
+
+    // Delete document from storage
+    await deleteDocumentForTab(tabId, documentType);
+
+    // Hide the name div
+    nameDiv.style.display = 'none';
+    nameDiv.innerHTML = '';
+
+    // Reset het file input element zodat je opnieuw kunt uploaden
+    let inputId;
+    if (documentType === 'machtigingsbewijs') {
+      inputId = 'machtigingsformulier';
+    } else if (documentType === 'betaalbewijs') {
+      inputId = 'betaalbewijsDoc';
+    } else if (documentType === 'factuur') {
+      inputId = 'factuurDoc';
+    }
+
+    if (inputId) {
+      const inputElement = document.getElementById(inputId);
+      if (inputElement) {
+        inputElement.value = '';
+      }
+    }
+
+    // Wis ook de velden die door dit document zijn ingevuld
+    await clearFieldsForDocumentType(tabId, documentType);
+
+    // Update start button state
+    updateStartButtonState();
+
+    console.log(`✓ ${documentType} en gerelateerde velden verwijderd voor tab ${tabId}`);
+  };
+
+  // Append to nameDiv
+  nameDiv.appendChild(textSpan);
+  nameDiv.appendChild(deleteBtn);
+  nameDiv.style.display = 'inline-flex';
+}
+
+// ============================================================================
 // FORMULIERVELDEN CONFIGURATIE
 // ============================================================================
 /**
@@ -129,10 +524,10 @@ function sanitizeBSN(bsnRaw) {
   // Verwijder alle niet-cijfer karakters
   bsn = bsn.replace(/\D/g, '');
 
-  // Valideer lengte
+  // Valideer lengte (moet exact 9 cijfers zijn)
   if (bsn.length !== 9) {
     console.warn(`Invalid BSN length: ${bsn.length} (expected 9)`);
-    return bsn; // Return anyway maar log warning
+    return null; // Reject invalid length
   }
 
   // 11-proef validatie (BSN checksum)
@@ -144,7 +539,7 @@ function sanitizeBSN(bsnRaw) {
 
   if (sum % 11 !== 0) {
     console.warn(`BSN failed 11-proef validation: ${bsn}`);
-    // Return anyway - sommige speciale BSN's kunnen afwijken
+    return null; // Reject invalid checksum
   }
 
   return bsn;
@@ -372,21 +767,21 @@ function sanitizeEmail(emailRaw) {
   // Verwijder trailing punt/komma (OCR errors)
   email = email.replace(/[.,;]+$/, '');
 
+  // Check for common OCR errors
+  email = email.replace(/,/g, '.'); // Komma → punt in domein
+
   // Filter bedrijfsemail
   if (email.includes('@samangroep') || email.includes('@saman')) {
     console.warn(`Company email filtered: ${email}`);
     return null;
   }
 
-  // Basic email validatie
+  // Email format validatie (strict)
   const emailRegex = /^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
   if (!emailRegex.test(email)) {
     console.warn(`Invalid email format: ${email}`);
-    return email; // Return anyway voor handmatige correctie
+    return null; // Reject invalid format
   }
-
-  // Check for common OCR errors
-  email = email.replace(/,/g, '.'); // Komma → punt in domein
 
   return email;
 }
@@ -1109,43 +1504,90 @@ function sanitizePurchaseDate(dateRaw, installationDate = null) {
 document.getElementById('machtigingsformulier').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (file) {
-    // Toon bestandsnaam in de UI
-    const nameDiv = document.getElementById('machtigingName');
-    nameDiv.textContent = `✓ ${file.name}`;
-    nameDiv.style.display = 'inline-block';
+    // Capture tab ID at start of upload (before any async operations)
+    const uploadTabId = currentTrackedTabId;
+    console.log('📎 Machtigingsformulier uploaded:', file.name, 'for tab', uploadTabId);
 
-    // Converteer bestand naar base64 en sla op voor upload naar formulier
-    machtigingsbewijsData = await fileToBase64(file);
-    console.log('📎 Machtigingsformulier uploaded (session only):', file.name);
+    // Converteer bestand naar base64
+    const fileData = await fileToBase64(file);
 
-    // Toon extractie status aan gebruiker
-    showExtractionStatus('🔄 Gegevens worden geëxtraheerd...', 'extractionStatus', 'processing', 0);
+    // Sla op voor deze specifieke tab (niet currentTrackedTabId, die kan inmiddels veranderd zijn)
+    await saveDocumentForTab(uploadTabId, 'machtigingsbewijs', fileData);
+
+    // Toon bestandsnaam met delete button in de UI
+    displayFileNameWithDelete('machtigingName', file.name, 'machtigingsbewijs');
+
+    console.log('✓ Machtigingsformulier saved for current tab');
+
+    // Toon extractie status alleen als user nog in dezelfde tab is
+    if (currentTrackedTabId === uploadTabId) {
+      showExtractionStatus('🔄 Gegevens worden geëxtraheerd...', 'extractionStatus', 'processing', 0);
+    }
 
     try {
       // Voer OCR extractie uit op het machtigingsformulier
-      const extractedData = await extractDataFromForm(file);
+      const extractedData = await extractDataFromForm(file, uploadTabId);
       console.log('Extracted data result:', extractedData);
 
-      // Vul formuliervelden in met geëxtraheerde data
-      const fieldsFound = fillFormFields(extractedData);
+      // Check if user switched tabs during OCR
+      const tabSwitched = (currentTrackedTabId !== uploadTabId);
 
-      // Toon succesbericht met aantal gevonden velden
-      if (fieldsFound > 0) {
-        showExtractionStatus(`✅ ${fieldsFound} veld(en) succesvol ingevuld!`, 'extractionStatus', 'success', 5000);
+      if (tabSwitched) {
+        console.warn(`⚠️ Tab switched during machtigingsformulier OCR (from ${uploadTabId} to ${currentTrackedTabId}). Saving data without UI update.`);
+
+        // Don't update UI - user is in different tab
+        // Load existing data from upload tab and merge extracted fields
+        const existingData = await loadFormDataForTab(uploadTabId) || {};
+        const updatedData = { ...existingData };
+
+        // Merge extracted data (only non-null values)
+        let fieldsUpdated = 0;
+        for (const [key, value] of Object.entries(extractedData)) {
+          if (value !== null && value !== undefined && value !== '') {
+            updatedData[key] = value;
+            fieldsUpdated++;
+          }
+        }
+
+        // Save directly to storage without UI update
+        await saveFormDataForTab(uploadTabId, updatedData);
+        console.log(`💾 Machtigingsformulier OCR data saved to background tab ${uploadTabId} (${fieldsUpdated} fields)`);
+
       } else {
-        showExtractionStatus('⚠️ Geen gegevens gevonden. Controleer de console voor details.', 'extractionStatus', 'warning', 5000);
+        // User is still in same tab - normal flow with UI updates
+        // Vul formuliervelden in met geëxtraheerde data
+        const fieldsFound = fillFormFields(extractedData);
+
+        // Toon succesbericht met aantal gevonden velden
+        if (fieldsFound > 0) {
+          showExtractionStatus(`✅ ${fieldsFound} veld(en) succesvol ingevuld!`, 'extractionStatus', 'success', 5000);
+        } else {
+          showExtractionStatus('⚠️ Geen gegevens gevonden. Controleer de console voor details.', 'extractionStatus', 'warning', 5000);
+        }
+
+        // Save form data from UI
+        const formData = collectFormData();
+        console.log(`💾 Saving machtigingsformulier OCR data to tab ${uploadTabId}`);
+        await saveFormDataForTab(uploadTabId, formData);
       }
 
       // Update de status van de "Start Automatisering" knop
-      updateStartButtonState();
+      // Only update if still in same tab
+      if (!tabSwitched) {
+        updateStartButtonState();
+      }
     } catch (error) {
       // Behandel extractie fouten
-      console.error('Extraction error:', error);
+      console.error('Machtigingsformulier extraction error:', error);
       console.error('Error stack:', error.stack);
-      showExtractionStatus(`❌ Fout: ${error.message}`, 'extractionStatus', 'error', 0);
 
-      // Update knop status ook bij fout
-      updateStartButtonState();
+      // Only show error in UI if still in same tab
+      if (currentTrackedTabId === uploadTabId) {
+        showExtractionStatus(`❌ Fout: ${error.message}`, 'extractionStatus', 'error', 0);
+        updateStartButtonState();
+      } else {
+        console.warn(`⚠️ Machtigingsformulier extraction failed for tab ${uploadTabId}, but user is now in tab ${currentTrackedTabId}. Error not shown in UI.`);
+      }
     }
   }
 });
@@ -1169,17 +1611,20 @@ document.getElementById('machtigingsformulier').addEventListener('change', async
 document.getElementById('betaalbewijsDoc').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (file) {
-    console.log('📎 Betaalbewijs uploaded (session only):', file.name);
+    // Capture tab ID at start of upload
+    const uploadTabId = currentTrackedTabId;
+    console.log('📎 Betaalbewijs uploaded:', file.name, 'for tab', uploadTabId);
 
-    // Converteer bestand naar base64 en sla op
-    betaalbewijsData = await fileToBase64(file);
+    // Converteer bestand naar base64
+    const fileData = await fileToBase64(file);
 
-    // Toon bestandsnaam in de UI
-    const nameDiv = document.getElementById('betaalbewijsName');
-    nameDiv.textContent = `✓ ${file.name}`;
-    nameDiv.style.display = 'inline-block';
+    // Sla op voor deze specifieke tab
+    await saveDocumentForTab(uploadTabId, 'betaalbewijs', fileData);
 
-    console.log('✓ Betaalbewijs ready for automation (will be cleared after use)');
+    // Toon bestandsnaam met delete button in de UI
+    displayFileNameWithDelete('betaalbewijsName', file.name, 'betaalbewijs');
+
+    console.log('✓ Betaalbewijs saved for current tab');
 
     // Update de status van de "Start Automatisering" knop
     updateStartButtonState();
@@ -1205,55 +1650,101 @@ document.getElementById('betaalbewijsDoc').addEventListener('change', async (e) 
 document.getElementById('factuurDoc').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (file) {
-    console.log('📎 Factuur uploaded (session only):', file.name);
+    // Capture tab ID at start of upload (before any async operations)
+    const uploadTabId = currentTrackedTabId;
+    console.log('📎 Factuur uploaded:', file.name, 'for tab', uploadTabId);
 
-    // Converteer bestand naar base64 en sla op
-    factuurData = await fileToBase64(file);
+    // Converteer bestand naar base64
+    const fileData = await fileToBase64(file);
 
-    // Toon bestandsnaam in de UI
-    const nameDiv = document.getElementById('factuurName');
-    nameDiv.textContent = `✓ ${file.name}`;
-    nameDiv.style.display = 'inline-block';
+    // Sla op voor deze specifieke tab (niet currentTrackedTabId, die kan inmiddels veranderd zijn)
+    await saveDocumentForTab(uploadTabId, 'factuur', fileData);
 
-    console.log('✓ Factuur ready for automation (will be cleared after use)');
+    // Toon bestandsnaam met delete button in de UI
+    displayFileNameWithDelete('factuurName', file.name, 'factuur');
 
-    // Toon extractie status voor meldcode en datum
-    showExtractionStatus('🔄 Meldcode wordt geëxtraheerd uit factuur...', 'factuurExtractionStatus', 'processing', 0);
+    console.log('✓ Factuur saved for current tab');
+
+    // Toon extractie status alleen als user nog in dezelfde tab is
+    if (currentTrackedTabId === uploadTabId) {
+      showExtractionStatus('🔄 Meldcode wordt geëxtraheerd uit factuur...', 'factuurExtractionStatus', 'processing', 0);
+    }
 
     try {
       // Voer meldcode en datum extractie uit
       const { meldcode, installationDate } = await extractMeldcodeFromFactuur(file);
 
-      let fieldsFound = [];
+      // Check if user switched tabs during OCR
+      const tabSwitched = (currentTrackedTabId !== uploadTabId);
 
-      // Vul meldcode veld in als gevonden
-      if (meldcode) {
-        document.getElementById('meldCode').value = meldcode;
-        fieldsFound.push('Meldcode: ' + meldcode);
-        console.log('✅ Meldcode extracted:', meldcode);
-      }
+      if (tabSwitched) {
+        console.warn(`⚠️ Tab switched during factuur OCR (from ${uploadTabId} to ${currentTrackedTabId}). Saving data without UI update.`);
 
-      // Vul installatiedatum veld in als gevonden
-      if (installationDate) {
-        document.getElementById('installationDate').value = installationDate;
-        fieldsFound.push('Installatiedatum: ' + installationDate);
-        console.log('✅ Installation date extracted:', installationDate);
-      }
+        // Don't update UI - user is in different tab
+        // Load existing data from upload tab and merge new fields
+        const existingData = await loadFormDataForTab(uploadTabId) || {};
+        const updatedData = { ...existingData };
 
-      // Toon succesmelding met gevonden gegevens
-      if (fieldsFound.length > 0) {
-        showExtractionStatus(`✅ Gevonden: ${fieldsFound.join(', ')}`, 'factuurExtractionStatus', 'success', 3000);
+        if (meldcode) {
+          updatedData.meldCode = meldcode;
+          console.log('✅ Meldcode extracted:', meldcode, '(saved to background tab)');
+        }
+        if (installationDate) {
+          updatedData.installationDate = installationDate;
+          console.log('✅ Installation date extracted:', installationDate, '(saved to background tab)');
+        }
+
+        // Save directly to storage without UI update
+        await saveFormDataForTab(uploadTabId, updatedData);
+        console.log(`💾 Factuur OCR data saved to background tab ${uploadTabId}`);
+
       } else {
-        showExtractionStatus('⚠️ Geen meldcode of datum gevonden in factuur', 'factuurExtractionStatus', 'warning', 3000);
+        // User is still in same tab - normal flow with UI updates
+        let fieldsFound = [];
+
+        // Vul meldcode veld in als gevonden
+        if (meldcode) {
+          document.getElementById('meldCode').value = meldcode;
+          fieldsFound.push('Meldcode: ' + meldcode);
+          console.log('✅ Meldcode extracted:', meldcode);
+        }
+
+        // Vul installatiedatum veld in als gevonden
+        if (installationDate) {
+          document.getElementById('installationDate').value = installationDate;
+          fieldsFound.push('Installatiedatum: ' + installationDate);
+          console.log('✅ Installation date extracted:', installationDate);
+        }
+
+        // Toon succesmelding met gevonden gegevens
+        if (fieldsFound.length > 0) {
+          showExtractionStatus(`✅ Gevonden: ${fieldsFound.join(', ')}`, 'factuurExtractionStatus', 'success', 3000);
+        } else {
+          showExtractionStatus('⚠️ Geen meldcode of datum gevonden in factuur', 'factuurExtractionStatus', 'warning', 3000);
+        }
+
+        // Save form data from UI
+        const formData = collectFormData();
+        console.log(`💾 Saving factuur OCR data to tab ${uploadTabId}`);
+        await saveFormDataForTab(uploadTabId, formData);
       }
 
       // Update de status van de "Start Automatisering" knop
-      updateStartButtonState();
+      // Only update if still in same tab
+      if (!tabSwitched) {
+        updateStartButtonState();
+      }
     } catch (error) {
       // Behandel extractie fouten
       console.error('Factuur extraction error:', error);
-      showExtractionStatus(`❌ Fout bij extraheren factuur: ${error.message}`, 'factuurExtractionStatus', 'error', 5000);
-      updateStartButtonState();
+
+      // Only show error in UI if still in same tab
+      if (currentTrackedTabId === uploadTabId) {
+        showExtractionStatus(`❌ Fout bij extraheren factuur: ${error.message}`, 'factuurExtractionStatus', 'error', 5000);
+        updateStartButtonState();
+      } else {
+        console.warn(`⚠️ Factuur extraction failed for tab ${uploadTabId}, but user is now in tab ${currentTrackedTabId}. Error not shown in UI.`);
+      }
     }
   }
 });
@@ -1336,7 +1827,25 @@ function fillFormFields(extractedData) {
     'email', 'iban', 'street', 'postalCode', 'city', 'gasUsage'
   ];
 
+  // Mapping van fieldId naar warningId
+  const warningIds = {
+    'bsn': 'bsnWarning',
+    'initials': 'initialsWarning',
+    'lastName': 'lastNameWarning',
+    'gender': 'genderWarning',
+    'phone': 'phoneWarning',
+    'email': 'emailWarning',
+    'iban': 'ibanWarning',
+    'street': 'streetWarning',
+    'postalCode': 'postalCodeWarning',
+    'city': 'cityWarning',
+    'gasUsage': 'gasUsageWarning'
+  };
+
   let fieldsFound = 0;
+
+  // Haal validatie warnings op
+  const validationWarnings = extractedData._validationWarnings || {};
 
   // Vul standaard velden in
   fieldMappings.forEach(field => {
@@ -1346,6 +1855,11 @@ function fillFormFields(extractedData) {
         element.value = extractedData[field];
         fieldsFound++;
       }
+    }
+
+    // Toon warning als validatie gefaald is
+    if (validationWarnings[field] && warningIds[field]) {
+      showFieldWarning(field, warningIds[field], validationWarnings[field]);
     }
   });
 
@@ -1663,6 +2177,9 @@ async function extractMeldcodeFromFactuur(file) {
         const pdfImage = await pdfToBase64Image(file);
         const base64Data = pdfImage.split(',')[1];
 
+        // Wacht voor rate limiting
+        await waitForMistralRateLimit();
+
         // Gebruik Mistral Pixtral Vision AI voor OCR
         const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
           method: 'POST',
@@ -1716,6 +2233,9 @@ Extract ALL text but pay special attention to these two critical pieces of infor
       console.log('Converting image to base64 for OCR...');
       const base64Image = await imageToBase64(file);
       const base64Data = base64Image.split(',')[1];
+
+      // Wacht voor rate limiting
+      await waitForMistralRateLimit();
 
       const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
         method: 'POST',
@@ -1801,6 +2321,9 @@ Extract ALL text but pay special attention to these two critical pieces of infor
     // Als niet alle data gevonden via regex, gebruik AI extractie
     if (!meldcode || !installationDate) {
       console.log('Not all data found via regex, asking AI...');
+
+      // Wacht voor rate limiting
+      await waitForMistralRateLimit();
 
       const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
         method: 'POST',
@@ -1934,7 +2457,7 @@ Return ONLY JSON, no markdown.`
  * - Gekruist/doorgestreept = NIET geselecteerd
  * - Omcirkeld/aangevinkt = WEL geselecteerd
  */
-async function extractDataFromForm(file) {
+async function extractDataFromForm(file, uploadTabId) {
   console.log('=== Starting extraction with Mistral ===');
   console.log('File:', file.name, 'Type:', file.type, 'Size:', file.size);
 
@@ -1949,7 +2472,9 @@ async function extractDataFromForm(file) {
 
     // Gebruik Mistral Document AI OCR voor betere extractie
     console.log('Using Mistral Document AI OCR...');
-    showExtractionStatus('🔄 Document OCR met Mistral AI...', 'extractionStatus', 'processing', 0);
+    if (currentTrackedTabId === uploadTabId) {
+      showExtractionStatus('🔄 Document OCR met Mistral AI...', 'extractionStatus', 'processing', 0);
+    }
 
     // Converteer bestand naar base64 voor OCR API
     let base64Document;
@@ -1971,7 +2496,9 @@ async function extractDataFromForm(file) {
       documentKey = 'image_url';
     }
 
-    showExtractionStatus('🔄 Document wordt geanalyseerd...', 'extractionStatus', 'processing', 0);
+    if (currentTrackedTabId === uploadTabId) {
+      showExtractionStatus('🔄 Document wordt geanalyseerd...', 'extractionStatus', 'processing', 0);
+    }
 
     // Stap 1: Extraheer tekst met Mistral OCR
     console.log('Calling Mistral OCR API...');
@@ -1984,6 +2511,9 @@ async function extractDataFromForm(file) {
       }
     };
     ocrRequestBody.document[documentKey] = base64Document;
+
+    // Wacht voor rate limiting
+    await waitForMistralRateLimit();
 
     const ocrResponse = await fetch('https://api.mistral.ai/v1/ocr', {
       method: 'POST',
@@ -2038,10 +2568,16 @@ async function extractDataFromForm(file) {
     console.log(extractedText);
     console.log('=== END FULL OCR TEXT ===');
 
-    showExtractionStatus('🔄 Gegevens extraheren met AI...', 'extractionStatus', 'processing', 0);
+    if (currentTrackedTabId === uploadTabId) {
+      showExtractionStatus('🔄 Gegevens extraheren met AI...', 'extractionStatus', 'processing', 0);
+    }
 
     // Stap 2: Gebruik text model voor gestructureerde data extractie
     console.log('Calling Mistral text model for structured extraction...');
+
+    // Wacht voor rate limiting
+    await waitForMistralRateLimit();
+
     const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -2143,7 +2679,9 @@ Return ONLY JSON, no markdown.`
     if (!extractedData.gasUsage || extractedData.gasUsage === 'null') {
       console.log('Gas usage not found by AI, using Vision AI to detect checkbox...');
 
-      showExtractionStatus('🔄 Aardgas checkbox detecteren met Vision AI...', 'extractionStatus', 'processing', 0);
+      if (currentTrackedTabId === uploadTabId) {
+        showExtractionStatus('🔄 Aardgas checkbox detecteren met Vision AI...', 'extractionStatus', 'processing', 0);
+      }
 
       // Converteer document naar afbeelding voor vision analyse
       let visionBase64;
@@ -2177,6 +2715,9 @@ Return ONLY JSON, no markdown.`
 
       try {
         // Roep Vision AI aan voor checkbox detectie
+        // Wacht voor rate limiting
+        await waitForMistralRateLimit();
+
         const visionResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
           method: 'POST',
           headers: {
@@ -2295,31 +2836,139 @@ Return ONLY one word: "yes", "no", or "unknown"`
     // ========================================================================
     console.log('=== Applying sanitization to extracted data ===');
 
+    // Object om validatie warnings bij te houden
+    const validationWarnings = {};
+
     // Personal data
-    if (extractedData.bsn) extractedData.bsn = sanitizeBSN(extractedData.bsn);
-    if (extractedData.initials) extractedData.initials = sanitizeInitials(extractedData.initials);
-    if (extractedData.lastName) extractedData.lastName = sanitizeLastName(extractedData.lastName);
-    if (extractedData.gender) extractedData.gender = sanitizeGender(extractedData.gender);
+    if (extractedData.bsn) {
+      const original = extractedData.bsn;
+      const sanitized = sanitizeBSN(extractedData.bsn);
+      if (!sanitized) {
+        validationWarnings.bsn = `⚠️ Ongeldig BSN (controleer lengte en checksum)`;
+        // Behoud originele waarde zodat het veld ingevuld wordt
+        extractedData.bsn = original;
+      } else {
+        extractedData.bsn = sanitized;
+      }
+    }
+    if (extractedData.initials) {
+      const original = extractedData.initials;
+      const sanitized = sanitizeInitials(extractedData.initials);
+      if (!sanitized) {
+        validationWarnings.initials = `⚠️ Ongeldige voorletters`;
+        extractedData.initials = original;
+      } else {
+        extractedData.initials = sanitized;
+      }
+    }
+    if (extractedData.lastName) {
+      const original = extractedData.lastName;
+      const sanitized = sanitizeLastName(extractedData.lastName);
+      if (!sanitized) {
+        validationWarnings.lastName = `⚠️ Ongeldige achternaam`;
+        extractedData.lastName = original;
+      } else {
+        extractedData.lastName = sanitized;
+      }
+    }
+    if (extractedData.gender) {
+      const original = extractedData.gender;
+      const sanitized = sanitizeGender(extractedData.gender);
+      if (!sanitized) {
+        validationWarnings.gender = `⚠️ Ongeldig geslacht (verwacht: man/vrouw)`;
+        extractedData.gender = original;
+      } else {
+        extractedData.gender = sanitized;
+      }
+    }
 
     // Contact data
-    if (extractedData.phone) extractedData.phone = sanitizePhone(extractedData.phone);
-    if (extractedData.email) extractedData.email = sanitizeEmail(extractedData.email);
-    if (extractedData.iban) extractedData.iban = sanitizeIBAN(extractedData.iban);
+    if (extractedData.phone) {
+      const original = extractedData.phone;
+      const sanitized = sanitizePhone(extractedData.phone);
+      if (!sanitized) {
+        validationWarnings.phone = `⚠️ Ongeldig telefoonnummer (verwacht: 10 cijfers, start met 0)`;
+        extractedData.phone = original;
+      } else {
+        extractedData.phone = sanitized;
+      }
+    }
+    if (extractedData.email) {
+      const original = extractedData.email;
+      const sanitized = sanitizeEmail(extractedData.email);
+      if (!sanitized) {
+        validationWarnings.email = `⚠️ Ongeldig e-mailadres`;
+        extractedData.email = original;
+      } else {
+        extractedData.email = sanitized;
+      }
+    }
+    if (extractedData.iban) {
+      const original = extractedData.iban;
+      const sanitized = sanitizeIBAN(extractedData.iban);
+      if (!sanitized) {
+        validationWarnings.iban = `⚠️ Ongeldig IBAN (controleer checksum en lengte)`;
+        extractedData.iban = original;
+      } else {
+        extractedData.iban = sanitized;
+      }
+    }
 
     // Address data
-    if (extractedData.street) extractedData.street = sanitizeStreet(extractedData.street);
+    if (extractedData.street) {
+      const original = extractedData.street;
+      const sanitized = sanitizeStreet(extractedData.street);
+      if (!sanitized) {
+        validationWarnings.street = `⚠️ Ongeldige straatnaam`;
+        extractedData.street = original;
+      } else {
+        extractedData.street = sanitized;
+      }
+    }
     if (extractedData.houseNumber) {
       const houseData = sanitizeHouseNumber(extractedData.houseNumber);
       extractedData.houseNumber = houseData.number;
       if (houseData.addition) extractedData.houseAddition = houseData.addition;
     }
-    if (extractedData.postalCode) extractedData.postalCode = sanitizePostalCode(extractedData.postalCode);
-    if (extractedData.city) extractedData.city = sanitizeCity(extractedData.city);
+    if (extractedData.postalCode) {
+      const original = extractedData.postalCode;
+      const sanitized = sanitizePostalCode(extractedData.postalCode);
+      if (!sanitized) {
+        validationWarnings.postalCode = `⚠️ Ongeldige postcode (verwacht: 4 cijfers + 2 letters)`;
+        extractedData.postalCode = original;
+      } else {
+        extractedData.postalCode = sanitized;
+      }
+    }
+    if (extractedData.city) {
+      const original = extractedData.city;
+      const sanitized = sanitizeCity(extractedData.city);
+      if (!sanitized) {
+        validationWarnings.city = `⚠️ Ongeldige plaatsnaam`;
+        extractedData.city = original;
+      } else {
+        extractedData.city = sanitized;
+      }
+    }
 
     // Other fields
-    if (extractedData.gasUsage) extractedData.gasUsage = sanitizeGasUsage(extractedData.gasUsage);
+    if (extractedData.gasUsage) {
+      const original = extractedData.gasUsage;
+      const sanitized = sanitizeGasUsage(extractedData.gasUsage);
+      if (!sanitized) {
+        validationWarnings.gasUsage = `⚠️ Ongeldig aardgas gebruik (verwacht: ja/nee)`;
+        extractedData.gasUsage = original;
+      } else {
+        extractedData.gasUsage = sanitized;
+      }
+    }
 
     console.log('=== Final extracted data (after sanitization) ===', extractedData);
+    console.log('=== Validation warnings ===', validationWarnings);
+
+    // Voeg validationWarnings toe aan extractedData zodat fillFormFields het kan gebruiken
+    extractedData._validationWarnings = validationWarnings;
+
     return extractedData;
 
   } catch (error) {
@@ -2332,35 +2981,181 @@ Return ONLY one word: "yes", "no", or "unknown"`
 // CONFIGURATIE LADEN BIJ OPSTARTEN
 // ============================================================================
 /**
- * Reset alle formuliervelden naar lege waarden bij het openen van de popup.
+ * Laadt tab-specifieke formulier data bij het openen van de popup.
  *
  * FUNCTIONALITEIT:
- * - Wist alle persoonlijke gegevens velden
- * - Reset document variabelen naar null
- * - Zorgt ervoor dat gebruiker documenten opnieuw moet uploaden
+ * - Laadt opgeslagen formulier data voor de huidige tab
+ * - Initialiseert lege velden als er geen opgeslagen data is
+ * - Reset document variabelen naar null (documenten niet opgeslagen)
+ * - Ruimt data op van gesloten tabs
+ * - Zet auto-save event listeners op alle velden
  *
  * PRIVACY & VEILIGHEID:
- * Data wordt NIET opgeslagen tussen sessies. Dit voorkomt dat gevoelige
- * klantgegevens persistent worden opgeslagen in de browser.
+ * Data wordt opgeslagen PER TAB tijdens de browsersessie. Elke tab heeft
+ * zijn eigen onafhankelijke formulier data. Data wordt automatisch opgeruimd
+ * wanneer tabs worden gesloten.
  */
-function loadConfiguration() {
-  // Reset alle formuliervelden naar leeg bij opstarten
+async function loadConfiguration() {
+  // Set loading flag to prevent auto-save during initial load
+  isLoadingTabData = true;
+
+  try {
+    // Haal huidige tab ID op
+    const tabId = await getCurrentTabId();
+    console.log(`🔄 Loading form data for tab ${tabId}`);
+
+    // Laad opgeslagen data voor deze tab
+    const savedFormData = await loadFormDataForTab(tabId);
+
+    if (savedFormData) {
+      // Laad opgeslagen waarden
+      console.log(`✅ Found saved form data for tab ${tabId}`);
+      getAllFieldIds().forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field && savedFormData[fieldId] !== undefined) {
+          field.value = savedFormData[fieldId];
+        }
+      });
+    } else {
+      // Geen opgeslagen data - initialiseer met lege velden
+      console.log(`📝 No saved data for tab ${tabId} - starting with empty form`);
+      getAllFieldIds().forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+          field.value = '';
+        }
+      });
+    }
+
+    // Laad opgeslagen documenten voor deze tab
+    const savedDocuments = await loadDocumentsForTab(tabId);
+
+    if (savedDocuments) {
+      console.log(`✅ Found saved documents for tab ${tabId}`);
+
+      // Herstel betaalbewijs
+      if (savedDocuments.betaalbewijs) {
+        betaalbewijsData = savedDocuments.betaalbewijs;
+        displayFileNameWithDelete('betaalbewijsName', savedDocuments.betaalbewijs.name, 'betaalbewijs');
+      } else {
+        betaalbewijsData = null;
+        const nameDiv = document.getElementById('betaalbewijsName');
+        if (nameDiv) {
+          nameDiv.style.display = 'none';
+          nameDiv.innerHTML = '';
+        }
+      }
+
+      // Herstel factuur
+      if (savedDocuments.factuur) {
+        factuurData = savedDocuments.factuur;
+        displayFileNameWithDelete('factuurName', savedDocuments.factuur.name, 'factuur');
+      } else {
+        factuurData = null;
+        const nameDiv = document.getElementById('factuurName');
+        if (nameDiv) {
+          nameDiv.style.display = 'none';
+          nameDiv.innerHTML = '';
+        }
+      }
+
+      // Herstel machtigingsbewijs
+      if (savedDocuments.machtigingsbewijs) {
+        machtigingsbewijsData = savedDocuments.machtigingsbewijs;
+        displayFileNameWithDelete('machtigingName', savedDocuments.machtigingsbewijs.name, 'machtigingsbewijs');
+      } else {
+        machtigingsbewijsData = null;
+        const nameDiv = document.getElementById('machtigingName');
+        if (nameDiv) {
+          nameDiv.style.display = 'none';
+          nameDiv.innerHTML = '';
+        }
+      }
+    } else {
+      // Geen opgeslagen documenten
+      console.log(`📝 No saved documents for tab ${tabId}`);
+      betaalbewijsData = null;
+      factuurData = null;
+      machtigingsbewijsData = null;
+
+      // Reset file input velden
+      const betaalbewijsInput = document.getElementById('betaalbewijsDoc');
+      const factuurInput = document.getElementById('factuurDoc');
+      const machtigingsInput = document.getElementById('machtigingsformulier');
+      if (betaalbewijsInput) betaalbewijsInput.value = '';
+      if (factuurInput) factuurInput.value = '';
+      if (machtigingsInput) machtigingsInput.value = '';
+
+      // Verberg naam divs
+      const betaalbewijsName = document.getElementById('betaalbewijsName');
+      const factuurName = document.getElementById('factuurName');
+      const machtigingName = document.getElementById('machtigingName');
+      if (betaalbewijsName) {
+        betaalbewijsName.style.display = 'none';
+        betaalbewijsName.innerHTML = '';
+      }
+      if (factuurName) {
+        factuurName.style.display = 'none';
+        factuurName.innerHTML = '';
+      }
+      if (machtigingName) {
+        machtigingName.style.display = 'none';
+        machtigingName.innerHTML = '';
+      }
+    }
+
+    // Ruim data van gesloten tabs op
+    await cleanupClosedTabsData();
+
+    // Setup auto-save listeners voor alle velden
+    setupAutoSaveListeners();
+
+    // Set the tracked tab ID
+    currentTrackedTabId = tabId;
+
+    // Re-valideer alle velden om warnings te tonen voor ongeldige waardes
+    revalidateAllFields();
+
+    // Update start button state op basis van geladen data
+    updateStartButtonState();
+
+  } catch (error) {
+    console.error('Error loading configuration:', error);
+    // Fallback: reset naar lege velden
+    getAllFieldIds().forEach(fieldId => {
+      const field = document.getElementById(fieldId);
+      if (field) {
+        field.value = '';
+      }
+    });
+  } finally {
+    // Always reset loading flag
+    isLoadingTabData = false;
+    console.log(`✅ Finished loading configuration`);
+  }
+}
+
+/**
+ * Zet event listeners op alle formulier velden voor auto-save.
+ * Verwijdert eerst oude listeners om duplicaten te voorkomen.
+ */
+function setupAutoSaveListeners() {
   getAllFieldIds().forEach(fieldId => {
     const field = document.getElementById(fieldId);
     if (field) {
-      field.value = fieldId === 'gender' ? 'male' : '';
+      // Verwijder eerst oude listeners om duplicaten te voorkomen
+      field.removeEventListener('input', autoSaveFormData);
+      field.removeEventListener('change', autoSaveFormData);
+
+      // Voeg nieuwe listeners toe
+      // Gebruik 'input' event voor real-time updates (tijdens typen)
+      field.addEventListener('input', autoSaveFormData);
+      // Gebruik 'change' event voor dropdowns en andere controls
+      field.addEventListener('change', autoSaveFormData);
     }
   });
-
-  // Reset document variabelen naar null
-  betaalbewijsData = null;
-  factuurData = null;
-  machtigingsbewijsData = null;
-
-  console.log('🔄 Plugin gestart met lege velden - upload documenten om gegevens automatisch in te vullen');
+  console.log('✅ Auto-save listeners setup complete');
 }
-
-// Auto-opslaan is uitgeschakeld - formulierdata wordt niet bewaard tussen sessies
 
 // ============================================================================
 // VALIDATIE: CONTROLEER VERPLICHTE VELDEN
@@ -2439,6 +3234,87 @@ function updateStartButtonState() {
 }
 
 // ============================================================================
+// FIELD WARNING HELPER (GLOBAL)
+// ============================================================================
+/**
+ * Re-valideert alle velden met waardes en toont warnings indien nodig.
+ * Wordt aangeroepen na het laden van tab data.
+ */
+function revalidateAllFields() {
+  // Valideer BSN
+  const bsnField = document.getElementById('bsn');
+  if (bsnField && bsnField.value) {
+    const sanitized = sanitizeBSN(bsnField.value);
+    if (!sanitized) {
+      showFieldWarning('bsn', 'bsnWarning', `⚠️ Ongeldig BSN (controleer lengte en checksum)`);
+    }
+  }
+
+  // Valideer IBAN
+  const ibanField = document.getElementById('iban');
+  if (ibanField && ibanField.value) {
+    const sanitized = sanitizeIBAN(ibanField.value);
+    if (!sanitized) {
+      showFieldWarning('iban', 'ibanWarning', `⚠️ Ongeldig IBAN (controleer lengte en checksum)`);
+    }
+  }
+
+  // Valideer telefoon
+  const phoneField = document.getElementById('phone');
+  if (phoneField && phoneField.value) {
+    const sanitized = sanitizePhone(phoneField.value);
+    if (!sanitized) {
+      showFieldWarning('phone', 'phoneWarning', `⚠️ Ongeldig telefoonnummer (10 cijfers verwacht)`);
+    }
+  }
+
+  // Valideer email
+  const emailField = document.getElementById('email');
+  if (emailField && emailField.value) {
+    const sanitized = sanitizeEmail(emailField.value);
+    if (!sanitized) {
+      showFieldWarning('email', 'emailWarning', `⚠️ Ongeldig e-mailadres`);
+    }
+  }
+
+  // Valideer voorletters
+  const initialsField = document.getElementById('initials');
+  if (initialsField && initialsField.value) {
+    const sanitized = sanitizeInitials(initialsField.value);
+    if (!sanitized) {
+      showFieldWarning('initials', 'initialsWarning', `⚠️ Ongeldige voorletters (alleen letters en punten)`);
+    }
+  }
+
+  console.log('✅ Re-validated all fields');
+}
+
+/**
+ * Show or hide a field warning message
+ * @param {string} fieldId - ID of the input field
+ * @param {string} warningId - ID of the warning div
+ * @param {string|null} message - Warning message to show (null to hide)
+ */
+function showFieldWarning(fieldId, warningId, message) {
+  const field = document.getElementById(fieldId);
+  const warningDiv = document.getElementById(warningId);
+
+  if (!field || !warningDiv) return;
+
+  if (message) {
+    // Show warning
+    warningDiv.textContent = message;
+    warningDiv.classList.add('visible');
+    field.classList.add('has-warning');
+  } else {
+    // Hide warning
+    warningDiv.textContent = '';
+    warningDiv.classList.remove('visible');
+    field.classList.remove('has-warning');
+  }
+}
+
+// ============================================================================
 // EVENT LISTENERS: FORMULIERVELDEN VOOR KNOPSTATUS
 // ============================================================================
 /**
@@ -2460,34 +3336,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ========================================================================
-  // FIELD WARNING HELPER
-  // ========================================================================
-  /**
-   * Show or hide a field warning message
-   * @param {string} fieldId - ID of the input field
-   * @param {string} warningId - ID of the warning div
-   * @param {string|null} message - Warning message to show (null to hide)
-   */
-  function showFieldWarning(fieldId, warningId, message) {
-    const field = document.getElementById(fieldId);
-    const warningDiv = document.getElementById(warningId);
-
-    if (!field || !warningDiv) return;
-
-    if (message) {
-      // Show warning
-      warningDiv.textContent = message;
-      warningDiv.classList.add('visible');
-      field.classList.add('has-warning');
-    } else {
-      // Hide warning
-      warningDiv.textContent = '';
-      warningDiv.classList.remove('visible');
-      field.classList.remove('has-warning');
-    }
-  }
-
-  // ========================================================================
   // REAL-TIME SANITIZATION EVENT LISTENERS
   // ========================================================================
   // Automatically sanitize field values when user leaves the field (blur event)
@@ -2502,17 +3350,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (sanitized) {
           this.value = sanitized;
-
-          // Check for length warnings
-          const digitCount = sanitized.replace(/\D/g, '').length;
-          if (digitCount < 9) {
-            showFieldWarning('bsn', 'bsnWarning', `⚠️ BSN te kort: ${digitCount} cijfers (verwacht 9)`);
-          } else if (digitCount > 9) {
-            showFieldWarning('bsn', 'bsnWarning', `⚠️ BSN te lang: ${digitCount} cijfers (verwacht 9)`);
-          } else {
-            // Length is correct, hide warning
-            showFieldWarning('bsn', 'bsnWarning', null);
-          }
+          // Validatie geslaagd - verberg warning
+          showFieldWarning('bsn', 'bsnWarning', null);
+        } else {
+          // Validatie gefaald - behoud originele waarde en toon warning
+          this.value = originalValue;
+          showFieldWarning('bsn', 'bsnWarning', `⚠️ Ongeldig BSN (controleer lengte en checksum)`);
         }
       } else {
         // Clear warning when field is empty
@@ -2526,33 +3369,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (ibanField) {
     ibanField.addEventListener('blur', function() {
       if (this.value) {
+        const originalValue = this.value;
         const sanitized = sanitizeIBAN(this.value);
 
         if (sanitized) {
           this.value = sanitized;
-
-          // Check for length and checksum warnings
-          if (sanitized.length !== 18) {
-            showFieldWarning('iban', 'ibanWarning', `⚠️ IBAN ongeldige lengte: ${sanitized.length} karakters (verwacht 18)`);
-          } else {
-            // Check checksum validity
-            const rearranged = sanitized.substring(4) + sanitized.substring(0, 4);
-            let numericString = '';
-            for (let char of rearranged) {
-              if (char >= '0' && char <= '9') {
-                numericString += char;
-              } else {
-                numericString += (char.charCodeAt(0) - 55).toString();
-              }
-            }
-            const remainder = BigInt(numericString) % 97n;
-
-            if (remainder !== 1n) {
-              showFieldWarning('iban', 'ibanWarning', `⚠️ IBAN checksum validatie mislukt`);
-            } else {
-              showFieldWarning('iban', 'ibanWarning', null);
-            }
-          }
+          // Validatie geslaagd - verberg warning
+          showFieldWarning('iban', 'ibanWarning', null);
+        } else {
+          // Validatie gefaald - behoud originele waarde en toon warning
+          this.value = originalValue;
+          showFieldWarning('iban', 'ibanWarning', `⚠️ Ongeldig IBAN (controleer checksum en lengte)`);
         }
       } else {
         showFieldWarning('iban', 'ibanWarning', null);
@@ -2565,19 +3392,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (phoneField) {
     phoneField.addEventListener('blur', function() {
       if (this.value) {
+        const originalValue = this.value;
         const sanitized = sanitizePhone(this.value);
 
         if (sanitized) {
           this.value = sanitized;
-
-          // Check for length warnings
-          if (sanitized.length !== 10) {
-            showFieldWarning('phone', 'phoneWarning', `⚠️ Telefoonnummer ongeldige lengte: ${sanitized.length} cijfers (verwacht 10)`);
-          } else if (!sanitized.startsWith('0')) {
-            showFieldWarning('phone', 'phoneWarning', `⚠️ Telefoonnummer moet beginnen met 0`);
-          } else {
-            showFieldWarning('phone', 'phoneWarning', null);
-          }
+          // Validatie geslaagd - verberg warning
+          showFieldWarning('phone', 'phoneWarning', null);
+        } else {
+          // Validatie gefaald - behoud originele waarde en toon warning
+          this.value = originalValue;
+          showFieldWarning('phone', 'phoneWarning', `⚠️ Ongeldig telefoonnummer (verwacht: 10 cijfers, start met 0)`);
         }
       } else {
         showFieldWarning('phone', 'phoneWarning', null);
@@ -2590,22 +3415,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (emailField) {
     emailField.addEventListener('blur', function() {
       if (this.value) {
+        const originalValue = this.value;
         const sanitized = sanitizeEmail(this.value);
 
-        if (sanitized === null) {
-          // Company email filtered
-          this.value = '';
-          showFieldWarning('email', 'emailWarning', `⚠️ Bedrijfsemail niet toegestaan (@samangroep / @saman)`);
-        } else {
+        if (sanitized) {
           this.value = sanitized;
-
-          // Check email format
-          const emailRegex = /^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
-          if (!emailRegex.test(sanitized)) {
-            showFieldWarning('email', 'emailWarning', `⚠️ Ongeldig email formaat`);
-          } else {
-            showFieldWarning('email', 'emailWarning', null);
-          }
+          // Validatie geslaagd - verberg warning
+          showFieldWarning('email', 'emailWarning', null);
+        } else {
+          // Validatie gefaald - behoud originele waarde en toon warning
+          this.value = originalValue;
+          showFieldWarning('email', 'emailWarning', `⚠️ Ongeldig e-mailadres`);
         }
       } else {
         showFieldWarning('email', 'emailWarning', null);
@@ -2618,8 +3438,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (initialsField) {
     initialsField.addEventListener('blur', function() {
       if (this.value) {
+        const originalValue = this.value;
         const sanitized = sanitizeInitials(this.value);
-        if (sanitized) this.value = sanitized;
+        if (sanitized) {
+          this.value = sanitized;
+          showFieldWarning('initials', 'initialsWarning', null);
+        } else {
+          this.value = originalValue;
+          showFieldWarning('initials', 'initialsWarning', `⚠️ Ongeldige voorletters`);
+        }
+      } else {
+        showFieldWarning('initials', 'initialsWarning', null);
       }
     });
   }
@@ -2629,8 +3458,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (lastNameField) {
     lastNameField.addEventListener('blur', function() {
       if (this.value) {
+        const originalValue = this.value;
         const sanitized = sanitizeLastName(this.value);
-        if (sanitized) this.value = sanitized;
+        if (sanitized) {
+          this.value = sanitized;
+          showFieldWarning('lastName', 'lastNameWarning', null);
+        } else {
+          this.value = originalValue;
+          showFieldWarning('lastName', 'lastNameWarning', `⚠️ Ongeldige achternaam`);
+        }
+      } else {
+        showFieldWarning('lastName', 'lastNameWarning', null);
       }
     });
   }
@@ -2640,8 +3478,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (streetField) {
     streetField.addEventListener('blur', function() {
       if (this.value) {
+        const originalValue = this.value;
         const sanitized = sanitizeStreet(this.value);
-        if (sanitized) this.value = sanitized;
+        if (sanitized) {
+          this.value = sanitized;
+          showFieldWarning('street', 'streetWarning', null);
+        } else {
+          this.value = originalValue;
+          showFieldWarning('street', 'streetWarning', `⚠️ Ongeldige straatnaam`);
+        }
+      } else {
+        showFieldWarning('street', 'streetWarning', null);
       }
     });
   }
@@ -2668,8 +3515,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (postalCodeField) {
     postalCodeField.addEventListener('blur', function() {
       if (this.value) {
+        const originalValue = this.value;
         const sanitized = sanitizePostalCode(this.value);
-        if (sanitized) this.value = sanitized;
+        if (sanitized) {
+          this.value = sanitized;
+          showFieldWarning('postalCode', 'postalCodeWarning', null);
+        } else {
+          this.value = originalValue;
+          showFieldWarning('postalCode', 'postalCodeWarning', `⚠️ Ongeldige postcode (verwacht: 4 cijfers + 2 letters)`);
+        }
+      } else {
+        showFieldWarning('postalCode', 'postalCodeWarning', null);
       }
     });
   }
@@ -2679,8 +3535,17 @@ document.addEventListener('DOMContentLoaded', () => {
   if (cityField) {
     cityField.addEventListener('blur', function() {
       if (this.value) {
+        const originalValue = this.value;
         const sanitized = sanitizeCity(this.value);
-        if (sanitized) this.value = sanitized;
+        if (sanitized) {
+          this.value = sanitized;
+          showFieldWarning('city', 'cityWarning', null);
+        } else {
+          this.value = originalValue;
+          showFieldWarning('city', 'cityWarning', `⚠️ Ongeldige plaatsnaam`);
+        }
+      } else {
+        showFieldWarning('city', 'cityWarning', null);
       }
     });
   }
@@ -2761,6 +3626,22 @@ document.getElementById('startAutomation').addEventListener('click', () => {
   chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
     const currentTab = tabs[0];
 
+    // KRITIEK: Verify dat currentTrackedTabId matcht met actieve tab
+    // Dit voorkomt dat we data van Tab A sturen naar Tab B
+    if (currentTrackedTabId !== currentTab.id) {
+      console.error(`❌ TAB MISMATCH DETECTED!`);
+      console.error(`   currentTrackedTabId: ${currentTrackedTabId}`);
+      console.error(`   Active tab ID: ${currentTab.id}`);
+      console.error(`   This would send wrong data to the automation!`);
+      showStatus('⚠️ Tab sync probleem. Klik nogmaals op Start Automatisering.', 'error');
+
+      // Synchroniseer de tabs
+      reloadFormDataForTab(currentTab.id);
+      return;
+    }
+
+    console.log(`✅ Tab verified: currentTrackedTabId (${currentTrackedTabId}) === active tab (${currentTab.id})`);
+
     // Controleer of we op de juiste website zijn
     if (!currentTab.url || !currentTab.url.includes('eloket.dienstuitvoering.nl')) {
       showStatus('Ga eerst naar https://eloket.dienstuitvoering.nl', 'error');
@@ -2769,9 +3650,17 @@ document.getElementById('startAutomation').addEventListener('click', () => {
 
     // Documenten worden NIET opgeslagen - alleen doorgegeven aan automatisering
     console.log('🚀 Starting automation - documents will NOT be saved for next session');
+    console.log(`📋 Sending config from tab ${currentTrackedTabId} to content script in tab ${currentTab.id}`);
 
     // Haal volledige config op inclusief bedrijfsgegevens en contactpersoon uit storage
     chrome.storage.local.get(['isdeConfig'], (result) => {
+      // Log voor debugging multi-tab scenarios
+      console.log('📝 Building config for automation:');
+      console.log(`   Target tab ID: ${currentTab.id}`);
+      console.log(`   Tracked tab ID: ${currentTrackedTabId}`);
+      console.log(`   BSN: ${document.getElementById('bsn').value?.substring(0, 3)}... (first 3 digits)`);
+      console.log(`   Name: ${document.getElementById('initials').value} ${document.getElementById('lastName').value}`);
+
       const config = {
         // Klantgegevens uit formulier
         bsn: document.getElementById('bsn').value,
@@ -2857,6 +3746,114 @@ document.getElementById('startAutomation').addEventListener('click', () => {
       });
     });
   });
+});
+
+// ============================================================================
+// RESET INFO: WIS TAB-SPECIFIEKE DATA
+// ============================================================================
+/**
+ * Event listener voor de "Reset Info" knop.
+ * Wist alle opgeslagen formulier data voor de huidige tab.
+ *
+ * FUNCTIONALITEIT:
+ * - Haalt huidige tab ID op
+ * - Verwijdert opgeslagen formulier data uit chrome.storage voor deze tab
+ * - Reset alle formulier velden naar leeg
+ * - Wist document variabelen (betaalbewijs, factuur, machtigingsbewijs)
+ * - Toont bevestigingsbericht
+ *
+ * NOTE: Alleen de data van de HUIDIGE tab wordt gewist.
+ * Andere tabs behouden hun opgeslagen data.
+ */
+document.getElementById('resetInfo').addEventListener('click', async () => {
+  try {
+    // Gebruik tracked tab ID (consistent met andere functies)
+    const tabId = currentTrackedTabId;
+    if (tabId === null) {
+      console.warn('⚠️ Cannot reset: no tab ID tracked yet');
+      showStatus('⚠️ Kan niet resetten: geen tab actief', 'error');
+      return;
+    }
+    console.log(`🗑️ Resetting info for tab ${tabId}`);
+
+    // Verwijder opgeslagen formulier data voor deze tab
+    const formDataKey = `formData_tab_${tabId}`;
+    await chrome.storage.local.remove(formDataKey);
+    console.log(`✅ Removed storage key: ${formDataKey}`);
+
+    // Verwijder opgeslagen documenten voor deze tab
+    const documentsKey = `documents_tab_${tabId}`;
+    await chrome.storage.local.remove(documentsKey);
+    console.log(`✅ Removed storage key: ${documentsKey}`);
+
+    // Reset alle formulier velden naar leeg
+    getAllFieldIds().forEach(fieldId => {
+      const field = document.getElementById(fieldId);
+      if (field) {
+        field.value = '';
+      }
+    });
+
+    // Wis document variabelen
+    betaalbewijsData = null;
+    factuurData = null;
+    machtigingsbewijsData = null;
+
+    // Reset file input velden (anders kun je dezelfde file niet opnieuw uploaden)
+    const betaalbewijsInput = document.getElementById('betaalbewijsDoc');
+    const factuurInput = document.getElementById('factuurDoc');
+    const machtigingsInput = document.getElementById('machtigingsformulier');
+    if (betaalbewijsInput) betaalbewijsInput.value = '';
+    if (factuurInput) factuurInput.value = '';
+    if (machtigingsInput) machtigingsInput.value = '';
+
+    // Verberg document namen in de UI
+    const betaalbewijsName = document.getElementById('betaalbewijsName');
+    const factuurName = document.getElementById('factuurName');
+    const machtigingName = document.getElementById('machtigingName');
+    if (betaalbewijsName) {
+      betaalbewijsName.style.display = 'none';
+      betaalbewijsName.innerHTML = '';
+    }
+    if (factuurName) {
+      factuurName.style.display = 'none';
+      factuurName.innerHTML = '';
+    }
+    if (machtigingName) {
+      machtigingName.style.display = 'none';
+      machtigingName.innerHTML = '';
+    }
+
+    // Verberg alle validatie waarschuwingen
+    const allWarnings = document.querySelectorAll('.field-warning');
+    allWarnings.forEach(warning => {
+      warning.classList.remove('visible');
+      warning.textContent = '';
+    });
+
+    // Verwijder warning styling van alle input velden
+    const allInputs = document.querySelectorAll('.field-input');
+    allInputs.forEach(input => {
+      input.classList.remove('has-warning');
+    });
+
+    // Verberg OCR status berichten
+    const factuurStatus = document.getElementById('factuurExtractionStatus');
+    const machtigingStatus = document.getElementById('extractionStatus');
+    if (factuurStatus) factuurStatus.style.display = 'none';
+    if (machtigingStatus) machtigingStatus.style.display = 'none';
+
+    // Update de "Start Automatisering" knop status
+    updateStartButtonState();
+
+    // Toon succesbericht
+    showStatus('✅ Info voor deze tab is gereset', 'success');
+    console.log(`✅ Info reset complete for tab ${tabId}`);
+
+  } catch (error) {
+    console.error('Error resetting info:', error);
+    showStatus('⚠️ Fout bij resetten van info', 'error');
+  }
 });
 
 // ============================================================================
@@ -3046,12 +4043,244 @@ function saveSettings() {
 }
 
 // ============================================================================
+// TAB SWITCH DETECTION - VOOR GLOBAL SIDE PANEL
+// ============================================================================
+
+/**
+ * Houdt het huidige tab ID bij om tab switches te detecteren.
+ */
+let currentTrackedTabId = null;
+
+/**
+ * Unique ID voor huidige reload operatie (om race conditions te voorkomen)
+ */
+let currentReloadOperationId = 0;
+
+/**
+ * Herlaadt formulier data voor een specifieke tab.
+ * Deze functie wordt aangeroepen wanneer de gebruiker van tab wisselt.
+ *
+ * @param {number} tabId - Tab ID om data voor te laden
+ */
+async function reloadFormDataForTab(tabId) {
+  // Generate unique operation ID to detect if another reload started
+  const operationId = ++currentReloadOperationId;
+  console.log(`🔄 Reloading form and document data for tab ${tabId} (operation ${operationId})`);
+
+  // Set loading flag to prevent auto-save during data load
+  isLoadingTabData = true;
+
+  try {
+    // Check if this operation was superseded by a newer reload
+    const checkSuperseded = () => {
+      if (currentReloadOperationId !== operationId) {
+        console.warn(`⚠️ Reload operation ${operationId} for tab ${tabId} was superseded by operation ${currentReloadOperationId}. Aborting.`);
+        return true;
+      }
+      return false;
+    };
+    // Verberg alle OCR status berichten (deze zijn tab-specifiek)
+    const factuurStatus = document.getElementById('factuurExtractionStatus');
+    const machtigingStatus = document.getElementById('extractionStatus');
+    if (factuurStatus) factuurStatus.style.display = 'none';
+    if (machtigingStatus) machtigingStatus.style.display = 'none';
+
+    // Verberg alle validatie waarschuwingen (deze zijn tab-specifiek)
+    const allWarnings = document.querySelectorAll('.field-warning');
+    allWarnings.forEach(warning => {
+      warning.classList.remove('visible');
+      warning.textContent = '';
+    });
+
+    // Verwijder warning styling van alle input velden
+    const allInputs = document.querySelectorAll('.field-input');
+    allInputs.forEach(input => {
+      input.classList.remove('has-warning');
+    });
+
+    console.log(`🔍 Cleared all UI warnings/status for tab ${tabId}`);
+
+    // Laad opgeslagen formulier data voor deze tab
+    const savedFormData = await loadFormDataForTab(tabId);
+
+    // Check if superseded after async operation
+    if (checkSuperseded()) return;
+
+    if (savedFormData) {
+      // Laad opgeslagen waarden
+      console.log(`✅ Found saved form data for tab ${tabId}`);
+      getAllFieldIds().forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field && savedFormData[fieldId] !== undefined) {
+          field.value = savedFormData[fieldId];
+        }
+      });
+    } else {
+      // Geen opgeslagen data - reset naar lege velden
+      console.log(`📝 No saved data for tab ${tabId} - showing empty form`);
+      getAllFieldIds().forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        if (field) {
+          field.value = '';
+        }
+      });
+    }
+
+    // Laad opgeslagen documenten voor deze tab
+    const savedDocuments = await loadDocumentsForTab(tabId);
+
+    // Check if superseded after async operation
+    if (checkSuperseded()) return;
+
+    console.log(`📋 Document state for tab ${tabId}:`, {
+      betaalbewijs: savedDocuments?.betaalbewijs ? 'YES' : 'NO',
+      factuur: savedDocuments?.factuur ? 'YES' : 'NO',
+      machtigingsbewijs: savedDocuments?.machtigingsbewijs ? 'YES' : 'NO'
+    });
+
+    if (savedDocuments) {
+      console.log(`✅ Found saved documents for tab ${tabId}`);
+
+      // Herstel betaalbewijs
+      if (savedDocuments.betaalbewijs) {
+        betaalbewijsData = savedDocuments.betaalbewijs;
+        displayFileNameWithDelete('betaalbewijsName', savedDocuments.betaalbewijs.name, 'betaalbewijs');
+        console.log(`  → Showing betaalbewijs: ${savedDocuments.betaalbewijs.name}`);
+      } else {
+        betaalbewijsData = null;
+        const nameDiv = document.getElementById('betaalbewijsName');
+        if (nameDiv) {
+          nameDiv.style.display = 'none';
+          nameDiv.innerHTML = '';
+          console.log(`  → Hiding betaalbewijs (not in this tab)`);
+        }
+      }
+
+      // Herstel factuur
+      if (savedDocuments.factuur) {
+        factuurData = savedDocuments.factuur;
+        displayFileNameWithDelete('factuurName', savedDocuments.factuur.name, 'factuur');
+        console.log(`  → Showing factuur: ${savedDocuments.factuur.name}`);
+      } else {
+        factuurData = null;
+        const nameDiv = document.getElementById('factuurName');
+        if (nameDiv) {
+          nameDiv.style.display = 'none';
+          nameDiv.innerHTML = '';
+          console.log(`  → Hiding factuur (not in this tab)`);
+        }
+      }
+
+      // Herstel machtigingsbewijs
+      if (savedDocuments.machtigingsbewijs) {
+        machtigingsbewijsData = savedDocuments.machtigingsbewijs;
+        displayFileNameWithDelete('machtigingName', savedDocuments.machtigingsbewijs.name, 'machtigingsbewijs');
+        console.log(`  → Showing machtigingsbewijs: ${savedDocuments.machtigingsbewijs.name}`);
+      } else {
+        machtigingsbewijsData = null;
+        const nameDiv = document.getElementById('machtigingName');
+        if (nameDiv) {
+          nameDiv.style.display = 'none';
+          nameDiv.innerHTML = '';
+          console.log(`  → Hiding machtigingsbewijs (not in this tab)`);
+        }
+      }
+    } else {
+      // Geen opgeslagen documenten - reset
+      console.log(`📝 No saved documents for tab ${tabId}`);
+      betaalbewijsData = null;
+      factuurData = null;
+      machtigingsbewijsData = null;
+
+      // Reset file input velden
+      const betaalbewijsInput = document.getElementById('betaalbewijsDoc');
+      const factuurInput = document.getElementById('factuurDoc');
+      const machtigingsInput = document.getElementById('machtigingsformulier');
+      if (betaalbewijsInput) betaalbewijsInput.value = '';
+      if (factuurInput) factuurInput.value = '';
+      if (machtigingsInput) machtigingsInput.value = '';
+
+      // Verberg document namen
+      const betaalbewijsName = document.getElementById('betaalbewijsName');
+      const factuurName = document.getElementById('factuurName');
+      const machtigingName = document.getElementById('machtigingName');
+      if (betaalbewijsName) {
+        betaalbewijsName.style.display = 'none';
+        betaalbewijsName.innerHTML = '';
+      }
+      if (factuurName) {
+        factuurName.style.display = 'none';
+        factuurName.innerHTML = '';
+      }
+      if (machtigingName) {
+        machtigingName.style.display = 'none';
+        machtigingName.innerHTML = '';
+      }
+    }
+
+    // Update de tracked tab ID
+    console.log(`✏️ Updating currentTrackedTabId from ${currentTrackedTabId} to ${tabId}`);
+    currentTrackedTabId = tabId;
+
+    // Re-valideer alle velden om warnings te tonen voor ongeldige waardes
+    revalidateAllFields();
+
+    // Update de "Start Automatisering" knop status
+    updateStartButtonState();
+  } finally {
+    // Only reset loading flag if this is still the current operation
+    if (currentReloadOperationId === operationId) {
+      isLoadingTabData = false;
+      console.log(`✅ Finished loading data for tab ${tabId} (operation ${operationId})`);
+    } else {
+      console.log(`⏭️ Skipped resetting loading flag for operation ${operationId} (current: ${currentReloadOperationId})`);
+    }
+  }
+}
+
+/**
+ * Luistert naar tab switches en herlaadt automatisch de juiste data.
+ * Dit zorgt ervoor dat de side panel altijd de data van de actieve tab toont.
+ */
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  console.log('🔄 Tab switched to:', activeInfo.tabId);
+
+  // Controleer of we van tab zijn gewisseld
+  if (currentTrackedTabId !== null && currentTrackedTabId !== activeInfo.tabId) {
+    console.log(`↔️ Switching from tab ${currentTrackedTabId} to ${activeInfo.tabId}`);
+    await reloadFormDataForTab(activeInfo.tabId);
+  } else if (currentTrackedTabId === null) {
+    // Eerste keer dat we een tab detecteren
+    currentTrackedTabId = activeInfo.tabId;
+    console.log(`🎯 Initial tab detected: ${activeInfo.tabId}`);
+  }
+});
+
+/**
+ * Luistert naar tab updates (bijv. URL veranderingen).
+ * Als de actieve tab navigeert naar een nieuwe pagina, herlaad de data.
+ */
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  // Alleen reageren als deze tab actief is en de URL is veranderd
+  if (tab.active && changeInfo.url && currentTrackedTabId === tabId) {
+    console.log('🔄 Active tab URL changed to:', changeInfo.url);
+    await reloadFormDataForTab(tabId);
+  }
+});
+
+// ============================================================================
 // INITIALISATIE: LAAD CONFIGURATIE BIJ POPUP OPENEN
 // ============================================================================
 /**
- * Wordt aangeroepen wanneer de popup wordt geopend.
- * Reset alle velden naar lege waarden voor nieuwe sessie.
+ * Wordt aangeroepen wanneer de side panel wordt geopend.
+ * Laadt tab-specifieke formulier data voor de actieve tab.
  */
-window.addEventListener('DOMContentLoaded', () => {
-  loadConfiguration();
+window.addEventListener('DOMContentLoaded', async () => {
+  await loadConfiguration();
+
+  // Sla de initiële tab ID op
+  const tabId = await getCurrentTabId();
+  currentTrackedTabId = tabId;
+
+  console.log('✅ Side panel initialization complete, tracking tab:', tabId);
 });

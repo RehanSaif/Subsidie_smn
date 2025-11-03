@@ -15,13 +15,15 @@
 /**
  * Event listener voor wanneer de gebruiker op de extensie icoon klikt
  *
- * Deze functie opent de side panel in plaats van een apart venster.
- * De side panel blijft open wanneer je van tab wisselt en is geen apart browser venster.
+ * Deze functie opent de side panel als een GLOBAL (per-window) panel.
+ * Het panel blijft open wanneer je van tab wisselt en toont automatisch
+ * de juiste data voor de actieve tab.
  */
 chrome.action.onClicked.addListener(async (tab) => {
-  // Open de side panel voor het huidige venster
+  // Open de side panel voor het hele window (niet per tab)
+  // Dit zorgt ervoor dat het panel blijft open bij tab switches
   await chrome.sidePanel.open({ windowId: tab.windowId });
-  console.log('Side panel opened for window:', tab.windowId);
+  console.log('Side panel opened for window:', tab.windowId, 'from tab:', tab.id);
 });
 
 /**

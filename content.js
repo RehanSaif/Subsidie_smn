@@ -49,6 +49,30 @@ let automationPaused = false;
 let activeTimeouts = [];
 
 /**
+ * Unieke tab identifier voor multi-tab support.
+ * Elke tab krijgt een eigen ID zodat recovery data niet interfereert tussen tabs.
+ */
+let currentTabId = sessionStorage.getItem('tabId');
+if (!currentTabId) {
+  currentTabId = `tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  sessionStorage.setItem('tabId', currentTabId);
+  console.log('🆔 Generated new tab ID:', currentTabId);
+} else {
+  console.log('🆔 Existing tab ID:', currentTabId);
+}
+
+/**
+ * Page Visibility API - Log wanneer tab hidden/visible wordt (voor debugging)
+ */
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    console.log('⚠️ Tab is hidden - keep-alive audio should prevent throttling');
+  } else {
+    console.log('✅ Tab is visible again');
+  }
+});
+
+/**
  * Loop detectie: houdt bij hoeveel keer dezelfde stap is uitgevoerd.
  * Als een stap te vaak wordt herhaald, pauzeert de automatisering automatisch
  * om een oneindige loop te voorkomen.
@@ -87,40 +111,66 @@ let keepAliveAudio = null;
  */
 function startKeepAlive() {
   if (keepAliveAudio) {
-    console.log('🔊 Keep-alive audio is al actief');
+    console.log('🔊 Keep-alive is al actief');
     return;
   }
 
   try {
-    // Maak een stille audio context met minimale data
-    // Dit is een 0.5 seconden stille MP3 in base64 formaat
+    // METHODE 1: Web Locks API - Meest betrouwbaar voor background tabs
+    if ('locks' in navigator) {
+      // Request een lock die nooit vrijgegeven wordt (tot stopKeepAlive())
+      navigator.locks.request(`isde_automation_${currentTabId}`, { mode: 'exclusive' }, async () => {
+        console.log('🔒 Web Lock acquired - tab blijft actief in achtergrond');
+
+        // Deze promise resolved nooit, dus de lock blijft actief
+        return new Promise(resolve => {
+          // Sla de resolve functie op zodat we de lock kunnen vrijgeven
+          window.keepAliveLockResolve = resolve;
+        });
+      }).catch(err => {
+        console.warn('⚠️ Web Locks API failed:', err);
+      });
+    }
+
+    // METHODE 2: Stille audio als fallback
     const silentAudio = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4Ljc2LjEwMAAAAAAAAAAAAAAA//tQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWGluZwAAAA8AAAACAAADhAC7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7//////////////////////////////////////////////////////////////////8AAAAATGF2YzU4LjEzAAAAAAAAAAAAAAAAJAAAAAAAAAAAA4T0Mq+JAAAAAAAAAAAAAAAAAAAAAP/7kGQAD/AAAGkAAAAIAAANIAAAAQAAAaQAAAAgAAA0gAAABExBTUUzLjEwMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVf/7kGQAD/AAAGkAAAAIAAANIAAAAQAAAaQAAAAgAAA0gAAABFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVQ==';
 
     keepAliveAudio = new Audio(silentAudio);
-    keepAliveAudio.loop = true; // Herhaal oneindig
-    keepAliveAudio.volume = 0.01; // Bijna stil (voor het geval browser het niet als muted ziet)
+    keepAliveAudio.loop = true;
+    keepAliveAudio.volume = 0.01;
+    keepAliveAudio.muted = true; // Volledig muted voor betere autoplay compatibiliteit
 
-    // Probeer audio af te spelen
     const playPromise = keepAliveAudio.play();
 
     if (playPromise !== undefined) {
       playPromise
         .then(() => {
-          console.log('🔊 Keep-alive audio gestart - tab throttling uitgeschakeld');
+          console.log('🔊 Keep-alive audio gestart als extra bescherming');
           console.log('✅ Meerdere tabs kunnen nu parallel runnen zonder vertraging');
         })
         .catch((error) => {
-          console.warn('⚠️ Keep-alive audio kon niet starten (autoplay geblokkeerd):', error.message);
-          console.warn('💡 Tip: Klik ergens op de pagina, dan werkt het automatisch');
+          console.warn('⚠️ Audio fallback geblokkeerd, maar Web Locks zou moeten werken:', error.message);
         });
     }
+
+    // METHODE 3: requestAnimationFrame loop als extra bescherming
+    let rafId;
+    const rafLoop = () => {
+      if (keepAliveAudio) { // Check of keep-alive nog actief is
+        rafId = requestAnimationFrame(rafLoop);
+      }
+    };
+    rafId = requestAnimationFrame(rafLoop);
+    window.keepAliveRafId = rafId;
+
+    console.log('✅ Multi-layered keep-alive geactiveerd (Web Locks + Audio + RAF)');
   } catch (error) {
-    console.error('❌ Fout bij starten keep-alive audio:', error);
+    console.error('❌ Fout bij starten keep-alive:', error);
   }
 }
 
 /**
- * Stopt de keep-alive audio loop.
+ * Stopt de keep-alive systemen.
  *
  * Wordt aangeroepen wanneer:
  * - Automatisering succesvol is afgerond
@@ -128,16 +178,79 @@ function startKeepAlive() {
  * - Er een fatale fout optreedt
  */
 function stopKeepAlive() {
-  if (keepAliveAudio) {
-    try {
+  try {
+    // Stop Web Lock
+    if (window.keepAliveLockResolve) {
+      window.keepAliveLockResolve();
+      window.keepAliveLockResolve = null;
+      console.log('🔓 Web Lock vrijgegeven');
+    }
+
+    // Stop Audio
+    if (keepAliveAudio) {
       keepAliveAudio.pause();
       keepAliveAudio.currentTime = 0;
       keepAliveAudio = null;
       console.log('🔇 Keep-alive audio gestopt');
-    } catch (error) {
-      console.error('❌ Fout bij stoppen keep-alive audio:', error);
     }
+
+    // Stop RAF loop
+    if (window.keepAliveRafId) {
+      cancelAnimationFrame(window.keepAliveRafId);
+      window.keepAliveRafId = null;
+      console.log('⏹️ RAF loop gestopt');
+    }
+
+    console.log('✅ Alle keep-alive systemen gestopt');
+  } catch (error) {
+    console.error('❌ Fout bij stoppen keep-alive:', error);
   }
+}
+
+/**
+ * Unthrottled delay functie die ook werkt in background tabs.
+ *
+ * PROBLEEM:
+ * setTimeout wordt in background tabs vertraagd naar minimaal 1000ms door Chrome.
+ * Dit maakt automatisering 10x langzamer wanneer tab niet actief is.
+ *
+ * OPLOSSING:
+ * Gebruik requestAnimationFrame (RAF) voor korte delays. RAF wordt niet geThrottled
+ * zolang de keep-alive audio/Web Lock actief is.
+ *
+ * @param {number} ms - Aantal milliseconden om te wachten
+ * @returns {Promise} Promise die resolved na de opgegeven tijd
+ */
+function unthrottledDelay(ms) {
+  return new Promise((resolve, reject) => {
+    const startTime = performance.now();
+
+    const checkTime = () => {
+      // CHECK: Stop flag tijdens delay
+      if (automationStopped) {
+        console.log('❌ Delay interrupted - automation stopped');
+        reject(new Error('Automation stopped'));
+        return;
+      }
+
+      // CHECK: Pause flag tijdens delay
+      if (automationPaused) {
+        // Don't reject or log repeatedly, just wait and check again
+        requestAnimationFrame(checkTime);
+        return;
+      }
+
+      const elapsed = performance.now() - startTime;
+      if (elapsed >= ms) {
+        resolve();
+      } else {
+        // Gebruik RAF voor snelle, unthrottled timing
+        requestAnimationFrame(checkTime);
+      }
+    };
+
+    requestAnimationFrame(checkTime);
+  });
 }
 
 // ============================================================================
@@ -426,45 +539,104 @@ function createStatusPanel() {
   // -------------------------------------------------------------------------
   // Stopt de automatisering volledig. Wist alle timeouts, reset alle vlaggen,
   // verwijdert het paneel en wist de automatisering status uit sessionStorage.
-  document.getElementById('stop-automation').addEventListener('click', () => {
-    console.log('❌ Stop automation clicked');
+  document.getElementById('stop-automation').addEventListener('click', (e) => {
+    // Prevent event bubbling
+    e.preventDefault();
+    e.stopPropagation();
+
+    console.log('❌ ========================================');
+    console.log('❌ STOP BUTTON CLICKED - FORCE STOPPING');
+    console.log('❌ ========================================');
+
+    // DIRECT paneel verwijderen voor immediate feedback
+    const panelToRemove = document.getElementById('isde-automation-panel');
+    if (panelToRemove) {
+      panelToRemove.style.opacity = '0.3';
+      panelToRemove.style.pointerEvents = 'none';
+      console.log('🔒 Panel locked - removing...');
+    }
+
     // Zet globale vlaggen om automatisering te stoppen
     automationStopped = true;
     automationPaused = false;
+
     // Reset loop detectie tellers
     lastExecutedStep = null;
     stepExecutionCount = 0;
 
     // Stop keep-alive audio
-    stopKeepAlive();
+    try {
+      stopKeepAlive();
+      console.log('✅ Keep-alive audio stopped');
+    } catch (error) {
+      console.log('⚠️ Error stopping keep-alive:', error);
+    }
 
     // Wis alle wachtende timeouts
-    clearAllTimeouts();
+    try {
+      clearAllTimeouts();
+      console.log('✅ All timeouts cleared');
+    } catch (error) {
+      console.log('⚠️ Error clearing timeouts:', error);
+    }
+
+    // KRITIEK: Zet persistent stop flag in sessionStorage
+    sessionStorage.setItem('automationStoppedByUser', 'true');
+    console.log('✅ Persistent stop flag set');
+
     // Wis alle automatisering status uit sessionStorage
     sessionStorage.removeItem('automationConfig');
     sessionStorage.removeItem('automationStep');
     sessionStorage.removeItem('lastNieuweAanvraagClick');
+    console.log('✅ Session storage cleared');
 
-    // Wis crash recovery data voor deze specifieke sessie
-    const config = sessionStorage.getItem('automationConfig');
-    if (config) {
-      try {
-        const configObj = JSON.parse(config);
-        const sessionId = configObj.sessionId;
-        const recoveryKey = sessionId ? `automation_recovery_${sessionId}` : 'automation_recovery';
-        chrome.storage.local.remove(recoveryKey);
-      } catch (e) {
-        // Als parsing faalt, probeer default key te verwijderen
-        chrome.storage.local.remove('automation_recovery');
-      }
-    } else {
-      // Geen config, verwijder default key
-      chrome.storage.local.remove('automation_recovery');
+    // Wis crash recovery data voor deze specifieke tab
+    const recoveryKey = `automation_recovery_${currentTabId}`;
+    chrome.storage.local.remove(recoveryKey, () => {
+      console.log(`✅ Recovery data removed for tab ${currentTabId}`);
+    });
+
+    // Sluit alle open modals (warmtepomp wizard, meldcode lookup, etc.)
+    try {
+      // Strategy 1: Trigger ESC key to close modals
+      const escEvent = new KeyboardEvent('keydown', {
+        key: 'Escape',
+        code: 'Escape',
+        keyCode: 27,
+        which: 27,
+        bubbles: true,
+        cancelable: true
+      });
+      document.dispatchEvent(escEvent);
+
+      // Strategy 2: Find and click close buttons
+      const closeButtons = document.querySelectorAll('button[title="Sluiten"], button[aria-label="Sluiten"], .close, .modal-close, [class*="close"]');
+      closeButtons.forEach(btn => {
+        if (btn.offsetParent !== null) {
+          btn.click();
+        }
+      });
+
+      // Strategy 3: Remove any overlay/backdrop elements
+      const overlays = document.querySelectorAll('.modal-backdrop, .overlay, [class*="backdrop"], [class*="overlay"]');
+      overlays.forEach(overlay => overlay.remove());
+
+      console.log('✅ Modals closed');
+    } catch (error) {
+      console.log('⚠️ Error closing modals:', error);
     }
 
-    // Verwijder het paneel volledig
-    panel.remove();
-    console.log('✅ Automation stopped completely - all timeouts cleared, panel removed');
+    // Verwijder het paneel volledig na korte delay voor visuele feedback
+    setTimeout(() => {
+      const finalPanel = document.getElementById('isde-automation-panel');
+      if (finalPanel) {
+        finalPanel.remove();
+        console.log('✅ Panel removed');
+      }
+      console.log('❌ ========================================');
+      console.log('❌ AUTOMATION STOPPED COMPLETELY');
+      console.log('❌ ========================================');
+    }, 100);
   });
 }
 
@@ -509,15 +681,51 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     // Reset vlaggen bij het starten van nieuwe automatisering
     automationStopped = false;
     automationPaused = false;
+    // Wis persistent stop flag - nieuwe automatisering start
+    sessionStorage.removeItem('automationStoppedByUser');
     // Reset loop detectie tellers
     lastExecutedStep = null;
     stepExecutionCount = 0;
     // Wis alle wachtende timeouts van vorige runs
     clearAllTimeouts();
-    // Wis bestaande automatisering status
-    sessionStorage.removeItem('automationStep');
-    sessionStorage.removeItem('automationConfig');
-    console.log('Cleared automation state and timeouts, starting fresh');
+
+    // Detecteer huidige pagina EERST (voordat we iets wissen)
+    const currentDetectedStep = detectCurrentStep();
+    console.log('🎯 === PAGE DETECTION RESULT ===');
+    console.log('Detected step:', currentDetectedStep);
+
+    // WIS OUDE RECOVERY DATA - gebruiker start VERSE automatisering
+    const recoveryKey = `automation_recovery_${currentTabId}`;
+    chrome.storage.local.remove(recoveryKey, () => {
+      console.log(`🧹 Oude recovery data verwijderd voor tab ${currentTabId} (verse start)`);
+    });
+
+    // Sla nieuwe config op IN SESSIONSTORAGE VOORDAT we oude data wissen
+    // Dit voorkomt dat recovery modal verschijnt bij page navigation
+    sessionStorage.setItem('automationConfig', JSON.stringify(request.config));
+
+    // Als we op een bekende pagina zijn (niet start/unknown), begin daar
+    if (currentDetectedStep !== 'start' && currentDetectedStep !== 'unknown') {
+      console.log('✅ Starting automation from CURRENT page:', currentDetectedStep);
+      sessionStorage.setItem('automationStep', currentDetectedStep);
+      updateStatus(`Automatisering gestart vanaf: ${currentDetectedStep}`, 'Detectie succesvol');
+    } else if (currentDetectedStep === 'start') {
+      console.log('✅ Starting automation from START page');
+      sessionStorage.setItem('automationStep', 'start');
+      updateStatus('Automatisering gestart vanaf startpagina', 'Begin');
+    } else {
+      console.error('❌ COULD NOT DETECT CURRENT PAGE - cannot start automation');
+      console.error('Please navigate to a recognized page or the start page');
+
+      updateStatus(
+        '⚠️ Kan huidige pagina niet herkennen. Navigeer naar een bekende pagina of de startpagina en probeer opnieuw.',
+        'DETECTIE MISLUKT'
+      );
+
+      return; // Stop - start automatisering niet
+    }
+
+    console.log('Cleared old automation state, starting fresh');
 
     // Start audio keep-alive om tab throttling te voorkomen
     startKeepAlive();
@@ -615,17 +823,31 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
  * @throws {Error} Als het element niet wordt gevonden binnen de timeout
  */
 function waitForElement(selector, timeout = 10000) {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const startTime = Date.now();
 
-    const checkElement = () => {
+    const checkElement = async () => {
+      // CHECK: Stop flag
+      if (automationStopped) {
+        reject(new Error('Automation stopped'));
+        return;
+      }
+
+      // CHECK: Pause flag - wait but don't advance
+      if (automationPaused) {
+        await unthrottledDelay(100);
+        checkElement();
+        return;
+      }
+
       const element = document.querySelector(selector);
       if (element) {
         resolve(element);
       } else if (Date.now() - startTime > timeout) {
         reject(new Error(`Element ${selector} not found within timeout`));
       } else {
-        setTimeout(checkElement, 100);
+        await unthrottledDelay(100);
+        checkElement();
       }
     };
 
@@ -643,10 +865,23 @@ function waitForElement(selector, timeout = 10000) {
  * @throws {Error} Als het element niet wordt gevonden binnen de timeout
  */
 function waitForElementByText(searchText, timeout = 10000) {
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     const startTime = Date.now();
 
-    const checkElement = () => {
+    const checkElement = async () => {
+      // CHECK: Stop flag
+      if (automationStopped) {
+        reject(new Error('Automation stopped'));
+        return;
+      }
+
+      // CHECK: Pause flag - wait but don't advance
+      if (automationPaused) {
+        await unthrottledDelay(100);
+        checkElement();
+        return;
+      }
+
       const links = document.querySelectorAll('a');
       for (let link of links) {
         if (link.textContent.includes(searchText) || link.innerText.includes(searchText)) {
@@ -658,7 +893,8 @@ function waitForElementByText(searchText, timeout = 10000) {
       if (Date.now() - startTime > timeout) {
         reject(new Error(`Element containing "${searchText}" not found within timeout`));
       } else {
-        setTimeout(checkElement, 100);
+        await unthrottledDelay(100);
+        checkElement();
       }
     };
 
@@ -674,9 +910,9 @@ function waitForElementByText(searchText, timeout = 10000) {
  * @param {string|Element} selectorOrElement - CSS selector of het element zelf
  */
 async function clickElement(selectorOrElement) {
-  // Controleer of automatisering is gepauzeerd of gestopt
-  if (automationPaused || automationStopped) {
-    console.log('⏸ Click cancelled - automation paused or stopped');
+  // Controleer of automatisering is gestopt (niet gepauzeerd - pauze wordt afgehandeld door delays)
+  if (automationStopped) {
+    console.log('❌ Click cancelled - automation stopped');
     return;
   }
 
@@ -689,24 +925,24 @@ async function clickElement(selectorOrElement) {
   }
 
   // Controleer opnieuw na wachten
-  if (automationPaused || automationStopped) {
-    console.log('⏸ Click cancelled - automation paused or stopped');
+  if (automationStopped) {
+    console.log('❌ Click cancelled - automation stopped');
     return;
   }
 
   // Scroll element in beeld (mensachtig gedrag)
   element.scrollIntoView({behavior: 'smooth', block: 'center'});
-  await new Promise(r => setTimeout(r, 500));
+  await unthrottledDelay(500); // Delay zal pauzeren als automationPaused=true
 
   // Laatste controle voor de klik
-  if (automationPaused || automationStopped) {
-    console.log('⏸ Click cancelled - automation paused or stopped');
+  if (automationStopped) {
+    console.log('❌ Click cancelled - automation stopped');
     return;
   }
 
   // Voer de klik uit en wacht daarna
   element.click();
-  await new Promise(r => setTimeout(r, 1000));
+  await unthrottledDelay(1000); // Delay zal pauzeren als automationPaused=true
 }
 
 /**
@@ -727,35 +963,35 @@ async function clickElement(selectorOrElement) {
 async function fillInput(selector, value) {
   if (!value) return;
 
-  // Controleer of automatisering is gepauzeerd of gestopt
-  if (automationPaused || automationStopped) {
-    console.log('⏸ Fill cancelled - automation paused or stopped');
+  // Controleer of automatisering is gestopt (niet gepauzeerd - pauze wordt afgehandeld door delays)
+  if (automationStopped) {
+    console.log('❌ Fill cancelled - automation stopped');
     return;
   }
 
   // Wacht op het element en scroll in beeld
   const element = await waitForElement(selector);
   element.scrollIntoView({behavior: 'smooth', block: 'center'});
-  await new Promise(r => setTimeout(r, 400 + Math.random() * 200)); // Willekeurige wachttijd voor mensachtig gedrag
+  await unthrottledDelay(400 + Math.random() * 200); // Delay zal pauzeren als automationPaused=true
 
-  if (automationPaused || automationStopped) {
-    console.log('⏸ Fill cancelled - automation paused or stopped');
+  if (automationStopped) {
+    console.log('❌ Fill cancelled - automation stopped');
     return;
   }
 
   // Focus het veld eerst (mensachtig gedrag)
   element.focus();
-  await new Promise(r => setTimeout(r, 250 + Math.random() * 150));
+  await unthrottledDelay(250 + Math.random() * 150); // Delay zal pauzeren als automationPaused=true
 
-  if (automationPaused || automationStopped) {
-    console.log('⏸ Fill cancelled - automation paused or stopped');
+  if (automationStopped) {
+    console.log('❌ Fill cancelled - automation stopped');
     return;
   }
 
   // Wis bestaande waarde eerst
   element.value = '';
   element.dispatchEvent(new Event('input', { bubbles: true }));
-  await new Promise(r => setTimeout(r, 150 + Math.random() * 100));
+  await unthrottledDelay(150 + Math.random() * 100); // Delay zal pauzeren als automationPaused=true
 
   // Saniteer waarden op basis van veldtype
   let sanitizedValue = value;
@@ -861,14 +1097,14 @@ async function fillInput(selector, value) {
   element.value = sanitizedValue;
   element.dispatchEvent(new Event('input', { bubbles: true }));
 
-  await new Promise(r => setTimeout(r, 200 + Math.random() * 150));
+  await unthrottledDelay(200 + Math.random() * 150);
 
   element.dispatchEvent(new Event('change', { bubbles: true }));
 
-  await new Promise(r => setTimeout(r, 150 + Math.random() * 100));
+  await unthrottledDelay(150 + Math.random() * 100);
 
   element.blur();
-  await new Promise(r => setTimeout(r, 300 + Math.random() * 200)); // Wait after to let validation complete
+  await unthrottledDelay(300 + Math.random() * 200); // Wait after to let validation complete
 }
 
 /**
@@ -1031,6 +1267,10 @@ function fillCurrentPage(config) {
  * @returns {string} De gedetecteerde stap naam
  */
 function detectCurrentStep() {
+  console.log('🔍 === STARTING PAGE DETECTION ===');
+  console.log('Current URL:', window.location.href);
+  console.log('Page title:', document.title);
+
   // Controleer van meest specifiek naar minst specifiek om false matches te voorkomen
 
   // -------------------------------------------------------------------------
@@ -1212,12 +1452,21 @@ function detectCurrentStep() {
   }
 
   // Step 10.5: Installation address form (appears after BAG different)
-  // Check for "Kadaster gegevens" section which is unique to this page
+  // Check for "Kadaster gegevens" or "Installatieadres" section which is unique to this page
   const hasKadasterSection = Array.from(document.querySelectorAll('*')).some(el =>
-    el.textContent && el.textContent.trim() === 'Kadaster gegevens'
+    el.textContent && (
+      el.textContent.includes('Kadaster gegevens') ||
+      el.textContent.includes('Installatieadres')
+    )
   );
-  if (hasKadasterSection && document.querySelector('input[value="Volgende"]')) {
-    console.log('🎯 Detected: bag_address_form - Installation address form with Kadaster section');
+
+  // Also check for the specific page title or header
+  const hasInstallatieadresTitle = Array.from(document.querySelectorAll('h1, h2, h3, .page-title, [class*="title"]')).some(el =>
+    el.textContent && el.textContent.includes('Installatieadres')
+  );
+
+  if ((hasKadasterSection || hasInstallatieadresTitle) && document.querySelector('input[value="Volgende"]')) {
+    console.log('🎯 Detected: bag_address_form - Installation address form');
     return 'bag_address_form';
   }
 
@@ -1265,6 +1514,31 @@ function detectCurrentStep() {
   if (document.querySelector('#btn12')) {
     console.log('🎯 Detected: isde_selected - First Volgende page');
     return 'isde_selected';
+  }
+
+  // Step 2.5: Maatregel catalog page (after clicking "Maatregel toevoegen" button)
+  // This page shows different measure types: Warmtepomp, Isolatie, Zonneboiler, etc.
+  // Each has a "Selecteren" button next to it
+  // IMPORTANT: This should NOT match the measure overview page (which has Wijzig/Verwijder)
+  const hasMaatregelSelecterenButtons = Array.from(document.querySelectorAll('input[type="submit"], input[type="button"], button')).some(btn =>
+    (btn.value && btn.value.trim() === 'Selecteren') ||
+    (btn.textContent && btn.textContent.trim() === 'Selecteren')
+  );
+
+  // Check for page title "Maatregel selecteren"
+  const hasMaatregelSelecterenTitle = Array.from(document.querySelectorAll('h1, h2, h3, .page-title, [class*="title"]')).some(el =>
+    el.textContent && el.textContent.includes('Maatregel selecteren')
+  );
+
+  // Check that we're NOT on the measure overview page (which has "Wijzig" button)
+  const hasWijzigButton = Array.from(document.querySelectorAll('input[type="submit"], input[type="button"]')).some(btn =>
+    btn.value && btn.value.trim() === 'Wijzig'
+  );
+
+  // Only detect catalog if we have the title OR selecteren buttons, AND we don't have Wijzig button
+  if ((hasMaatregelSelecterenButtons || hasMaatregelSelecterenTitle) && !hasWijzigButton) {
+    console.log('🎯 Detected: measure_catalog_page - Maatregel selecteren catalog');
+    return 'measure_catalog_page';
   }
 
   // Step 2: ISDE catalog page - SIMPLE detection
@@ -1366,14 +1640,44 @@ async function startFullAutomation(config) {
     let currentStep;
     if (!sessionStep || sessionStep === 'start') {
       // Geen sessie of bij start - vertrouw detectie
-      currentStep = detectedStep !== 'unknown' ? detectedStep : sessionStep;
+      if (detectedStep !== 'unknown' && detectedStep !== 'start') {
+        currentStep = detectedStep;
+        sessionStorage.setItem('automationStep', detectedStep);
+        console.log('✅ Starting from detected page:', detectedStep);
+      } else if (detectedStep === 'start') {
+        // Detectie zegt we zijn op de startpagina
+        currentStep = 'start';
+        sessionStorage.setItem('automationStep', 'start');
+        console.log('✅ Detected start page, beginning from start');
+      } else {
+        // Detectie faalde ('unknown') - pauzeer en vraag gebruiker
+        console.error('⚠️ CANNOT DETECT CURRENT PAGE');
+        console.error('Session step:', sessionStep);
+        console.error('Detected step:', detectedStep);
+
+        automationPaused = true;
+        updateStatus(
+          '⚠️ Kan huidige pagina niet herkennen. Klik op "Hervat" wanneer je op de juiste pagina bent, of begin vanaf de startpagina.',
+          'PAGINA DETECTIE MISLUKT',
+          'unknown'
+        );
+
+        // Toon pause/resume buttons
+        const pauseBtn = document.getElementById('pause-automation');
+        const resumeBtn = document.getElementById('continue-automation');
+        if (pauseBtn) pauseBtn.style.display = 'none';
+        if (resumeBtn) resumeBtn.style.display = 'block';
+
+        return; // Stop hier
+      }
     } else if (detectedStep !== 'unknown' && detectedStep !== 'start') {
       // Beide hebben waarden - vertrouw detectie als het niet 'start' is (veelvoorkomende false positive)
       currentStep = detectedStep;
       sessionStorage.setItem('automationStep', detectedStep);
+      console.log('✅ Updated to detected step:', detectedStep);
     } else {
       // Detectie mislukt of retourneerde 'start' - vertrouw sessie
-      console.log('⚠️ Detection unclear, trusting session storage');
+      console.log('⚠️ Detection unclear, trusting session storage:', sessionStep);
       currentStep = sessionStep;
     }
 
@@ -1456,21 +1760,24 @@ async function startFullAutomation(config) {
 
         // Fallback: If load event doesn't fire, poll for the catalog page
         let pollCount = 0;
-        const pollInterval = setInterval(() => {
-          pollCount++;
-          console.log(`Polling for catalog page (${pollCount})...`);
+        const pollForCatalog = async () => {
+          while (pollCount < 15) {
+            pollCount++;
+            console.log(`Polling for catalog page (${pollCount})...`);
 
-          const catalogLink = document.querySelector('a[id^="catalog_NieuweAanvraag"]');
-          if (catalogLink) {
-            console.log('✅ Catalog page detected via polling!');
-            clearInterval(pollInterval);
-            updateStatus('Catalogus pagina geladen', 'nieuwe_aanvraag_geklikt');
-            createTimeout(() => startFullAutomation(config), 1000);
-          } else if (pollCount > 15) {
-            console.log('⚠️ Polling timeout, stopping');
-            clearInterval(pollInterval);
+            const catalogLink = document.querySelector('a[id^="catalog_NieuweAanvraag"]');
+            if (catalogLink) {
+              console.log('✅ Catalog page detected via polling!');
+              updateStatus('Catalogus pagina geladen', 'nieuwe_aanvraag_geklikt');
+              createTimeout(() => startFullAutomation(config), 1000);
+              return;
+            }
+
+            await unthrottledDelay(1000);
           }
-        }, 1000);
+          console.log('⚠️ Polling timeout, stopping');
+        };
+        pollForCatalog();
 
         return;
       } else {
@@ -1488,7 +1795,7 @@ async function startFullAutomation(config) {
 
       // Wait for the page to load and ISDE links to appear
       console.log('Waiting for ISDE links to appear...');
-      await new Promise(r => setTimeout(r, 1500)); // Initial wait for page transition
+      await unthrottledDelay(1500); // Initial wait for page transition
 
       // Wait specifically for catalog links or any ISDE-related link to appear
       let waitAttempts = 0;
@@ -1504,7 +1811,7 @@ async function startFullAutomation(config) {
           break;
         }
 
-        await new Promise(r => setTimeout(r, 500));
+        await unthrottledDelay(500);
         waitAttempts++;
       }
 
@@ -1622,13 +1929,13 @@ async function startFullAutomation(config) {
 
       // Vul velden met extra vertragingen om robot detectie te voorkomen
       await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edBSNnummer', config.bsn);
-      await new Promise(r => setTimeout(r, 1000 + Math.random() * 500));
+      await unthrottledDelay(1000 + Math.random() * 500);
       
       await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edVoorletters2', config.initials);
-      await new Promise(r => setTimeout(r, 800 + Math.random() * 400));
+      await unthrottledDelay(800 + Math.random() * 400);
       
       await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edAchternaam2', config.lastName);
-      await new Promise(r => setTimeout(r, 700 + Math.random() * 300));
+      await unthrottledDelay(700 + Math.random() * 300);
       
       // Gender selection based on config
       if (config.gender === 'male') {
@@ -1636,29 +1943,29 @@ async function startFullAutomation(config) {
       } else if (config.gender === 'female') {
         await clickElement('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.eddGeslacht_vrouw2');
       }
-      await new Promise(r => setTimeout(r, 600 + Math.random() * 400));
+      await unthrottledDelay(600 + Math.random() * 400);
       
       await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_telefoon\\.0\\.edTelefoonField3', config.phone);
-      await new Promise(r => setTimeout(r, 800 + Math.random() * 400));
+      await unthrottledDelay(800 + Math.random() * 400);
       
       await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_email\\.0\\.edEmailField3', config.email);
-      await new Promise(r => setTimeout(r, 900 + Math.random() * 500));
+      await unthrottledDelay(900 + Math.random() * 500);
       
       await fillInput('#link_aanv\\.0\\.edIBAN', config.iban);
-      await new Promise(r => setTimeout(r, 1000 + Math.random() * 500));
+      await unthrottledDelay(1000 + Math.random() * 500);
       
       await fillInput('#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode', config.postalCode);
-      await new Promise(r => setTimeout(r, 700 + Math.random() * 300));
+      await unthrottledDelay(700 + Math.random() * 300);
       
       await fillInput('#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edHuisnummer2', config.houseNumber);
-      await new Promise(r => setTimeout(r, 600 + Math.random() * 300));
+      await unthrottledDelay(600 + Math.random() * 300);
       
       await fillInput('#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edToevoeging2', config.houseAddition);
-      await new Promise(r => setTimeout(r, 700 + Math.random() * 400));
+      await unthrottledDelay(700 + Math.random() * 400);
       
       // Check postal address different checkbox
       await clickElement('#link_aanv\\.0\\.edPostadres_anders_J');
-      await new Promise(r => setTimeout(r, 1000));
+      await unthrottledDelay(1000);
       
       await clickElement('#btnVolgendeTab');
       sessionStorage.setItem('automationStep', 'personal_info_done');
@@ -1684,7 +1991,7 @@ async function startFullAutomation(config) {
 
       try {
         // Wait a bit for the page to be fully loaded
-        await new Promise(r => setTimeout(r, 1000));
+        await unthrottledDelay(1000);
 
         // Try multiple selector patterns for contact person fields
         const possibleSelectors = {
@@ -1854,15 +2161,15 @@ async function startFullAutomation(config) {
         console.log('⚠️ Some contact person fields may not have been filled - continuing...');
       }
 
-      await new Promise(r => setTimeout(r, 800));
+      await unthrottledDelay(800);
 
       // 1. Digital correspondence - "Ja" (Yes to digital correspondence)
       await clickElement('#link_int\\.0\\.edDigitaleCorrespondentie_J');
-      await new Promise(r => setTimeout(r, 500));
+      await unthrottledDelay(500);
 
       // 2. Extra contact person - "Nee" (No to extra contact person)
       await clickElement('#link_int\\.0\\.link_int_organisatie\\.0\\.edExtraContactpersoon_n_int');
-      await new Promise(r => setTimeout(r, 500));
+      await unthrottledDelay(500);
 
       // Now click Volgende after BOTH are filled
       await clickElement('#btnVolgendeTab');
@@ -1916,7 +2223,7 @@ async function startFullAutomation(config) {
         await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.next');
       }
       
-      await new Promise(r => setTimeout(r, 1500));
+      await unthrottledDelay(1500);
       
       // Try both possible selectors for Volgende button
       const volgendeTab = document.querySelector('#btnVolgendeTab') || 
@@ -1939,13 +2246,62 @@ async function startFullAutomation(config) {
     if (currentStep === 'bag_address_form' ||
         (currentStep === 'bag_different_done' && detectedStep === 'bag_address_form') ||
         (currentStep === 'address_different_done' && detectedStep === 'bag_address_form')) {
-      console.log('Step 10.5: On installation address form, clicking Volgende');
-      updateStatus('Doorgaan vanaf adresformulier', '10.5 - Adresformulier', detectedStep);
 
-      // Just click Volgende - the address is already filled from previous steps
+      // Check if automation was stopped
+      if (automationStopped) {
+        console.log('❌ Automation stopped, not continuing with address form');
+        return;
+      }
+
+      console.log('Step 10.5: On installation address form, need to confirm address');
+      updateStatus('Installatieadres bevestigen', '10.5 - Adresformulier', detectedStep);
+
+      // First, we need to select "Ja" for the question about installation address
+      // Look for radio buttons that ask about accepting the installation address
+      const radioButtons = document.querySelectorAll('input[type="radio"]');
+      let addressConfirmRadio = null;
+
+      for (const radio of radioButtons) {
+        // Find the "Ja" option near text about installation address
+        const label = radio.closest('label, tr, div');
+        if (label && label.textContent.includes('installatieadres') && radio.value === 'Ja') {
+          addressConfirmRadio = radio;
+          break;
+        }
+      }
+
+      // If we can't find via value, try to find any radio button near the installation address question
+      if (!addressConfirmRadio) {
+        const allRadios = Array.from(document.querySelectorAll('input[type="radio"]'));
+        // Look for the first radio button (usually "Ja") in a group
+        for (let i = 0; i < allRadios.length; i++) {
+          const radio = allRadios[i];
+          const container = radio.closest('table, div, fieldset');
+          if (container && container.textContent.includes('installatieadres')) {
+            // Take the first radio (should be "Ja")
+            addressConfirmRadio = radio;
+            break;
+          }
+        }
+      }
+
+      if (addressConfirmRadio && !addressConfirmRadio.checked) {
+        console.log('Clicking "Ja" for installation address confirmation');
+        await clickElement(addressConfirmRadio);
+        await unthrottledDelay(500);
+      }
+
+      // Check again after radio button click
+      if (automationStopped) {
+        console.log('❌ Automation stopped during address confirmation');
+        return;
+      }
+
+      // Now click Volgende
       const volgendeButton = document.querySelector('input[value="Volgende"]') ||
                             document.querySelector('#btnVolgendeTab');
       if (volgendeButton) {
+        console.log('Clicking Volgende on installation address form');
         await clickElement(volgendeButton);
         // After clicking Volgende, we should reach the "Add measure" page
         sessionStorage.setItem('automationStep', 'address_form_completed');
@@ -1963,7 +2319,7 @@ async function startFullAutomation(config) {
 
       // Wait for modal to open, then continue automation
       console.log('Waiting for measure modal to open...');
-      await new Promise(r => setTimeout(r, 1500));
+      await unthrottledDelay(1500);
 
       // Continue automation to select warmtepomp
       setTimeout(() => {
@@ -1981,7 +2337,7 @@ async function startFullAutomation(config) {
 
       // Wait for wizard to show meldcode search step
       console.log('Waiting for meldcode search step to appear...');
-      await new Promise(r => setTimeout(r, 1500));
+      await unthrottledDelay(1500);
 
       // Continue automation to search for meldcode
       setTimeout(() => {
@@ -1996,7 +2352,7 @@ async function startFullAutomation(config) {
       updateStatus('Meldcode zoeken', '12.5 - Meldcode Zoeken', detectedStep);
 
       // Wait for modal to be fully loaded
-      await new Promise(r => setTimeout(r, 800));
+      await unthrottledDelay(800);
 
       // Try to find the search input field
       const searchInput = document.querySelector('#lip_matchcode') ||
@@ -2009,7 +2365,7 @@ async function startFullAutomation(config) {
         searchInput.value = config.meldCode;
         searchInput.dispatchEvent(new Event('input', { bubbles: true }));
         searchInput.dispatchEvent(new Event('change', { bubbles: true }));
-        await new Promise(r => setTimeout(r, 500));
+        await unthrottledDelay(500);
 
         // Click the search button (the [...] button or Zoeken button)
         const searchButton = document.querySelector('input[type="submit"][value*="Zoeken"]') ||
@@ -2018,14 +2374,14 @@ async function startFullAutomation(config) {
         if (searchButton) {
           console.log('✅ Clicking search button');
           searchButton.click();
-          await new Promise(r => setTimeout(r, 2000)); // Wait for search results
+          await unthrottledDelay(2000); // Wait for search results
           console.log('✅ Search completed, waiting for results...');
         } else {
           console.log('⚠️ Search button not found, trying to find meldcode directly');
         }
 
         // Wait for results
-        await new Promise(r => setTimeout(r, 1000));
+        await unthrottledDelay(1000);
 
         // Find and click the meldcode from results
         const meldcodeLinks = document.querySelectorAll('td a, table a');
@@ -2036,7 +2392,7 @@ async function startFullAutomation(config) {
             console.log('✅ Found matching meldcode link:', link.textContent);
             link.click();
             meldcodeClicked = true;
-            await new Promise(r => setTimeout(r, 1000));
+            await unthrottledDelay(1000);
             break;
           }
         }
@@ -2047,7 +2403,7 @@ async function startFullAutomation(config) {
           if (firstLink) {
             console.log('⚠️ Exact match not found, clicking first meldcode result');
             firstLink.click();
-            await new Promise(r => setTimeout(r, 1000));
+            await unthrottledDelay(1000);
           }
         }
 
@@ -2080,7 +2436,7 @@ async function startFullAutomation(config) {
       updateStatus('Datums en installatiedetails instellen', '13 - Installatie Details', detectedStep);
 
       // Wait for modal fields to be fully ready
-      await new Promise(r => setTimeout(r, 800));
+      await unthrottledDelay(800);
 
       // Set purchase date (DatumAangeschaft) - only if provided
       await fillInput('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.DatumAangeschaft', config.purchaseDate);
@@ -2089,7 +2445,7 @@ async function startFullAutomation(config) {
       await fillInput('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.DatumInstallatie', config.installationDate);
 
       // Extra delay after filling dates before clicking checkboxes
-      await new Promise(r => setTimeout(r, 1200));
+      await unthrottledDelay(1200);
 
       // IMPORTANT: Click gas usage radio button based on config
       console.log('Setting gas usage based on config:', config.gasUsage);
@@ -2102,14 +2458,38 @@ async function startFullAutomation(config) {
       }
 
       // Extra wait after gas checkbox
-      await new Promise(r => setTimeout(r, 800));
+      await unthrottledDelay(1200);
 
-      console.log('Clicking Dutch installation company checkbox...');
-      await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_NL_jn_J');
+      console.log('Clicking Dutch installation company checkbox (Ja)...');
+
+      // Wait for the radio button to be visible and clickable
+      const dutchCompanyRadio = document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_NL_jn_J');
+
+      if (dutchCompanyRadio) {
+        // Scroll to element first
+        dutchCompanyRadio.scrollIntoView({behavior: 'smooth', block: 'center'});
+        await unthrottledDelay(500);
+
+        // For radio buttons, we need to set checked property AND trigger change event
+        dutchCompanyRadio.checked = true;
+
+        // Trigger change event to notify form
+        const changeEvent = new Event('change', { bubbles: true });
+        dutchCompanyRadio.dispatchEvent(changeEvent);
+
+        // Also trigger click event for any click handlers
+        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+        dutchCompanyRadio.dispatchEvent(clickEvent);
+
+        console.log('✅ Set Dutch company Ja radio button (checked + events)');
+        await unthrottledDelay(800);
+      } else {
+        console.error('❌ Dutch company radio button not found!');
+      }
 
       // Wait longer for form to reveal KvK and company name fields after clicking "Ja"
       console.log('Waiting for KvK and company name fields to appear...');
-      await new Promise(r => setTimeout(r, 2500));
+      await unthrottledDelay(2500);
 
       // Verify KvK field is now visible before filling
       const kvkField = document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_KvK');
@@ -2185,7 +2565,7 @@ async function startFullAutomation(config) {
         console.log('🔍 Filling meldcode search field with:', config.meldCode);
 
         // Wait a bit for modal to be fully loaded
-        await new Promise(r => setTimeout(r, 800));
+        await unthrottledDelay(800);
 
         // Try to find the search input field
         const searchInput = document.querySelector('#lip_matchcode') ||
@@ -2205,7 +2585,7 @@ async function startFullAutomation(config) {
 
           console.log('✅ Meldcode filled:', searchInput.value);
 
-          await new Promise(r => setTimeout(r, 500));
+          await unthrottledDelay(500);
 
           // Click the search button (Zoeken)
           const searchButton = document.querySelector('input[type="submit"][value*="Zoeken"]') ||
@@ -2216,7 +2596,7 @@ async function startFullAutomation(config) {
           if (searchButton) {
             console.log('🔍 Clicking search button...');
             searchButton.click();
-            await new Promise(r => setTimeout(r, 2000)); // Wait for search results
+            await unthrottledDelay(2000); // Wait for search results
             console.log('✅ Search completed, waiting for results...');
           } else {
             console.warn('⚠️ Search button not found!');
@@ -2238,7 +2618,7 @@ async function startFullAutomation(config) {
             console.log('Found matching meldcode link:', link.textContent);
             link.click();
             meldcodeClicked = true;
-            await new Promise(r => setTimeout(r, 1500));
+            await unthrottledDelay(1500);
             break;
           }
         }
@@ -2250,7 +2630,7 @@ async function startFullAutomation(config) {
         const firstLink = document.querySelector('td a[href*="meldcode"], table a, #row_0 a');
         if (firstLink) {
           firstLink.click();
-          await new Promise(r => setTimeout(r, 1500));
+          await unthrottledDelay(1500);
         } else {
           console.log('No meldcode link found, manual intervention needed');
           updateStatus('Klik handmatig op een meldcode', '17 - Handmatige actie vereist');
@@ -2259,7 +2639,7 @@ async function startFullAutomation(config) {
       }
 
       // Click Volgende button after selecting meldcode
-      await new Promise(r => setTimeout(r, 1000));
+      await unthrottledDelay(1000);
       const volgendeBtn = document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende');
       if (volgendeBtn) {
         await clickElement(volgendeBtn);
@@ -2290,18 +2670,18 @@ async function startFullAutomation(config) {
       if (config.betaalbewijs) {
         console.log('Uploading betaalbewijs:', config.betaalbewijs.name);
         await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.0\\.btn_ToevoegenBijlage');
-        await new Promise(r => setTimeout(r, 1500));
+        await unthrottledDelay(1500);
         await uploadFile(config.betaalbewijs);
-        await new Promise(r => setTimeout(r, 2000));
+        await unthrottledDelay(2000);
       }
 
       // Upload factuur (factuur) - tweede document (VERPLICHT)
       if (config.factuur) {
         console.log('Uploading factuur:', config.factuur.name);
         await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.1\\.btn_ToevoegenBijlage');
-        await new Promise(r => setTimeout(r, 1500));
+        await unthrottledDelay(1500);
         await uploadFile(config.factuur);
-        await new Promise(r => setTimeout(r, 2000));
+        await unthrottledDelay(2000);
       }
 
       // Controleer of verplichte documenten aanwezig zijn
@@ -2316,7 +2696,7 @@ async function startFullAutomation(config) {
       console.log('Looking for Volgende button after document upload...');
 
       // Wait a bit for uploads to complete
-      await new Promise(r => setTimeout(r, 1500));
+      await unthrottledDelay(1500);
 
       // Try the specific wizard button first
       let volgendeButton = document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende');
@@ -2342,13 +2722,13 @@ async function startFullAutomation(config) {
 
         // Scroll into view and click directly
         volgendeButton.scrollIntoView({behavior: 'smooth', block: 'center'});
-        await new Promise(r => setTimeout(r, 800));
+        await unthrottledDelay(800);
 
         // Try direct click first
         console.log('Clicking Volgende button directly...');
         volgendeButton.click();
 
-        await new Promise(r => setTimeout(r, 1000));
+        await unthrottledDelay(1000);
 
         sessionStorage.setItem('automationStep', 'files_handled');
 
@@ -2382,7 +2762,7 @@ async function startFullAutomation(config) {
       console.log('Step 18.4: Vervolgstap modal present, looking for action button');
       updateStatus('Vervolgstap modal verwerken', '18.4 - Vervolgstap Modal', detectedStep);
 
-      await new Promise(r => setTimeout(r, 800));
+      await unthrottledDelay(800);
 
       // Find the action button in the modal - try multiple button names
       let actionButton = null;
@@ -2407,13 +2787,17 @@ async function startFullAutomation(config) {
       if (actionButton) {
         const buttonText = (actionButton.value || actionButton.textContent || '').trim();
         actionButton.scrollIntoView({behavior: 'smooth', block: 'center'});
-        await new Promise(r => setTimeout(r, 500));
+        await unthrottledDelay(500);
 
         actionButton.click();
         console.log(`✅ Clicked "${buttonText}" button in modal`);
 
-        await new Promise(r => setTimeout(r, 1500));
-        sessionStorage.setItem('automationStep', 'vervolgstap_completed');
+        await unthrottledDelay(1500);
+
+        // After vervolgstap modal, go directly to measure_overview step
+        // Don't rely on detection, just proceed to the overview
+        sessionStorage.setItem('automationStep', 'measure_overview');
+        console.log('→ Forced step to measure_overview after vervolgstap modal');
 
         // Continue automation
         setTimeout(() => {
@@ -2434,27 +2818,32 @@ async function startFullAutomation(config) {
     }
 
     // Step 18.5: Measure overview page - "Maatregel toegevoegd" page with Wijzig/Verwijder buttons
-    if (currentStep === 'measure_overview' ||
-        (currentStep === 'files_handled' && detectedStep === 'measure_overview') ||
-        (currentStep === 'vervolgstap_completed' && detectedStep === 'measure_overview')) {
-      console.log('Step 18.5: On measure overview page (Maatregel toegevoegd), clicking Volgende');
+    // After vervolgstap modal, we force step to measure_overview regardless of detection
+    if (currentStep === 'measure_overview') {
+      console.log('Step 18.5: Looking for Volgende button on measure overview page');
       updateStatus('Doorgaan vanaf maatregeloverzicht', '18.5 - Maatregeloverzicht', detectedStep);
 
       // Wait a bit for the page to be fully loaded
-      await new Promise(r => setTimeout(r, 1000));
+      await unthrottledDelay(1500);
 
-      // Find and click the Volgende button
-      const volgendeButton = document.querySelector('#btnVolgendeTab');
+      // Strategy 1: Try to find the main Volgende button (overview page)
+      let volgendeButton = document.querySelector('#btnVolgendeTab');
+
+      // Strategy 2: If not found, maybe we're still in wizard - try wizard Volgende button
+      if (!volgendeButton) {
+        console.log('Main Volgende not found, checking for wizard Volgende...');
+        volgendeButton = document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende');
+      }
 
       if (volgendeButton) {
-        console.log('✅ Found Volgende button on measure overview page');
+        console.log('✅ Found Volgende button');
         volgendeButton.scrollIntoView({behavior: 'smooth', block: 'center'});
-        await new Promise(r => setTimeout(r, 500));
+        await unthrottledDelay(500);
 
         volgendeButton.click();
         console.log('✅ Clicked Volgende, checking for confirmation dialog...');
 
-        await new Promise(r => setTimeout(r, 1000));
+        await unthrottledDelay(1000);
         sessionStorage.setItem('automationStep', 'measure_overview_clicked');
 
         // Continue automation to handle potential dialog
@@ -2463,8 +2852,11 @@ async function startFullAutomation(config) {
         }, 1500);
         return;
       } else {
-        console.log('⚠️ Volgende button not found on measure overview page');
+        console.log('⚠️ No Volgende button found (neither main nor wizard)');
         updateStatus('Klik handmatig op Volgende', '18.5 - Handmatige actie');
+
+        // Pause to prevent loop
+        automationPaused = true;
         return;
       }
     }
@@ -2482,7 +2874,7 @@ async function startFullAutomation(config) {
         console.log('Step 18.6: Found measure confirmation dialog, clicking "Ja, volgende"');
         updateStatus('Maatregelen bevestigen', '18.6 - Maatregel Bevestiging', detectedStep);
 
-        await new Promise(r => setTimeout(r, 800));
+        await unthrottledDelay(800);
 
         // Find the "Ja, volgende" button
         let jaVolgendeButton = null;
@@ -2499,12 +2891,12 @@ async function startFullAutomation(config) {
 
         if (jaVolgendeButton) {
           jaVolgendeButton.scrollIntoView({behavior: 'smooth', block: 'center'});
-          await new Promise(r => setTimeout(r, 500));
+          await unthrottledDelay(500);
 
           jaVolgendeButton.click();
           console.log('✅ Clicked "Ja, volgende", proceeding to next step');
 
-          await new Promise(r => setTimeout(r, 1000));
+          await unthrottledDelay(1000);
           sessionStorage.setItem('automationStep', 'measure_confirmed');
 
           // Continue automation
@@ -2534,18 +2926,18 @@ async function startFullAutomation(config) {
       console.log('Step 18.7: On final measure overview page, clicking Volgende');
       updateStatus('Doorgaan vanaf eindoverzicht', '18.7 - Eindoverzicht', detectedStep);
 
-      await new Promise(r => setTimeout(r, 1000));
+      await unthrottledDelay(1000);
 
       const volgendeButton = document.querySelector('#btnVolgendeTab');
       if (volgendeButton) {
         console.log('✅ Found Volgende button on final measure overview');
         volgendeButton.scrollIntoView({behavior: 'smooth', block: 'center'});
-        await new Promise(r => setTimeout(r, 500));
+        await unthrottledDelay(500);
 
         volgendeButton.click();
         console.log('✅ Clicked Volgende, proceeding to next step');
 
-        await new Promise(r => setTimeout(r, 1000));
+        await unthrottledDelay(1000);
         sessionStorage.setItem('automationStep', 'final_measure_overview_done');
 
         setTimeout(() => {
@@ -2570,7 +2962,7 @@ async function startFullAutomation(config) {
         behavior: 'smooth'
       });
 
-      await new Promise(r => setTimeout(r, 1500));
+      await unthrottledDelay(1500);
 
       // Zoek en klik de Volgende knop
       const volgendeButton = document.querySelector('#btnVolgendeTab') ||
@@ -2618,7 +3010,7 @@ async function startFullAutomation(config) {
       });
 
       // Wacht even tot scroll klaar is
-      await new Promise(r => setTimeout(r, 1000));
+      await unthrottledDelay(1000);
 
       // Houd het automatiseringspaneel zichtbaar maar geef voltooiing aan
       updateStatus('✅ Klaar voor verzending - Controleer het formulier hieronder en klik op Indienen wanneer u klaar bent', 'KLAAR', detectedStep);
@@ -2637,6 +3029,13 @@ async function startFullAutomation(config) {
     updateStatus('Wacht op volgende stap...', currentStep, detectedStep);
     
   } catch (error) {
+    // Als de error door stop button komt, niet tonen
+    if (error.message === 'Automation stopped') {
+      console.log('✅ Automation gracefully stopped during execution');
+      return;
+    }
+
+    // Anders is het een echte fout
     console.error('Automation error:', error);
     alert('Automation error: ' + error.message);
   }
@@ -2660,29 +3059,19 @@ async function saveProgressForRecovery() {
   const step = sessionStorage.getItem('automationStep');
 
   if (config && step) {
-    // Haal sessionId op van de config (uniek per tab)
-    let sessionId = null;
-    try {
-      const configObj = JSON.parse(config);
-      sessionId = configObj.sessionId;
-    } catch (e) {
-      console.warn('Could not parse config for sessionId');
-    }
-
-    // Gebruik sessionId als we die hebben, anders een fallback
-    // Dit zorgt voor multi-tab support
-    const recoveryKey = sessionId ? `automation_recovery_${sessionId}` : 'automation_recovery';
+    // Gebruik de currentTabId (uniek per tab) voor multi-tab support
+    const recoveryKey = `automation_recovery_${currentTabId}`;
 
     const recoveryData = {
       config: config,
       step: step,
       timestamp: Date.now(),
       url: window.location.href,
-      sessionId: sessionId
+      tabId: currentTabId
     };
 
     await chrome.storage.local.set({ [recoveryKey]: recoveryData });
-    console.log(`💾 Progress saved for recovery (${sessionId || 'default'}):`, step);
+    console.log(`💾 Progress saved for recovery (tab ${currentTabId}):`, step);
   }
 }
 
@@ -2698,52 +3087,28 @@ async function saveProgressForRecovery() {
  */
 function attemptCrashRecovery() {
   return new Promise((resolve) => {
-    // Haal ALLE recovery data op (voor multi-tab support)
-    chrome.storage.local.get(null, (allData) => {
-      // Filter alle recovery keys
-      const recoveryKeys = Object.keys(allData).filter(key =>
-        key.startsWith('automation_recovery')
-      );
+    // Check alleen voor recovery data van DEZE specifieke tab
+    const recoveryKey = `automation_recovery_${currentTabId}`;
 
-      if (recoveryKeys.length === 0) {
-        console.log('ℹ️ Geen recovery data gevonden');
+    chrome.storage.local.get(recoveryKey, (result) => {
+      if (!result[recoveryKey]) {
+        console.log(`ℹ️ Geen recovery data gevonden voor tab ${currentTabId}`);
         resolve(false);
         return;
       }
 
-      // Vind de meest recente recovery data die niet te oud is
-      let mostRecentData = null;
-      let mostRecentKey = null;
-      let mostRecentTimestamp = 0;
+      const recoveryData = result[recoveryKey];
+      const age = Date.now() - recoveryData.timestamp;
 
-      for (const key of recoveryKeys) {
-        const data = allData[key];
-        const age = Date.now() - data.timestamp;
-
-        // Skip te oude data (max 1 uur)
-        if (age > 3600000) {
-          console.log(`⚠️ Recovery data te oud (${key}), wordt genegeerd`);
-          chrome.storage.local.remove(key);
-          continue;
-        }
-
-        // Check of dit de meest recente is
-        if (data.timestamp > mostRecentTimestamp) {
-          mostRecentTimestamp = data.timestamp;
-          mostRecentData = data;
-          mostRecentKey = key;
-        }
-      }
-
-      // Geen bruikbare recovery data gevonden
-      if (!mostRecentData) {
-        console.log('ℹ️ Geen bruikbare recovery data (alles te oud)');
+      // Skip te oude data (max 1 uur)
+      if (age > 3600000) {
+        console.log(`⚠️ Recovery data te oud voor tab ${currentTabId}, wordt verwijderd`);
+        chrome.storage.local.remove(recoveryKey);
         resolve(false);
         return;
       }
 
-      const recoveryData = mostRecentData;
-      const recoveryKey = mostRecentKey;
+      console.log(`✅ Recovery data gevonden voor tab ${currentTabId}:`, recoveryData.step);
 
       // Maak recovery panel
       const panel = document.createElement('div');
@@ -2874,9 +3239,13 @@ document.addEventListener('visibilitychange', () => {
  * zelfs over meerdere pagina's heen, en kan herstellen van crashes.
  */
 window.addEventListener('load', async () => {
-  // Stop niet als automatisering is gestopt door gebruiker
-  if (automationStopped) {
-    console.log('❌ Automation stopped, not continuing on page load');
+  // Check persistent stop flag EERST
+  const stoppedByUser = sessionStorage.getItem('automationStoppedByUser');
+  if (stoppedByUser === 'true' || automationStopped) {
+    console.log('❌ Automation stopped by user, not continuing on page load');
+    // Wis de config om zeker te zijn
+    sessionStorage.removeItem('automationConfig');
+    sessionStorage.removeItem('automationStep');
     return;
   }
 
@@ -2940,10 +3309,13 @@ window.addEventListener('load', async () => {
 
 // Also listen for DOM content loaded as backup
 document.addEventListener('DOMContentLoaded', () => {
-  // Don't continue if automation has been stopped
-  if (automationStopped) {
-    console.log('❌ Automation stopped, not continuing on DOM load');
+  // Check persistent stop flag
+  const stoppedByUser = sessionStorage.getItem('automationStoppedByUser');
+  if (stoppedByUser === 'true' || automationStopped) {
+    console.log('❌ Automation stopped by user, not continuing on DOM load');
     clearAllTimeouts(); // Clear any pending timeouts
+    sessionStorage.removeItem('automationConfig');
+    sessionStorage.removeItem('automationStep');
     return;
   }
 
@@ -2975,18 +3347,23 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Also check periodically if panel needs to be recreated (in case DOM changes)
-setInterval(() => {
-  // Don't recreate panel if automation has been stopped
-  if (automationStopped) {
-    return;
-  }
+// Using unthrottled loop to work properly in background tabs
+(async () => {
+  while (true) {
+    await unthrottledDelay(2000);
 
-  const automationConfig = sessionStorage.getItem('automationConfig');
-  if (automationConfig && !document.getElementById('isde-automation-panel')) {
-    console.log('Status panel missing, recreating...');
-    createStatusPanel();
-    const currentStep = sessionStorage.getItem('automationStep');
-    const detectedStep = detectCurrentStep();
-    updateStatus('Klaar', currentStep, detectedStep);
+    // Don't recreate panel if automation has been stopped
+    if (automationStopped) {
+      continue;
+    }
+
+    const automationConfig = sessionStorage.getItem('automationConfig');
+    if (automationConfig && !document.getElementById('isde-automation-panel')) {
+      console.log('Status panel missing, recreating...');
+      createStatusPanel();
+      const currentStep = sessionStorage.getItem('automationStep');
+      const detectedStep = detectCurrentStep();
+      updateStatus('Klaar', currentStep, detectedStep);
+    }
   }
-}, 2000);
+})();

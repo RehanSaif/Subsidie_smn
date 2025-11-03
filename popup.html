@@ -151,8 +151,31 @@
       padding: 6px 10px;
       background: #fff9e6;
       border-radius: 6px;
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
       border: 1px solid #FFC012;
+    }
+
+    .file-delete-btn {
+      background: #c92a2a;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      width: 18px;
+      height: 18px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    .file-delete-btn:hover {
+      background: #a61e1e;
     }
 
     .btn {
@@ -182,6 +205,19 @@
       background: #f0b200;
       transform: translateY(-1px);
       box-shadow: 0 6px 16px rgba(255, 192, 18, 0.3);
+    }
+
+    .btn-secondary {
+      background: #f5f5f5;
+      color: #666;
+      font-size: 13px;
+      padding: 10px 16px;
+      margin-top: 10px;
+    }
+
+    .btn-secondary:hover {
+      background: #e8e8e8;
+      color: #333;
     }
 
     .section-title {
@@ -368,19 +404,23 @@
       <div class="field-group">
         <label class="field-label">Voorletters</label>
         <input type="text" class="field-input" id="initials" placeholder="Voorletters">
+        <div class="field-warning" id="initialsWarning"></div>
       </div>
 
       <div class="field-group">
         <label class="field-label">Achternaam</label>
         <input type="text" class="field-input" id="lastName" placeholder="Achternaam">
+        <div class="field-warning" id="lastNameWarning"></div>
       </div>
 
       <div class="field-group">
         <label class="field-label">Geslacht</label>
         <select class="field-input" id="gender">
+          <option value="">-- Selecteer --</option>
           <option value="male">Man</option>
           <option value="female">Vrouw</option>
         </select>
+        <div class="field-warning" id="genderWarning"></div>
       </div>
 
       <div class="field-group">
@@ -408,6 +448,7 @@
       <div class="field-group">
         <label class="field-label">Straatnaam</label>
         <input type="text" class="field-input" id="street" placeholder="Straatnaam">
+        <div class="field-warning" id="streetWarning"></div>
       </div>
 
       <div class="field-group">
@@ -423,11 +464,13 @@
       <div class="field-group">
         <label class="field-label">Postcode</label>
         <input type="text" class="field-input" id="postalCode" placeholder="1234 AB">
+        <div class="field-warning" id="postalCodeWarning"></div>
       </div>
 
       <div class="field-group">
         <label class="field-label">Plaats</label>
         <input type="text" class="field-input" id="city" placeholder="Plaatsnaam">
+        <div class="field-warning" id="cityWarning"></div>
       </div>
     </div>
 
@@ -459,11 +502,16 @@
         <div class="field-help">
           Wordt er nog aardgas gebruikt voor ruimte verwarming?
         </div>
+        <div class="field-warning" id="gasUsageWarning"></div>
       </div>
     </div>
 
     <button class="btn btn-primary" id="startAutomation">
       Start Automatisering
+    </button>
+
+    <button class="btn btn-secondary" id="resetInfo">
+      🗑️ Reset Info (Deze Tab)
     </button>
 
     <div id="status" class="status"></div>
