@@ -77,4 +77,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Return true om aan te geven dat we asynchroon zullen antwoorden
     return true;
   }
+
+  if (request.action === 'scheduleDelay') {
+    const MAX_DELAY = 60000;
+    const delay = Math.max(0, Math.min(MAX_DELAY, Number(request.delay) || 0));
+
+    console.log(`[BG] ⏳ scheduleDelay received: ${delay}ms (sender: ${sender?.tab?.id ?? 'n/a'})`);
+
+    setTimeout(() => {
+      try {
+        console.log('[BG] ✅ scheduleDelay completed');
+        sendResponse({status: 'done'});
+      } catch (error) {
+        console.warn('[BG] ⚠️ Failed to respond to scheduleDelay:', error);
+      }
+    }, delay);
+
+    return true;
+  }
 });

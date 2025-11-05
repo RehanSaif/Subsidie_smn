@@ -214,9 +214,13 @@ function stopKeepAlive() {
  * Gebruik requestAnimationFrame (RAF) in combinatie met keep-alive systemen:
  * - Web Locks API houdt tab "actief" voor browser
  * - Silent audio loop voorkomt aggressive throttling
- * - RAF loop zorgt voor accurate timing
+ * - RAF loop zorgt voor accurate timing zolang de tab zichtbaar is
+ * - Background service worker timers via chrome.runtime voor verborgen tabs
+ * - Laatste redmiddel: korte setTimeout fallback wanneer messaging faalt
  *
- * RAF werkt prima met deze keep-alive systemen actief.
+ * RAF werkt prima met deze keep-alive systemen actief, maar wordt gepauzeerd
+ * wanneer de tab verborgen raakt. De fallback zorgt ervoor dat delays toch
+ * blijven lopen in achtergrondtabs (zij het met licht verlies aan precisie).
  * Web Workers kunnen niet gebruikt worden vanwege CSP restricties op de website.
  *
  * @param {number} ms - Aantal milliseconden om te wachten
@@ -225,32 +229,191 @@ function stopKeepAlive() {
 function unthrottledDelay(ms) {
   return new Promise((resolve, reject) => {
     const startTime = performance.now();
+    let rafId = null;
+    let timeoutId = null;
+    let cancelBackgroundDelay = null;
+    let settled = false;
+    let visibilityListenerAdded = false;
 
-    const checkTime = () => {
-      // CHECK: Stop flag tijdens delay
-      if (automationStopped) {
-        console.log('❌ Delay interrupted - automation stopped');
-        reject(new Error('Automation stopped'));
+    const removeActiveTimeout = (id) => {
+      const index = activeTimeouts.indexOf(id);
+      if (index > -1) {
+        activeTimeouts.splice(index, 1);
+      }
+    };
+
+    function cleanupTimers() {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+        removeActiveTimeout(timeoutId);
+        timeoutId = null;
+      }
+      if (cancelBackgroundDelay) {
+        cancelBackgroundDelay();
+        cancelBackgroundDelay = null;
+      }
+    }
+
+    function settleSuccess() {
+      if (!settled) {
+        settled = true;
+        cleanupTimers();
+        if (visibilityListenerAdded) {
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+          visibilityListenerAdded = false;
+        }
+        resolve();
+      }
+    }
+
+    function settleError(error) {
+      if (!settled) {
+        settled = true;
+        cleanupTimers();
+        if (visibilityListenerAdded) {
+          document.removeEventListener('visibilitychange', handleVisibilityChange);
+          visibilityListenerAdded = false;
+        }
+        reject(error);
+      }
+    }
+
+    function fallbackLocalTimeout(delay) {
+      const clampedDelay = Math.max(0, delay);
+      if (clampedDelay === 0) {
+        Promise.resolve().then(tick);
         return;
       }
 
-      // CHECK: Pause flag tijdens delay
-      if (automationPaused) {
-        // Don't reject or log repeatedly, just wait and check again
-        requestAnimationFrame(checkTime);
+      timeoutId = setTimeout(() => {
+        removeActiveTimeout(timeoutId);
+        timeoutId = null;
+        tick();
+      }, clampedDelay);
+      activeTimeouts.push(timeoutId);
+    }
+
+    function scheduleBackgroundDelay(delay) {
+      if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.sendMessage) {
+        fallbackLocalTimeout(delay);
+        return;
+      }
+
+      let cancelled = false;
+      cancelBackgroundDelay = () => {
+        cancelled = true;
+        cancelBackgroundDelay = null;
+      };
+
+      console.log(`📡 Scheduling background delay via service worker for ${delay}ms (ms requested: ${ms})`);
+
+      chrome.runtime.sendMessage({ action: 'scheduleDelay', delay }, () => {
+        if (cancelled) {
+          console.log('🛑 Background delay cancelled before response');
+          return;
+        }
+
+        cancelBackgroundDelay = null;
+
+        if (chrome.runtime.lastError) {
+          console.warn('⚠️ Background delay failed, falling back to setTimeout:', chrome.runtime.lastError.message);
+          fallbackLocalTimeout(delay);
+          return;
+        }
+
+        const elapsed = performance.now() - startTime;
+        console.log(`✅ Background delay resolved after ${Math.round(elapsed)}ms (target ${ms}ms)`);
+        tick();
+      });
+    }
+
+    function scheduleNext(paused = false, remainingOverride = null) {
+      cleanupTimers();
+
+      const elapsed = performance.now() - startTime;
+      const remaining = remainingOverride !== null
+        ? Math.max(0, remainingOverride)
+        : Math.max(0, ms - elapsed);
+
+      if (remaining <= 0) {
+        Promise.resolve().then(() => settleSuccess());
+        return;
+      }
+
+      if (!document.hidden && !paused) {
+        rafId = requestAnimationFrame(tick);
+        return;
+      }
+
+      const MAX_BACKGROUND_DELAY = 10000;
+      const delay = paused
+        ? Math.min(200, remaining)
+        : Math.min(remaining, MAX_BACKGROUND_DELAY);
+
+      if (delay <= 0) {
+        Promise.resolve().then(tick);
+        return;
+      }
+
+      scheduleBackgroundDelay(delay);
+    }
+
+    function handleVisibilityChange() {
+      if (settled) {
         return;
       }
 
       const elapsed = performance.now() - startTime;
-      if (elapsed >= ms) {
-        resolve();
-      } else {
-        // Gebruik RAF voor timing (werkt met keep-alive systemen)
-        requestAnimationFrame(checkTime);
-      }
-    };
+      const remaining = Math.max(0, ms - elapsed);
 
-    requestAnimationFrame(checkTime);
+      if (document.hidden) {
+        if (rafId !== null) {
+          console.log(`👀 Visibility changed to hidden - switching RAF -> background delay (remaining: ${Math.round(remaining)}ms)`);
+          scheduleNext(false, remaining);
+        }
+      } else {
+        if (timeoutId !== null || cancelBackgroundDelay) {
+          console.log(`👀 Visibility changed to visible - switching background delay -> RAF (remaining: ${Math.round(remaining)}ms)`);
+          scheduleNext(false, remaining);
+        }
+      }
+    }
+
+    function tick() {
+      if (automationStopped) {
+        console.log('❌ Delay interrupted - automation stopped');
+        settleError(new Error('Automation stopped'));
+        return;
+      }
+
+      const elapsed = performance.now() - startTime;
+
+      if (automationPaused) {
+        const remaining = Math.max(0, ms - elapsed);
+        scheduleNext(true, remaining);
+        return;
+      }
+
+      if (elapsed >= ms) {
+        settleSuccess();
+        return;
+      }
+
+      const remaining = ms - elapsed;
+      scheduleNext(false, remaining);
+    }
+
+    console.log(`⏱️ Starting unthrottledDelay for ${ms}ms (tab hidden: ${document.hidden})`);
+    if (!visibilityListenerAdded) {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      visibilityListenerAdded = true;
+    }
+
+    scheduleNext(false, ms);
   });
 }
 
