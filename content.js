@@ -1493,7 +1493,27 @@ function detectCurrentStep() {
     return 'final_confirmation';
   }
 
-  // Step 18.5: Maatregel toegevoegd page (after file upload) - CHECK THIS FIRST
+  // Step 18.6: "Zijn alle maatregelen toegevoegd?" confirmation dialog
+  // CHECK THIS FIRST - before measure_overview, because the dialog appears ON TOP of measure overview
+  const hasMaatregelenDialog = Array.from(document.querySelectorAll('*')).some(el =>
+    el.textContent && el.textContent.includes('Zijn alle maatregelen toegevoegd')
+  );
+  const hasJaVolgendeButton = Array.from(document.querySelectorAll('input, button')).some(btn =>
+    (btn.value && (btn.value.includes('Ja, volgende') || btn.value.includes('Ja, vol'))) ||
+    (btn.textContent && (btn.textContent.includes('Ja, volgende') || btn.textContent.includes('Ja, vol')))
+  );
+
+  // Debug logging
+  if (hasMaatregelenDialog || hasJaVolgendeButton) {
+    console.log('📋 Confirmation dialog check - Dialog text:', hasMaatregelenDialog, 'Button:', hasJaVolgendeButton);
+  }
+
+  if (hasMaatregelenDialog && hasJaVolgendeButton) {
+    console.log('🎯 Detected: measure_confirmation_dialog - Maatregelen confirmation dialog');
+    return 'measure_confirmation_dialog';
+  }
+
+  // Step 18.5: Maatregel toegevoegd page (after file upload) - CHECK THIS AFTER dialog check
   // Check for the page that shows the added measure with "Wijzig" and "Verwijder" buttons
   // Look for specific measure table with Meldcode column
   const hasMeldcodeInTable = Array.from(document.querySelectorAll('td, th')).some(cell =>
@@ -1535,20 +1555,6 @@ function detectCurrentStep() {
     return 'vervolgstap_modal';
   }
 
-  // Step 18.6: "Zijn alle maatregelen toegevoegd?" confirmation dialog
-  const hasMaatregelenDialog = Array.from(document.querySelectorAll('*')).some(el =>
-    el.textContent && el.textContent.includes('Zijn alle maatregelen toegevoegd')
-  );
-  const hasJaVolgendeButton = Array.from(document.querySelectorAll('input, button')).some(btn =>
-    (btn.value && btn.value.includes('Ja, volgende')) ||
-    (btn.textContent && btn.textContent.includes('Ja, volgende'))
-  );
-
-  if (hasMaatregelenDialog && hasJaVolgendeButton) {
-    console.log('🎯 Detected: measure_confirmation_dialog - Maatregelen confirmation dialog');
-    return 'measure_confirmation_dialog';
-  }
-
   // Step 18.7: Final measure overview with subsidy amount
   const hasVoorlopigSubsidiebedrag = Array.from(document.querySelectorAll('*')).some(el =>
     el.textContent && el.textContent.includes('Voorlopig subsidiebedrag')
@@ -1563,7 +1569,9 @@ function detectCurrentStep() {
   }
 
   // Step 18: File upload page
-  if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.0\\.btn_ToevoegenBijlage')) {
+  // BUT NOT if the confirmation dialog is visible (dialog takes precedence)
+  const hasFileUploadButton = document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.0\\.btn_ToevoegenBijlage');
+  if (hasFileUploadButton && !hasMaatregelenDialog) {
     console.log('🎯 Detected: meldcode_selected - File upload page');
     return 'meldcode_selected';
   }
@@ -1867,10 +1875,24 @@ async function startFullAutomation(config) {
         return; // Stop hier
       }
     } else if (detectedStep !== 'unknown' && detectedStep !== 'start') {
-      // Beide hebben waarden - vertrouw detectie als het niet 'start' is (veelvoorkomende false positive)
-      currentStep = detectedStep;
-      sessionStorage.setItem('automationStep', detectedStep);
-      console.log('✅ Updated to detected step:', detectedStep);
+      // Check if session step is a "transition step" (ends with _clicked)
+      // These are special steps set after clicking a button, and should not be overwritten
+      // until the next handler has had a chance to run
+      const isTransitionStep = sessionStep && (
+        sessionStep.endsWith('_clicked') ||
+        sessionStep === 'measure_confirmed'
+      );
+
+      if (isTransitionStep) {
+        // Keep the transition step, don't override with detection
+        console.log('🔒 Keeping transition step:', sessionStep, '(detected:', detectedStep + ')');
+        currentStep = sessionStep;
+      } else {
+        // Normal case: beide hebben waarden - vertrouw detectie als het niet 'start' is
+        currentStep = detectedStep;
+        sessionStorage.setItem('automationStep', detectedStep);
+        console.log('✅ Updated to detected step:', detectedStep);
+      }
     } else {
       // Detectie mislukt of retourneerde 'start' - vertrouw sessie
       console.log('⚠️ Detection unclear, trusting session storage:', sessionStep);
@@ -2980,10 +3002,13 @@ async function startFullAutomation(config) {
       if (volgendeBtn) {
         await clickElement(volgendeBtn);
       }
-      sessionStorage.setItem('automationStep', 'meldcode_selected');
+
+      // Don't set step immediately - let detection find the right next step
+      // (could be confirmation dialog or directly to file upload)
+      sessionStorage.setItem('automationStep', 'meldcode_clicked');
 
       // Continue automation after meldcode selection (break call chain to prevent memory buildup)
-      unthrottledDelay(1500).then(() => startFullAutomation(config));
+      unthrottledDelay(2000).then(() => startFullAutomation(config));
       return;
     }
 
@@ -2996,7 +3021,8 @@ async function startFullAutomation(config) {
     // 2. Wacht op modal
     // 3. Upload bestand via file input
     // 4. Wacht op upload voltooiing
-    if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.0\\.btn_ToevoegenBijlage') && currentStep === 'meldcode_selected') {
+    if ((currentStep === 'meldcode_selected' || currentStep === 'meldcode_clicked' || currentStep === 'measure_confirmed') &&
+        detectedStep === 'meldcode_selected') {
       console.log('Step 18: File upload page');
       updateStatus('Documenten uploaden', '18 - Documenten Uploaden', detectedStep);
 
@@ -3187,7 +3213,9 @@ async function startFullAutomation(config) {
 
     // Step 18.5: Measure overview page - "Maatregel toegevoegd" page with Wijzig/Verwijder buttons
     // This runs when we detect the measure overview page OR when we forced the step after vervolgstap modal
-    if (currentStep === 'measure_overview' || detectedStep === 'measure_overview') {
+    // BUT NOT if we already clicked Volgende (measure_overview_clicked)
+    if ((currentStep === 'measure_overview' || detectedStep === 'measure_overview') &&
+        currentStep !== 'measure_overview_clicked') {
       console.log('Step 18.5: On measure overview page, looking for Volgende button');
       updateStatus('Doorgaan vanaf maatregeloverzicht', '18.5 - Maatregeloverzicht', detectedStep);
 
@@ -3228,7 +3256,9 @@ async function startFullAutomation(config) {
     }
 
     // Step 18.6: "Zijn alle maatregelen toegevoegd?" confirmation dialog
-    if (currentStep === 'measure_overview_clicked' || detectedStep === 'measure_confirmation_dialog') {
+    if (currentStep === 'measure_overview_clicked' ||
+        currentStep === 'meldcode_clicked' ||
+        detectedStep === 'measure_confirmation_dialog') {
       console.log('Step 18.6: Checking for measure confirmation dialog');
 
       // Check if the dialog is present
