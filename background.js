@@ -45,30 +45,52 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Zoek de momenteel actieve tab in het huidige venster
     chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
       const currentTab = tabs[0];
+      if (!currentTab) {
+        console.error('❌ Geen actieve tab gevonden om automatisering te starten');
+        return;
+      }
 
-      // Stuur een bericht naar het content script in de actieve tab
-      // Dit bericht bevat de actie en de configuratie voor de automatisering
-      chrome.tabs.sendMessage(currentTab.id, {
-        action: 'startAutomation',
-        config: request.config
-      }, (response) => {
+      const configKey = `automation_config_${currentTab.id}`;
+
+      let configToStore;
+      try {
+        configToStore = JSON.parse(JSON.stringify(request.config));
+      } catch (error) {
+        console.warn('⚠️ Kon config niet clonen, gebruik directe referentie:', error);
+        configToStore = request.config;
+      }
+
+      chrome.storage.local.set({ [configKey]: configToStore }, () => {
         if (chrome.runtime.lastError) {
-          // Er is een fout opgetreden - waarschijnlijk is het content script niet geladen
-          // Probeer het content script handmatig te injecteren
-          chrome.scripting.executeScript({
-            target: { tabId: currentTab.id },
-            files: ['content.js']
-          }, () => {
-            // Wacht 500ms om het script de kans te geven om te initialiseren
-            // Stuur dan het bericht opnieuw
-            setTimeout(() => {
-              chrome.tabs.sendMessage(currentTab.id, {
-                action: 'startAutomation',
-                config: request.config
-              });
-            }, 500);
-          });
+          console.error('❌ Fout bij opslaan automatiseringsconfiguratie:', chrome.runtime.lastError.message);
+          return;
         }
+
+        const payload = {
+          action: 'startAutomation',
+          configKey,
+          tabId: currentTab.id,
+          config: request.config // fallback/backwards-compatibility
+        };
+
+        // Stuur een bericht naar het content script in de actieve tab
+        // Dit bericht bevat de actie en een verwijzing naar de configuratie
+        chrome.tabs.sendMessage(currentTab.id, payload, (response) => {
+          if (chrome.runtime.lastError) {
+            // Er is een fout opgetreden - waarschijnlijk is het content script niet geladen
+            // Probeer het content script handmatig te injecteren
+            chrome.scripting.executeScript({
+              target: { tabId: currentTab.id },
+              files: ['content.js']
+            }, () => {
+              // Wacht 500ms om het script de kans te geven om te initialiseren
+              // Stuur dan het bericht opnieuw
+              setTimeout(() => {
+                chrome.tabs.sendMessage(currentTab.id, payload);
+              }, 500);
+            });
+          }
+        });
       });
     });
 

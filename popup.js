@@ -197,9 +197,18 @@ async function cleanupClosedTabsData() {
     const keysToRemove = [];
 
     for (const key in storage) {
-      if (key.startsWith('formData_tab_') || key.startsWith('documents_tab_')) {
-        const tabId = parseInt(key.replace('formData_tab_', '').replace('documents_tab_', ''));
-        if (!openTabIds.has(tabId)) {
+      let tabIdString = null;
+      if (key.startsWith('formData_tab_')) {
+        tabIdString = key.replace('formData_tab_', '');
+      } else if (key.startsWith('documents_tab_')) {
+        tabIdString = key.replace('documents_tab_', '');
+      } else if (key.startsWith('automation_config_')) {
+        tabIdString = key.replace('automation_config_', '');
+      }
+
+      if (tabIdString !== null) {
+        const tabId = parseInt(tabIdString, 10);
+        if (!Number.isNaN(tabId) && !openTabIds.has(tabId)) {
           keysToRemove.push(key);
         }
       }

@@ -20,7 +20,7 @@
  * - Script detecteert huidige stap in het proces
  * - Vult formuliervelden in, klikt op knoppen, upload bestanden
  * - Navigeert door alle ~20 stappen tot finale indiening
- * - Gebruiker kan pauzeren, hervatten of stoppen via status paneel
+ * - Gebruiker kan de automatisering op elk moment stoppen via het status paneel
  *
  * @author Chrome Extension
  * @version 1.0
@@ -37,14 +37,8 @@
 let automationStopped = false;
 
 /**
- * Globale vlag om bij te houden of de automatisering is gepauzeerd door de gebruiker.
- * Wanneer true, wacht de automatisering tot de gebruiker op "Hervat" klikt.
- */
-let automationPaused = false;
-
-/**
  * Array om alle actieve timeouts bij te houden zodat we ze kunnen annuleren
- * wanneer de gebruiker pauzeert of stopt. Voorkomt zombie-timers.
+ * wanneer de gebruiker stopt. Voorkomt zombie-timers.
  */
 let activeTimeouts = [];
 
@@ -74,12 +68,12 @@ document.addEventListener('visibilitychange', () => {
 
 /**
  * Loop detectie: houdt bij hoeveel keer dezelfde stap is uitgevoerd.
- * Als een stap te vaak wordt herhaald, pauzeert de automatisering automatisch
+ * Als een stap te vaak wordt herhaald, stopt de automatisering automatisch
  * om een oneindige loop te voorkomen.
  */
 let lastExecutedStep = null;
 let stepExecutionCount = 0;
-const MAX_STEP_RETRIES = 2; // Auto-pauze na 2 pogingen op dezelfde stap
+const MAX_STEP_RETRIES = 2; // Automatisch stoppen na 2 pogingen op dezelfde stap
 
 /**
  * Audio object voor keep-alive functionaliteit.
@@ -331,7 +325,7 @@ function unthrottledDelay(ms) {
       });
     }
 
-    function scheduleNext(paused = false, remainingOverride = null) {
+    function scheduleNext(remainingOverride = null) {
       cleanupTimers();
 
       const elapsed = performance.now() - startTime;
@@ -344,15 +338,13 @@ function unthrottledDelay(ms) {
         return;
       }
 
-      if (!document.hidden && !paused) {
+      if (!document.hidden) {
         rafId = requestAnimationFrame(tick);
         return;
       }
 
       const MAX_BACKGROUND_DELAY = 10000;
-      const delay = paused
-        ? Math.min(200, remaining)
-        : Math.min(remaining, MAX_BACKGROUND_DELAY);
+      const delay = Math.min(remaining, MAX_BACKGROUND_DELAY);
 
       if (delay <= 0) {
         Promise.resolve().then(tick);
@@ -373,12 +365,12 @@ function unthrottledDelay(ms) {
       if (document.hidden) {
         if (rafId !== null) {
           console.log(`👀 Visibility changed to hidden - switching RAF -> background delay (remaining: ${Math.round(remaining)}ms)`);
-          scheduleNext(false, remaining);
+          scheduleNext(remaining);
         }
       } else {
         if (timeoutId !== null || cancelBackgroundDelay) {
           console.log(`👀 Visibility changed to visible - switching background delay -> RAF (remaining: ${Math.round(remaining)}ms)`);
-          scheduleNext(false, remaining);
+          scheduleNext(remaining);
         }
       }
     }
@@ -392,19 +384,13 @@ function unthrottledDelay(ms) {
 
       const elapsed = performance.now() - startTime;
 
-      if (automationPaused) {
-        const remaining = Math.max(0, ms - elapsed);
-        scheduleNext(true, remaining);
-        return;
-      }
-
       if (elapsed >= ms) {
         settleSuccess();
         return;
       }
 
       const remaining = ms - elapsed;
-      scheduleNext(false, remaining);
+      scheduleNext(remaining);
     }
 
     console.log(`⏱️ Starting unthrottledDelay for ${ms}ms (tab hidden: ${document.hidden})`);
@@ -413,7 +399,7 @@ function unthrottledDelay(ms) {
       visibilityListenerAdded = true;
     }
 
-    scheduleNext(false, ms);
+    scheduleNext(ms);
   });
 }
 
@@ -423,7 +409,7 @@ function unthrottledDelay(ms) {
 
 /**
  * Creëert een timeout die wordt bijgehouden in de activeTimeouts array.
- * Hierdoor kunnen we alle timeouts annuleren wanneer de gebruiker pauzeert of stopt.
+ * Hierdoor kunnen we alle timeouts annuleren wanneer de gebruiker stopt.
  *
  * @param {Function} callback - De functie die na de delay wordt uitgevoerd
  * @param {number} delay - Vertraging in milliseconden
@@ -449,7 +435,7 @@ function createTimeout(callback, delay) {
 
 /**
  * Wist alle actieve timeouts en leegt de array.
- * Wordt aangeroepen wanneer de gebruiker de automatisering pauzeert of stopt.
+ * Wordt aangeroepen wanneer de gebruiker de automatisering stopt.
  */
 function clearAllTimeouts() {
   console.log(`Clearing ${activeTimeouts.length} active timeouts`);
@@ -467,7 +453,7 @@ function clearAllTimeouts() {
  * - Huidige status van de automatisering
  * - Gedetecteerde stap
  * - Configuratiegegevens (inklapbaar)
- * - Bedieningsknoppen (Pauze, Hervat, Stop)
+ * - Stopknop om de automatisering direct te beëindigen
  *
  * Het paneel blijft zichtbaar tijdens het hele automatiseringsproces en
  * geeft de gebruiker controle over de automatisering.
@@ -502,8 +488,6 @@ function createStatusPanel() {
       </div>
 
       <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-        <button id="pause-automation" style="background: #ff9800; color: white; border: none; padding: 10px 16px; border-radius: 12px; cursor: pointer; font-size: 13px; font-weight: 600; flex: 1; transition: all 0.2s;">⏸ Pauze</button>
-        <button id="continue-automation" style="background: #FFC012; color: white; border: none; padding: 10px 16px; border-radius: 12px; cursor: pointer; font-size: 13px; font-weight: 600; flex: 1; display: none; transition: all 0.2s;">▶ Hervat</button>
         <button id="stop-automation" style="background: #dc3545; color: white; border: none; padding: 10px 16px; border-radius: 12px; cursor: pointer; font-size: 13px; font-weight: 600; flex: 1; transition: all 0.2s;">⏹ Stop</button>
       </div>
     </div>
@@ -516,16 +500,6 @@ function createStatusPanel() {
     #toggle-config-data:hover {
       background: #d0ebff !important;
       transform: scale(1.05);
-    }
-    #pause-automation:hover {
-      background: #f59f00 !important;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 8px rgba(245, 159, 0, 0.3);
-    }
-    #continue-automation:hover {
-      background: #f0b200 !important;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 8px rgba(255, 192, 18, 0.3);
     }
     #stop-automation:hover {
       background: #c92a2a !important;
@@ -638,72 +612,6 @@ function createStatusPanel() {
   });
 
   // -------------------------------------------------------------------------
-  // Event Handler: Pauze knop
-  // -------------------------------------------------------------------------
-  // Pauzeert de automatisering. Alle actieve timeouts worden gewist en de
-  // automatisering stopt totdat de gebruiker op "Hervat" klikt.
-  document.getElementById('pause-automation').addEventListener('click', () => {
-    console.log('⏸ Pause automation clicked');
-    automationPaused = true;
-
-    // Stop alle actieve timeouts (maar behoud de array voor status tracking)
-    console.log(`⏸ Pausing - clearing ${activeTimeouts.length} active timeouts`);
-    activeTimeouts.forEach(timeoutId => clearTimeout(timeoutId));
-    activeTimeouts = [];
-
-    // Update UI - verberg pauze knop, toon hervat knop
-    document.getElementById('pause-automation').style.display = 'none';
-    document.getElementById('continue-automation').style.display = 'block';
-
-    updateStatus('⏸ Gepauzeerd - klik Hervat om door te gaan', 'GEPAUZEERD');
-    console.log('✅ Automation paused - all pending actions stopped. Click Hervat to continue from current step.');
-  });
-
-  // -------------------------------------------------------------------------
-  // Event Handler: Hervat/Doorgaan knop
-  // -------------------------------------------------------------------------
-  // Hervat de automatisering na een pauze of handmatige interventie.
-  // Reset loop detectie tellers omdat de gebruiker handmatig heeft ingegrepen.
-  document.getElementById('continue-automation').addEventListener('click', () => {
-    const config = JSON.parse(sessionStorage.getItem('automationConfig') || '{}');
-
-    // Als gepauzeerd, hervat de automatisering
-    if (automationPaused) {
-      console.log('▶ Resume automation clicked');
-      automationPaused = false;
-
-      // Reset loop detectie tellers na hervatten (gebruiker heeft handmatig ingegrepen)
-      lastExecutedStep = null;
-      stepExecutionCount = 0;
-      console.log('🔄 Loop detection counters reset after manual intervention');
-
-      // Update UI - toon pauze knop, verberg hervat knop
-      document.getElementById('pause-automation').style.display = 'block';
-      document.getElementById('continue-automation').style.display = 'none';
-
-      updateStatus('▶ Hervatten...', 'Hervatten');
-      startFullAutomation(config);
-      return;
-    }
-
-    // Handmatig doorgaan (niet vanuit pauze)
-    console.log('🔄 Manual continue clicked, resuming automation');
-
-    // Controleer of meldcode modal open is en forceer stap naar meldcode_lookup_opened
-    const modalOpen = Array.from(document.querySelectorAll('*')).some(el =>
-      el.textContent && el.textContent.includes('Selecteer hier uw keuze')
-    );
-
-    if (modalOpen) {
-      console.log('✅ Meldcode modal detected, setting step to meldcode_lookup_opened');
-      sessionStorage.setItem('automationStep', 'meldcode_lookup_opened');
-    }
-
-    updateStatus('Automatisering hervatten...', 'Doorgaan');
-    startFullAutomation(config);
-  });
-
-  // -------------------------------------------------------------------------
   // Event Handler: Stop knop
   // -------------------------------------------------------------------------
   // Stopt de automatisering volledig. Wist alle timeouts, reset alle vlaggen,
@@ -725,9 +633,8 @@ function createStatusPanel() {
       console.log('🔒 Panel locked - removing...');
     }
 
-    // Zet globale vlaggen om automatisering te stoppen
+    // Zet globale vlag om automatisering te stoppen
     automationStopped = true;
-    automationPaused = false;
 
     // Reset loop detectie tellers
     lastExecutedStep = null;
@@ -796,7 +703,8 @@ function createStatusPanel() {
     }
 
     // Verwijder het paneel volledig na korte delay voor visuele feedback
-    unthrottledDelay(100).then(() => {
+    // Use regular setTimeout instead of unthrottledDelay because automationStopped is true
+    setTimeout(() => {
       const finalPanel = document.getElementById('isde-automation-panel');
       if (finalPanel) {
         finalPanel.remove();
@@ -805,9 +713,7 @@ function createStatusPanel() {
       console.log('❌ ========================================');
       console.log('❌ AUTOMATION STOPPED COMPLETELY');
       console.log('❌ ========================================');
-    }).catch(() => {
-      // Ignore errors during cleanup
-    });
+    }, 100);
   });
 }
 
@@ -830,83 +736,111 @@ function updateStatus(message, step, detectedStep) {
   }
 }
 
-// ============================================================================
-// SECTIE 4: MESSAGE LISTENER VOOR COMMUNICATIE MET POPUP/BACKGROUND
-// ============================================================================
+function cloneAutomationConfig(config) {
+  if (!config) {
+    return null;
+  }
+  try {
+    return JSON.parse(JSON.stringify(config));
+  } catch (error) {
+    console.warn('⚠️ Failed to clone automation config, falling back to structuredClone:', error);
+    if (typeof structuredClone === 'function') {
+      try {
+        return structuredClone(config);
+      } catch (cloneError) {
+        console.warn('⚠️ structuredClone fallback failed:', cloneError);
+      }
+    }
+    return config;
+  }
+}
 
-/**
- * Luistert naar berichten van de popup of background script.
- * Ondersteunde acties:
- * - 'startAutomation': Start de volledige automatisering met de meegegeven config
- * - 'fillCurrentPage': Vult alleen de huidige pagina (voor testen)
- *
- * Bij 'startAutomation':
- * 1. Reset alle vlaggen en timeouts
- * 2. Creëert status paneel
- * 3. Haalt bestandsgegevens op uit chrome.storage.local
- * 4. Start de automatisering loop
- */
-chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
-  if (request.action === 'startAutomation') {
-    console.log('Starting automation with config:', request.config);
-    // Reset vlaggen bij het starten van nieuwe automatisering
-    automationStopped = false;
-    automationPaused = false;
-    // Wis persistent stop flag - nieuwe automatisering start
-    sessionStorage.removeItem('automationStoppedByUser');
-    // Reset loop detectie tellers
-    lastExecutedStep = null;
-    stepExecutionCount = 0;
-    // Wis alle wachtende timeouts van vorige runs
-    clearAllTimeouts();
+async function resolveAutomationConfigFromRequest(request) {
+  // Voorkeursroute: laad config via sleutel uit chrome.storage.local (tab-specifiek)
+  if (request.configKey) {
+    console.log('🔐 Loading automation config from storage for key:', request.configKey);
+    const result = await chrome.storage.local.get(request.configKey);
+    const storedConfig = result[request.configKey];
 
-    // Detecteer huidige pagina EERST (voordat we iets wissen)
-    const currentDetectedStep = detectCurrentStep();
-    console.log('🎯 === PAGE DETECTION RESULT ===');
-    console.log('Detected step:', currentDetectedStep);
-
-    // WIS OUDE RECOVERY DATA - gebruiker start VERSE automatisering
-    const recoveryKey = `automation_recovery_${currentTabId}`;
-    chrome.storage.local.remove(recoveryKey, () => {
-      console.log(`🧹 Oude recovery data verwijderd voor tab ${currentTabId} (verse start)`);
-    });
-
-    // Sla nieuwe config op IN SESSIONSTORAGE VOORDAT we oude data wissen
-    // Dit voorkomt dat recovery modal verschijnt bij page navigation
-    sessionStorage.setItem('automationConfig', JSON.stringify(request.config));
-
-    // Als we op een bekende pagina zijn (niet start/unknown), begin daar
-    if (currentDetectedStep !== 'start' && currentDetectedStep !== 'unknown') {
-      console.log('✅ Starting automation from CURRENT page:', currentDetectedStep);
-      sessionStorage.setItem('automationStep', currentDetectedStep);
-      updateStatus(`Automatisering gestart vanaf: ${currentDetectedStep}`, 'Detectie succesvol');
-    } else if (currentDetectedStep === 'start') {
-      console.log('✅ Starting automation from START page');
-      sessionStorage.setItem('automationStep', 'start');
-      updateStatus('Automatisering gestart vanaf startpagina', 'Begin');
-    } else {
-      console.error('❌ COULD NOT DETECT CURRENT PAGE - cannot start automation');
-      console.error('Please navigate to a recognized page or the start page');
-
-      updateStatus(
-        '⚠️ Kan huidige pagina niet herkennen. Navigeer naar een bekende pagina of de startpagina en probeer opnieuw.',
-        'DETECTIE MISLUKT'
-      );
-
-      return; // Stop - start automatisering niet
+    if (!storedConfig) {
+      throw new Error('Geen automatiseringsconfiguratie gevonden voor dit tabblad.');
     }
 
-    console.log('Cleared old automation state, starting fresh');
+    // Ruim tijdelijke opslag op nu de config is opgehaald
+    chrome.storage.local.remove(request.configKey);
+    console.log('🧹 Temporary automation config removed for key:', request.configKey);
+    return cloneAutomationConfig(storedConfig);
+  }
 
-    // Start audio keep-alive om tab throttling te voorkomen
-    startKeepAlive();
+  if (request.config) {
+    return cloneAutomationConfig(request.config);
+  }
 
-    createStatusPanel();
-    updateStatus('Automatisering gestart', 'Initialiseren');
+  throw new Error('Geen automatiseringsconfiguratie ontvangen.');
+}
 
-    // Toon belangrijke waarschuwing: houd tab actief
-    const initialWarning = document.createElement('div');
-    initialWarning.style.cssText = `
+function startAutomationWithConfig(config) {
+  console.log('Starting automation with config:', config);
+  // Reset vlag bij het starten van nieuwe automatisering
+  automationStopped = false;
+  // Wis persistent stop flag - nieuwe automatisering start
+  sessionStorage.removeItem('automationStoppedByUser');
+  // Reset loop detectie tellers
+  lastExecutedStep = null;
+  stepExecutionCount = 0;
+  // Wis alle wachtende timeouts van vorige runs
+  clearAllTimeouts();
+
+  // Detecteer huidige pagina EERST (voordat we iets wissen)
+  const currentDetectedStep = detectCurrentStep();
+  console.log('🎯 === PAGE DETECTION RESULT ===');
+  console.log('Detected step:', currentDetectedStep);
+
+  // WIS OUDE RECOVERY DATA - gebruiker start VERSE automatisering
+  const recoveryKey = `automation_recovery_${currentTabId}`;
+  chrome.storage.local.remove(recoveryKey, () => {
+    console.log(`🧹 Oude recovery data verwijderd voor tab ${currentTabId} (verse start)`);
+  });
+
+  // Sla nieuwe config op IN SESSIONSTORAGE VOORDAT we oude data wissen
+  // Dit voorkomt dat recovery modal verschijnt bij page navigation
+  sessionStorage.setItem('automationConfig', JSON.stringify(config));
+
+  // Als we op een bekende pagina zijn (niet start/unknown), begin daar
+  if (currentDetectedStep !== 'start' && currentDetectedStep !== 'unknown') {
+    console.log('✅ Starting automation from CURRENT page:', currentDetectedStep);
+    sessionStorage.setItem('automationStep', currentDetectedStep);
+    updateStatus(`Automatisering gestart vanaf: ${currentDetectedStep}`, 'Detectie succesvol');
+  } else if (currentDetectedStep === 'start') {
+    console.log('✅ Starting automation from START page');
+    sessionStorage.setItem('automationStep', 'start');
+    updateStatus('Automatisering gestart vanaf startpagina', 'Begin');
+  } else {
+    console.error('❌ COULD NOT DETECT CURRENT PAGE - cannot start automation');
+    console.error('Please navigate to a recognized page or the start page');
+
+    updateStatus(
+      '⚠️ Kan huidige pagina niet herkennen. Navigeer naar een bekende pagina of de startpagina en probeer opnieuw.',
+      'DETECTIE MISLUKT'
+    );
+
+    automationStopped = true;
+    sessionStorage.removeItem('automationConfig');
+
+    return false; // Stop - start automatisering niet
+  }
+
+  console.log('Cleared old automation state, starting fresh');
+
+  // Start audio keep-alive om tab throttling te voorkomen
+  startKeepAlive();
+
+  createStatusPanel();
+  updateStatus('Automatisering gestart', 'Initialiseren');
+
+  // Toon belangrijke waarschuwing: houd tab actief
+  const initialWarning = document.createElement('div');
+  initialWarning.style.cssText = `
       position: fixed;
       top: 80px;
       right: 20px;
@@ -921,63 +855,92 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
       box-shadow: 0 4px 12px rgba(0,0,0,0.15);
       line-height: 1.5;
     `;
-    initialWarning.innerHTML = `
+  initialWarning.innerHTML = `
       <strong>✅ Multi-tab ondersteuning actief!</strong><br>
       Dit tabblad kan op de achtergrond draaien zonder vertraging.
       Je kunt <strong>meerdere tabs tegelijk</strong> laten runnen.
     `;
-    document.body.appendChild(initialWarning);
+  document.body.appendChild(initialWarning);
 
-    // Verwijder waarschuwing na 8 seconden
-    unthrottledDelay(8000).then(() => {
-      initialWarning.remove();
-    }).catch(() => {
-      // Ignore errors during banner removal
+  // Verwijder waarschuwing na 8 seconden
+  unthrottledDelay(8000).then(() => {
+    initialWarning.remove();
+  }).catch(() => {
+    // Ignore errors tijdens het verwijderen van de banner
+  });
+
+  // Haal bestandsgegevens op uit chrome.storage.local als er keys zijn opgegeven
+  // Dit is nodig omdat bestanden niet direct via messages kunnen worden verzonden
+  const filesToRetrieve = [];
+  if (config.betaalbewijsKey) filesToRetrieve.push(config.betaalbewijsKey);
+  if (config.factuurKey) filesToRetrieve.push(config.factuurKey);
+  if (config.machtigingsbewijsKey) filesToRetrieve.push(config.machtigingsbewijsKey);
+
+  if (filesToRetrieve.length > 0) {
+    console.log('📥 Retrieving files from chrome.storage.local:', filesToRetrieve);
+    chrome.storage.local.get(filesToRetrieve, (result) => {
+      // Vervang keys met daadwerkelijke bestandsgegevens
+      if (config.betaalbewijsKey) {
+        config.betaalbewijs = result[config.betaalbewijsKey];
+        delete config.betaalbewijsKey;
+      }
+      if (config.factuurKey) {
+        config.factuur = result[config.factuurKey];
+        delete config.factuurKey;
+      }
+      if (config.machtigingsbewijsKey) {
+        config.machtigingsbewijs = result[config.machtigingsbewijsKey];
+        delete config.machtigingsbewijsKey;
+      }
+
+      console.log('✅ Files retrieved successfully for session:', config.sessionId);
+      startFullAutomation(config);
+
+      // Ruim opslag op nadat automatisering klaar is (60 seconden is voldoende)
+      // Elk tabblad heeft een unieke sessie ID, dus dit verwijdert alleen bestanden van DIT tabblad
+      unthrottledDelay(60000).then(() => {
+        chrome.storage.local.remove(filesToRetrieve, () => {
+          console.log('🧹 Cleaned up temporary files from storage for session:', config.sessionId);
+        });
+      }).catch(() => {
+        // Ignore errors tijdens cleanup - opslag wordt uiteindelijk opgeschoond
+      }); // 60 seconden - genoeg tijd voor bestand upload stap
     });
+  } else {
+    startFullAutomation(config);
+  }
 
-    // Haal bestandsgegevens op uit chrome.storage.local als er keys zijn opgegeven
-    // Dit is nodig omdat bestanden niet direct via messages kunnen worden verzonden
-    const filesToRetrieve = [];
-    if (request.config.betaalbewijsKey) filesToRetrieve.push(request.config.betaalbewijsKey);
-    if (request.config.factuurKey) filesToRetrieve.push(request.config.factuurKey);
-    if (request.config.machtigingsbewijsKey) filesToRetrieve.push(request.config.machtigingsbewijsKey);
+  return true;
+}
 
-    if (filesToRetrieve.length > 0) {
-      console.log('📥 Retrieving files from chrome.storage.local:', filesToRetrieve);
-      chrome.storage.local.get(filesToRetrieve, (result) => {
-        // Vervang keys met daadwerkelijke bestandsgegevens
-        if (request.config.betaalbewijsKey) {
-          request.config.betaalbewijs = result[request.config.betaalbewijsKey];
-          delete request.config.betaalbewijsKey;
+// ============================================================================
+// SECTIE 4: MESSAGE LISTENER VOOR COMMUNICATIE MET POPUP/BACKGROUND
+// ============================================================================
+
+/**
+ * Luistert naar berichten van de popup of background script.
+ * Ondersteunde acties:
+ * - 'startAutomation': Start de volledige automatisering met de configuratie voor deze tab
+ * - 'fillCurrentPage': Vult alleen de huidige pagina (voor testen)
+ */
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
+  if (request.action === 'startAutomation') {
+    (async () => {
+      try {
+        const config = await resolveAutomationConfigFromRequest(request);
+        const started = startAutomationWithConfig(config);
+        if (started === false) {
+          sendResponse({status: 'error', message: 'Huidige pagina wordt niet herkend; start de automatisering opnieuw vanaf een ondersteunde pagina.'});
+          return;
         }
-        if (request.config.factuurKey) {
-          request.config.factuur = result[request.config.factuurKey];
-          delete request.config.factuurKey;
-        }
-        if (request.config.machtigingsbewijsKey) {
-          request.config.machtigingsbewijs = result[request.config.machtigingsbewijsKey];
-          delete request.config.machtigingsbewijsKey;
-        }
-
-        console.log('✅ Files retrieved successfully for session:', request.config.sessionId);
-        startFullAutomation(request.config);
-
-        // Ruim opslag op nadat automatisering klaar is (60 seconden is voldoende)
-        // Elk tabblad heeft een unieke sessie ID, dus dit verwijdert alleen bestanden van DIT tabblad
-        unthrottledDelay(60000).then(() => {
-          chrome.storage.local.remove(filesToRetrieve, () => {
-            console.log('🧹 Cleaned up temporary files from storage for session:', request.config.sessionId);
-          });
-        }).catch(() => {
-          // Ignore errors during cleanup - storage will be cleared eventually
-        }); // 60 seconden - genoeg tijd voor bestand upload stap
-      });
-    } else {
-      startFullAutomation(request.config);
-    }
-
-    sendResponse({status: 'started'});
-    return false;
+        sendResponse({status: 'started'});
+      } catch (error) {
+        console.error('❌ Automatisering kon niet worden gestart:', error);
+        updateStatus(`❌ Start mislukt: ${error.message}`, 'FOUT');
+        sendResponse({status: 'error', message: error.message});
+      }
+    })();
+    return true;
   } else if (request.action === 'fillCurrentPage') {
     fillCurrentPage(request.config);
     sendResponse({status: 'success', message: 'Current page filled!'});
@@ -1005,13 +968,6 @@ function waitForElement(selector, timeout = 10000) {
       // CHECK: Stop flag
       if (automationStopped) {
         reject(new Error('Automation stopped'));
-        return;
-      }
-
-      // CHECK: Pause flag - wait but don't advance
-      if (automationPaused) {
-        await unthrottledDelay(100);
-        checkElement();
         return;
       }
 
@@ -1050,13 +1006,6 @@ function waitForElementByText(searchText, timeout = 10000) {
         return;
       }
 
-      // CHECK: Pause flag - wait but don't advance
-      if (automationPaused) {
-        await unthrottledDelay(100);
-        checkElement();
-        return;
-      }
-
       const links = document.querySelectorAll('a');
       for (let link of links) {
         if (link.textContent.includes(searchText) || link.innerText.includes(searchText)) {
@@ -1080,12 +1029,12 @@ function waitForElementByText(searchText, timeout = 10000) {
 /**
  * Klikt op een element met mensachtig gedrag.
  * Scrolt eerst het element in beeld, wacht even, en klikt dan.
- * Controleert voor en tijdens elke stap of de automatisering is gepauzeerd of gestopt.
+ * Controleert voor en tijdens elke stap of de automatisering is gestopt.
  *
  * @param {string|Element} selectorOrElement - CSS selector of het element zelf
  */
 async function clickElement(selectorOrElement) {
-  // Controleer of automatisering is gestopt (niet gepauzeerd - pauze wordt afgehandeld door delays)
+  // Controleer of automatisering is gestopt
   if (automationStopped) {
     console.log('❌ Click cancelled - automation stopped');
     return;
@@ -1138,7 +1087,7 @@ async function clickElement(selectorOrElement) {
 async function fillInput(selector, value) {
   if (!value) return;
 
-  // Controleer of automatisering is gestopt (niet gepauzeerd - pauze wordt afgehandeld door delays)
+  // Controleer of automatisering is gestopt
   if (automationStopped) {
     console.log('❌ Fill cancelled - automation stopped');
     return;
@@ -1780,7 +1729,7 @@ function detectCurrentStep() {
  * Volgt exact de opgenomen workflow door alle stappen heen.
  *
  * Werking:
- * 1. Controleert of automatisering gestopt/gepauzeerd is
+ * 1. Controleert of automatisering gestopt is
  * 2. Detecteert huidige stap via DOM analyse
  * 3. Vergelijkt met sessionStorage voor betrouwbaarheid
  * 4. Voert loop detectie uit om infinite loops te voorkomen
@@ -1790,19 +1739,18 @@ function detectCurrentStep() {
  *
  * Loop detectie:
  * - Houdt bij hoeveel keer dezelfde stap wordt uitgevoerd
- * - Pauzeert automatisch na MAX_STEP_RETRIES pogingen
+ * - Stopt automatisch na MAX_STEP_RETRIES pogingen
  * - Voorkomt infinite loops en vraagt om handmatige interventie
  *
- * Pauze/Stop mechanisme:
- * - Controleert voor elke actie of gebruiker heeft gepauzeerd/gestopt
- * - Stopt direct bij stop commando
- * - Wacht bij pauze tot gebruiker op "Hervat" klikt
+ * Stop mechanisme:
+ * - Controleert voor elke actie of gebruiker heeft gestopt
+ * - Stopt direct bij een stop commando
  *
  * @param {Object} config - Configuratie object met alle gebruikersgegevens en bestanden
  */
 async function startFullAutomation(config) {
   // -------------------------------------------------------------------------
-  // Kritische controles: stop en pauze
+  // Kritische controles: stop
   // -------------------------------------------------------------------------
   if (automationStopped) {
     console.log('❌ Automation stopped by user, not continuing');
@@ -1810,23 +1758,13 @@ async function startFullAutomation(config) {
     return;
   }
 
-  if (automationPaused) {
-    console.log('⏸ Automation paused by user, waiting for resume');
-    return;
-  }
-
   try {
     const currentUrl = window.location.href;
     console.log('Current URL:', currentUrl);
 
-    // Dubbele controle dat automatisering niet gestopt of gepauzeerd is
+    // Dubbele controle dat automatisering niet gestopt is
     if (automationStopped) {
       console.log('❌ Automation stopped during execution');
-      return;
-    }
-
-    if (automationPaused) {
-      console.log('⏸ Automation paused during execution');
       return;
     }
 
@@ -1854,23 +1792,17 @@ async function startFullAutomation(config) {
         sessionStorage.setItem('automationStep', 'start');
         console.log('✅ Detected start page, beginning from start');
       } else {
-        // Detectie faalde ('unknown') - pauzeer en vraag gebruiker
+        // Detectie faalde ('unknown') - stop en vraag gebruiker
         console.error('⚠️ CANNOT DETECT CURRENT PAGE');
         console.error('Session step:', sessionStep);
         console.error('Detected step:', detectedStep);
 
-        automationPaused = true;
+        automationStopped = true;
         updateStatus(
-          '⚠️ Kan huidige pagina niet herkennen. Klik op "Hervat" wanneer je op de juiste pagina bent, of begin vanaf de startpagina.',
+          '⚠️ Kan huidige pagina niet herkennen. Klik op "Stop" en begin opnieuw vanaf de juiste pagina.',
           'PAGINA DETECTIE MISLUKT',
           'unknown'
         );
-
-        // Toon pause/resume buttons
-        const pauseBtn = document.getElementById('pause-automation');
-        const resumeBtn = document.getElementById('continue-automation');
-        if (pauseBtn) pauseBtn.style.display = 'none';
-        if (resumeBtn) resumeBtn.style.display = 'block';
 
         return; // Stop hier
       }
@@ -1912,17 +1844,11 @@ async function startFullAutomation(config) {
       console.log(`⚠️ Loop detected: Step "${currentStep}" executed ${stepExecutionCount} times`);
 
       if (stepExecutionCount >= MAX_STEP_RETRIES) {
-        console.log('🛑 LOOP DETECTED: Same step executed too many times, auto-pausing for manual intervention');
-        automationPaused = true;
-
-        // Update UI om pauze status te tonen
-        const pauseBtn = document.getElementById('pause-automation');
-        const resumeBtn = document.getElementById('continue-automation');
-        if (pauseBtn) pauseBtn.style.display = 'none';
-        if (resumeBtn) resumeBtn.style.display = 'block';
+        console.log('🛑 LOOP DETECTED: Same step executed too many times, stopping automation');
+        automationStopped = true;
 
         updateStatus(
-          `⚠️ LOOP GEDETECTEERD: Stap "${currentStep}" wordt herhaald. Los dit handmatig op en klik op "Hervat" om door te gaan.`,
+          `⚠️ LOOP GEDETECTEERD: Stap "${currentStep}" wordt herhaald. Los dit handmatig op, klik op "Stop" en start opnieuw.`,
           'HANDMATIG INGRIJPEN VEREIST'
         );
 
@@ -2085,14 +2011,31 @@ async function startFullAutomation(config) {
             console.log('Found ISDE link by text content:', text.substring(0, 50));
             break;
           }
-        }
       }
+    }
 
-      if (isdeLink) {
-        console.log('Step 2: Clicking ISDE aanvragen link');
-        updateStatus('Klik op ISDE aanvragen link', '2 - ISDE Selectie', detectedStep);
-        await clickElement(isdeLink);
-        sessionStorage.setItem('automationStep', 'isde_selected');
+    // Strategy 5: Start formulier link (new navigation flow)
+    if (!isdeLink) {
+      const startFormLink = Array.from(document.querySelectorAll('a')).find(link => {
+        const text = (link.textContent || link.innerText || '').trim().toLowerCase();
+        return text === 'start formulier';
+      });
+
+      if (startFormLink) {
+        console.log('Found "Start formulier" link, clicking to open ISDE catalog');
+        await clickElement(startFormLink);
+
+        // Give the page a moment to load new content and then continue automation
+        unthrottledDelay(1500).then(() => startFullAutomation(config)).catch(() => {});
+        return;
+      }
+    }
+
+    if (isdeLink) {
+      console.log('Step 2: Clicking ISDE aanvragen link');
+      updateStatus('Klik op ISDE aanvragen link', '2 - ISDE Selectie', detectedStep);
+      await clickElement(isdeLink);
+      sessionStorage.setItem('automationStep', 'isde_selected');
         return;
       } else {
         console.log('ISDE link not found, may need manual intervention');
@@ -2553,7 +2496,7 @@ async function startFullAutomation(config) {
           if (err.offsetHeight > 0) console.log('  -', err.textContent.trim());
         });
         updateStatus('⚠️ Formulier bevat fouten - controleer handmatig', '10.5 - Validatiefout');
-        automationPaused = true;
+        automationStopped = true;
         return;
       }
 
@@ -2568,7 +2511,7 @@ async function startFullAutomation(config) {
       } else {
         console.error('❌ Could not find Volgende button');
         updateStatus('⚠️ Kan Volgende knop niet vinden', '10.5 - Handmatige actie');
-        automationPaused = true;
+        automationStopped = true;
       }
       return;
     }
@@ -2639,7 +2582,7 @@ async function startFullAutomation(config) {
         } else {
           console.error('❌ Could not find Volgende button!');
           updateStatus('⚠️ Kan Volgende knop niet vinden', '9 - Handmatige actie');
-          automationPaused = true;
+          automationStopped = true;
         }
         return;
       }
@@ -2672,7 +2615,7 @@ async function startFullAutomation(config) {
         } else {
           console.error('⚠️ Volgende button not found');
           updateStatus('Klik handmatig op Volgende', '11 - Handmatige actie');
-          automationPaused = true;
+          automationStopped = true;
         }
         return;
       }
@@ -3050,7 +2993,7 @@ async function startFullAutomation(config) {
         // Documents NOT uploaded AND files not in config (recovery scenario)
         console.log('⚠️ Documents not uploaded yet, but files are missing from config (recovery scenario)');
         updateStatus('Upload ontbrekende documenten handmatig', '18 - Handmatige upload vereist');
-        alert('Upload betaalbewijs en/of factuur handmatig, en klik daarna op Hervat.');
+        alert('Upload betaalbewijs en/of factuur handmatig, stop de automatisering en start daarna opnieuw.');
         return;
       }
 
@@ -3206,7 +3149,7 @@ async function startFullAutomation(config) {
         updateStatus('Klik handmatig op de button in de modal', '18.4 - Handmatige actie');
 
         // Auto-pause to prevent loop
-        automationPaused = true;
+        automationStopped = true;
         return;
       }
     }
@@ -3250,7 +3193,7 @@ async function startFullAutomation(config) {
         updateStatus('Klik handmatig op Volgende', '18.5 - Handmatige actie');
 
         // Pause to prevent loop
-        automationPaused = true;
+        automationStopped = true;
         return;
       }
     }
@@ -3609,7 +3552,7 @@ function attemptCrashRecovery() {
  * Logging blijft beschikbaar voor debugging doeleinden.
  */
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && !automationStopped && !automationPaused) {
+  if (document.hidden && !automationStopped) {
     console.log('ℹ️ Tab op achtergrond - maar audio keep-alive voorkomt throttling');
   } else if (!document.hidden) {
     console.log('ℹ️ Tab is weer actief');
@@ -3670,17 +3613,6 @@ window.addEventListener('load', async () => {
 
     // Recreate status panel after page load
     createStatusPanel();
-
-    // Check if paused
-    if (automationPaused) {
-      updateStatus('⏸ Gepauzeerd - klik Hervat om door te gaan', 'GEPAUZEERD');
-      // Update button visibility
-      if (document.getElementById('pause-automation')) {
-        document.getElementById('pause-automation').style.display = 'none';
-        document.getElementById('continue-automation').style.display = 'block';
-      }
-      return;
-    }
 
     updateStatus('Pagina geladen, automatisering doorgaan...', currentStep);
 
