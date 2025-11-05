@@ -210,13 +210,14 @@ function stopKeepAlive() {
 /**
  * Unthrottled delay functie die ook werkt in background tabs.
  *
- * PROBLEEM:
- * setTimeout wordt in background tabs vertraagd naar minimaal 1000ms door Chrome.
- * Dit maakt automatisering 10x langzamer wanneer tab niet actief is.
- *
  * OPLOSSING:
- * Gebruik requestAnimationFrame (RAF) voor korte delays. RAF wordt niet geThrottled
- * zolang de keep-alive audio/Web Lock actief is.
+ * Gebruik requestAnimationFrame (RAF) in combinatie met keep-alive systemen:
+ * - Web Locks API houdt tab "actief" voor browser
+ * - Silent audio loop voorkomt aggressive throttling
+ * - RAF loop zorgt voor accurate timing
+ *
+ * RAF werkt prima met deze keep-alive systemen actief.
+ * Web Workers kunnen niet gebruikt worden vanwege CSP restricties op de website.
  *
  * @param {number} ms - Aantal milliseconden om te wachten
  * @returns {Promise} Promise die resolved na de opgegeven tijd
@@ -244,7 +245,7 @@ function unthrottledDelay(ms) {
       if (elapsed >= ms) {
         resolve();
       } else {
-        // Gebruik RAF voor snelle, unthrottled timing
+        // Gebruik RAF voor timing (werkt met keep-alive systemen)
         requestAnimationFrame(checkTime);
       }
     };
@@ -265,7 +266,12 @@ function unthrottledDelay(ms) {
  * @param {number} delay - Vertraging in milliseconden
  * @returns {number} Het timeout ID
  */
+/**
+ * @deprecated Use unthrottledDelay().then() instead to avoid background tab throttling
+ * This function uses raw setTimeout which is throttled to 1000ms minimum in background tabs
+ */
 function createTimeout(callback, delay) {
+  console.warn('⚠️ createTimeout is deprecated - use unthrottledDelay().then() instead');
   const timeoutId = setTimeout(() => {
     // Verwijder van actieve timeouts wanneer deze wordt uitgevoerd
     const index = activeTimeouts.indexOf(timeoutId);
@@ -627,7 +633,7 @@ function createStatusPanel() {
     }
 
     // Verwijder het paneel volledig na korte delay voor visuele feedback
-    setTimeout(() => {
+    unthrottledDelay(100).then(() => {
       const finalPanel = document.getElementById('isde-automation-panel');
       if (finalPanel) {
         finalPanel.remove();
@@ -636,7 +642,9 @@ function createStatusPanel() {
       console.log('❌ ========================================');
       console.log('❌ AUTOMATION STOPPED COMPLETELY');
       console.log('❌ ========================================');
-    }, 100);
+    }).catch(() => {
+      // Ignore errors during cleanup
+    });
   });
 }
 
@@ -758,9 +766,11 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     document.body.appendChild(initialWarning);
 
     // Verwijder waarschuwing na 8 seconden
-    setTimeout(() => {
+    unthrottledDelay(8000).then(() => {
       initialWarning.remove();
-    }, 8000);
+    }).catch(() => {
+      // Ignore errors during banner removal
+    });
 
     // Haal bestandsgegevens op uit chrome.storage.local als er keys zijn opgegeven
     // Dit is nodig omdat bestanden niet direct via messages kunnen worden verzonden
@@ -791,11 +801,13 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 
         // Ruim opslag op nadat automatisering klaar is (60 seconden is voldoende)
         // Elk tabblad heeft een unieke sessie ID, dus dit verwijdert alleen bestanden van DIT tabblad
-        setTimeout(() => {
+        unthrottledDelay(60000).then(() => {
           chrome.storage.local.remove(filesToRetrieve, () => {
             console.log('🧹 Cleaned up temporary files from storage for session:', request.config.sessionId);
           });
-        }, 60000); // 60 seconden - genoeg tijd voor bestand upload stap
+        }).catch(() => {
+          // Ignore errors during cleanup - storage will be cleared eventually
+        }); // 60 seconden - genoeg tijd voor bestand upload stap
       });
     } else {
       startFullAutomation(request.config);
@@ -932,7 +944,7 @@ async function clickElement(selectorOrElement) {
 
   // Scroll element in beeld (mensachtig gedrag)
   element.scrollIntoView({behavior: 'smooth', block: 'center'});
-  await unthrottledDelay(500); // Delay zal pauzeren als automationPaused=true
+  await unthrottledDelay(500); // Mensachtig - robot detectie preventie
 
   // Laatste controle voor de klik
   if (automationStopped) {
@@ -942,7 +954,7 @@ async function clickElement(selectorOrElement) {
 
   // Voer de klik uit en wacht daarna
   element.click();
-  await unthrottledDelay(1000); // Delay zal pauzeren als automationPaused=true
+  await unthrottledDelay(1000); // Mensachtig - robot detectie preventie
 }
 
 /**
@@ -972,7 +984,7 @@ async function fillInput(selector, value) {
   // Wacht op het element en scroll in beeld
   const element = await waitForElement(selector);
   element.scrollIntoView({behavior: 'smooth', block: 'center'});
-  await unthrottledDelay(400 + Math.random() * 200); // Delay zal pauzeren als automationPaused=true
+  await unthrottledDelay(400 + Math.random() * 200); // Mensachtig - robot detectie preventie
 
   if (automationStopped) {
     console.log('❌ Fill cancelled - automation stopped');
@@ -981,7 +993,7 @@ async function fillInput(selector, value) {
 
   // Focus het veld eerst (mensachtig gedrag)
   element.focus();
-  await unthrottledDelay(250 + Math.random() * 150); // Delay zal pauzeren als automationPaused=true
+  await unthrottledDelay(250 + Math.random() * 150); // Mensachtig - robot detectie preventie
 
   if (automationStopped) {
     console.log('❌ Fill cancelled - automation stopped');
@@ -991,7 +1003,7 @@ async function fillInput(selector, value) {
   // Wis bestaande waarde eerst
   element.value = '';
   element.dispatchEvent(new Event('input', { bubbles: true }));
-  await unthrottledDelay(150 + Math.random() * 100); // Delay zal pauzeren als automationPaused=true
+  await unthrottledDelay(150 + Math.random() * 100); // Mensachtig - robot detectie preventie
 
   // Saniteer waarden op basis van veldtype
   let sanitizedValue = value;
@@ -1097,11 +1109,11 @@ async function fillInput(selector, value) {
   element.value = sanitizedValue;
   element.dispatchEvent(new Event('input', { bubbles: true }));
 
-  await unthrottledDelay(200 + Math.random() * 150);
+  await unthrottledDelay(200 + Math.random() * 150); // Mensachtig - robot detectie preventie
 
   element.dispatchEvent(new Event('change', { bubbles: true }));
 
-  await unthrottledDelay(150 + Math.random() * 100);
+  await unthrottledDelay(150 + Math.random() * 100); // Mensachtig - robot detectie preventie
 
   element.blur();
   await unthrottledDelay(300 + Math.random() * 200); // Wait after to let validation complete
@@ -1318,7 +1330,32 @@ function detectCurrentStep() {
     return 'final_confirmation';
   }
 
+  // Step 18.5: Maatregel toegevoegd page (after file upload) - CHECK THIS FIRST
+  // Check for the page that shows the added measure with "Wijzig" and "Verwijder" buttons
+  // Look for specific measure table with Meldcode column
+  const hasMeldcodeInTable = Array.from(document.querySelectorAll('td, th')).some(cell =>
+    cell.textContent && cell.textContent.trim() === 'Meldcode'
+  );
+
+  // Also check for the "Maatregel toevoegen" button (button to add another measure)
+  const hasMaatregelToevoegenButton = Array.from(document.querySelectorAll('input, button, a')).some(btn =>
+    (btn.value && btn.value.includes('Maatregel toevoegen')) ||
+    (btn.textContent && btn.textContent.trim() === 'Maatregel toevoegen')
+  );
+
+  // Check for exact "Wijzig" button (not "Wijzigen" which appears on other pages)
+  const hasExactWijzigButton = Array.from(document.querySelectorAll('input[type="submit"], input[type="button"]')).some(btn =>
+    btn.value && btn.value.trim() === 'Wijzig'
+  );
+
+  // If we're on measure overview page, detect it BEFORE vervolgstap_modal
+  if ((hasMeldcodeInTable && hasMaatregelToevoegenButton) || hasExactWijzigButton) {
+    console.log('🎯 Detected: measure_overview - Maatregel toegevoegd page');
+    return 'measure_overview';
+  }
+
   // Step 18.4: "Vervolgstap" modal after file upload
+  // ONLY detect this if we're NOT on the measure overview page
   const hasVervolgstapModal = Array.from(document.querySelectorAll('*')).some(el =>
     el.textContent && (
       el.textContent.includes('Vervolgstap') ||
@@ -1330,7 +1367,7 @@ function detectCurrentStep() {
     (btn.textContent && btn.textContent.includes('Kiezen'))
   );
 
-  if (hasVervolgstapModal && hasKiezenButton) {
+  if (hasVervolgstapModal && hasKiezenButton && !hasMeldcodeInTable) {
     console.log('🎯 Detected: vervolgstap_modal - Follow-up step modal after file upload');
     return 'vervolgstap_modal';
   }
@@ -1360,29 +1397,6 @@ function detectCurrentStep() {
   if ((hasVoorlopigSubsidiebedrag || hasAangevraagdeMaatregelen) && document.querySelector('#btnVolgendeTab')) {
     console.log('🎯 Detected: final_measure_overview - Final measure overview with subsidy amount');
     return 'final_measure_overview';
-  }
-
-  // Step 18.5: Maatregel toegevoegd page (after file upload)
-  // Check for the page that shows the added measure with "Wijzig" and "Verwijder" buttons
-  // Look for specific measure table with Meldcode column
-  const hasMeldcodeInTable = Array.from(document.querySelectorAll('td, th')).some(cell =>
-    cell.textContent && cell.textContent.trim() === 'Meldcode'
-  );
-
-  // Also check for the "Maatregel toevoegen" button (button to add another measure)
-  const hasMaatregelToevoegenButton = Array.from(document.querySelectorAll('input, button, a')).some(btn =>
-    (btn.value && btn.value.includes('Maatregel toevoegen')) ||
-    (btn.textContent && btn.textContent.trim() === 'Maatregel toevoegen')
-  );
-
-  // Check for exact "Wijzig" button (not "Wijzigen" which appears on other pages)
-  const hasExactWijzigButton = Array.from(document.querySelectorAll('input[type="submit"], input[type="button"]')).some(btn =>
-    btn.value && btn.value.trim() === 'Wijzig'
-  );
-
-  if ((hasMeldcodeInTable && hasMaatregelToevoegenButton) || hasExactWijzigButton) {
-    console.log('🎯 Detected: measure_overview - Maatregel toegevoegd page');
-    return 'measure_overview';
   }
 
   // Step 18: File upload page
@@ -1451,29 +1465,48 @@ function detectCurrentStep() {
     return 'bag_different_done';
   }
 
-  // Step 10.5: Installation address form (appears after BAG different)
-  // Check for "Kadaster gegevens" or "Installatieadres" section which is unique to this page
-  const hasKadasterSection = Array.from(document.querySelectorAll('*')).some(el =>
-    el.textContent && (
-      el.textContent.includes('Kadaster gegevens') ||
-      el.textContent.includes('Installatieadres')
-    )
-  );
-
-  // Also check for the specific page title or header
-  const hasInstallatieadresTitle = Array.from(document.querySelectorAll('h1, h2, h3, .page-title, [class*="title"]')).some(el =>
-    el.textContent && el.textContent.includes('Installatieadres')
-  );
-
-  if ((hasKadasterSection || hasInstallatieadresTitle) && document.querySelector('input[value="Volgende"]')) {
-    console.log('🎯 Detected: bag_address_form - Installation address form');
-    return 'bag_address_form';
+  // Step 10: BAG different page - Check this FIRST before bag_address_form
+  // This page has the BAGafwijkend_J radio button (Ja/Nee for address confirmation)
+  if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.BAGafwijkend_J')) {
+    // Additional check: make sure we're not on the "add measure" page
+    const hasAddMeasureButton = document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.addInvestering');
+    if (!hasAddMeasureButton) {
+      console.log('🎯 Detected: address_different_done - BAG confirmation page');
+      return 'address_different_done';
+    }
   }
 
-  // Step 10: BAG different checkbox
-  if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.BAGafwijkend_J')) {
-    console.log('🎯 Detected: address_different_done - BAG page');
-    return 'address_different_done';
+  // Step 10.6: Installation address confirmation page (can appear after various steps)
+  // This page asks "We hebben het onderstaande adres overgenomen als installatieadres, klopt dit?"
+  const hasInstallationAddressConfirmation = Array.from(document.querySelectorAll('*')).some(el =>
+    el.textContent &&
+    (el.textContent.includes('installatieadres van de maatregel') ||
+     el.textContent.includes('onderstaande adres overgenomen') ||
+     el.textContent.includes('Controleer uw installatieadres'))
+  );
+
+  const hasAddressRadioButtons = document.querySelectorAll('input[type="radio"]').length >= 2;
+
+  if (hasInstallationAddressConfirmation && hasAddressRadioButtons && document.querySelector('input[value="Volgende"]')) {
+    console.log('🎯 Detected: installation_address_confirmation - Address confirmation question with radio buttons');
+    return 'installation_address_confirmation';
+  }
+
+  // Step 10.5: Installation address form (appears AFTER clicking Volgende on BAG page)
+  // This is a separate page with address input fields (Kadaster gegevens section)
+  const hasKadasterGegevensSection = Array.from(document.querySelectorAll('*')).some(el =>
+    el.textContent && el.textContent.includes('Kadaster gegevens')
+  );
+
+  // Make sure the BAGafwijkend_J radio is NOT present (that's the previous page)
+  const noBagRadio = !document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.BAGafwijkend_J');
+
+  // Make sure it's NOT the confirmation page
+  const notConfirmationPage = !hasInstallationAddressConfirmation;
+
+  if (hasKadasterGegevensSection && document.querySelector('input[value="Volgende"]') && noBagRadio && notConfirmationPage) {
+    console.log('🎯 Detected: bag_address_form - Installation address form (Kadaster gegevens input fields)');
+    return 'bag_address_form';
   }
 
   // Step 9: Address different checkbox
@@ -1769,7 +1802,8 @@ async function startFullAutomation(config) {
             if (catalogLink) {
               console.log('✅ Catalog page detected via polling!');
               updateStatus('Catalogus pagina geladen', 'nieuwe_aanvraag_geklikt');
-              createTimeout(() => startFullAutomation(config), 1000);
+              // Continue automation (break call chain to prevent memory buildup)
+              unthrottledDelay(1000).then(() => startFullAutomation(config));
               return;
             }
 
@@ -1929,39 +1963,39 @@ async function startFullAutomation(config) {
 
       // Vul velden met extra vertragingen om robot detectie te voorkomen
       await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edBSNnummer', config.bsn);
-      await unthrottledDelay(1000 + Math.random() * 500);
-      
+      await unthrottledDelay(1000 + Math.random() * 500); // Mensachtig - robot detectie preventie
+
       await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edVoorletters2', config.initials);
-      await unthrottledDelay(800 + Math.random() * 400);
-      
+      await unthrottledDelay(800 + Math.random() * 400); // Mensachtig - robot detectie preventie
+
       await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edAchternaam2', config.lastName);
-      await unthrottledDelay(700 + Math.random() * 300);
-      
+      await unthrottledDelay(700 + Math.random() * 300); // Mensachtig - robot detectie preventie
+
       // Gender selection based on config
       if (config.gender === 'male') {
         await clickElement('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.eddGeslacht_man2');
       } else if (config.gender === 'female') {
         await clickElement('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.eddGeslacht_vrouw2');
       }
-      await unthrottledDelay(600 + Math.random() * 400);
-      
+      await unthrottledDelay(600 + Math.random() * 400); // Mensachtig - robot detectie preventie
+
       await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_telefoon\\.0\\.edTelefoonField3', config.phone);
-      await unthrottledDelay(800 + Math.random() * 400);
-      
+      await unthrottledDelay(800 + Math.random() * 400); // Mensachtig - robot detectie preventie
+
       await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_email\\.0\\.edEmailField3', config.email);
-      await unthrottledDelay(900 + Math.random() * 500);
-      
+      await unthrottledDelay(900 + Math.random() * 500); // Mensachtig - robot detectie preventie
+
       await fillInput('#link_aanv\\.0\\.edIBAN', config.iban);
-      await unthrottledDelay(1000 + Math.random() * 500);
-      
+      await unthrottledDelay(1000 + Math.random() * 500); // Mensachtig - robot detectie preventie
+
       await fillInput('#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode', config.postalCode);
-      await unthrottledDelay(700 + Math.random() * 300);
-      
+      await unthrottledDelay(700 + Math.random() * 300); // Mensachtig - robot detectie preventie
+
       await fillInput('#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edHuisnummer2', config.houseNumber);
-      await unthrottledDelay(600 + Math.random() * 300);
-      
+      await unthrottledDelay(600 + Math.random() * 300); // Mensachtig - robot detectie preventie
+
       await fillInput('#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edToevoeging2', config.houseAddition);
-      await unthrottledDelay(700 + Math.random() * 400);
+      await unthrottledDelay(700 + Math.random() * 400); // Mensachtig - robot detectie preventie
       
       // Check postal address different checkbox
       await clickElement('#link_aanv\\.0\\.edPostadres_anders_J');
@@ -2211,38 +2245,47 @@ async function startFullAutomation(config) {
       return;
     }
     
-    // Step 10: BAG different
+    // Step 10: BAG address confirmation
+    // This page has the BAGafwijkend_J radio button - click it to confirm the address
     if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.BAGafwijkend_J') && currentStep === 'address_different_done') {
-      console.log('Step 9: Setting BAG different');
-      updateStatus('BAG adres instellen', '9 - BAG Instellingen');
-      await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.BAGafwijkend_J');
-      
+      console.log('Step 10: BAG address confirmation');
+      updateStatus('BAG adres bevestigen', '10 - BAG Bevestiging');
+
+      // Find and click the "Ja" radio button
+      const bagConfirmRadio = document.querySelector('input[id*="BAGafwijkend_J"][type="radio"]');
+
+      if (bagConfirmRadio && !bagConfirmRadio.checked) {
+        console.log('🎯 Clicking "Ja" for BAG address confirmation');
+        await clickElement(bagConfirmRadio);
+        await unthrottledDelay(500);
+      }
+
       // Try to find and click the "next" button first
       const nextButton = document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.next');
       if (nextButton) {
-        await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.next');
+        await clickElement(nextButton);
       }
-      
+
       await unthrottledDelay(1500);
-      
+
       // Try both possible selectors for Volgende button
-      const volgendeTab = document.querySelector('#btnVolgendeTab') || 
-                         document.querySelector('input[value="Volgende"]') ||
-                         document.querySelector('button:contains("Volgende")');
-      
+      const volgendeTab = document.querySelector('#btnVolgendeTab') ||
+                         document.querySelector('input[value="Volgende"]');
+
       if (volgendeTab) {
-        console.log('Found Volgende button, clicking');
+        console.log('✅ Clicking Volgende button');
         await clickElement(volgendeTab);
       } else {
-        console.log('Volgende button not found, may need manual intervention');
+        console.log('⚠️ Volgende button not found, may need manual intervention');
       }
-      
+
       sessionStorage.setItem('automationStep', 'bag_different_done');
       return;
     }
-    
+
     // Step 10.5: Installation address form (click Volgende to continue)
-    // This page appears after BAG different, so check if we're on it
+    // This is a DIFFERENT page that appears after clicking Volgende on the BAG page
+    // This page has address input fields and does NOT have the BAGafwijkend_J radio
     if (currentStep === 'bag_address_form' ||
         (currentStep === 'bag_different_done' && detectedStep === 'bag_address_form') ||
         (currentStep === 'address_different_done' && detectedStep === 'bag_address_form')) {
@@ -2253,47 +2296,79 @@ async function startFullAutomation(config) {
         return;
       }
 
-      console.log('Step 10.5: On installation address form, need to confirm address');
-      updateStatus('Installatieadres bevestigen', '10.5 - Adresformulier', detectedStep);
+      console.log('Step 10.5: On installation address form');
+      updateStatus('Installatieadres formulier', '10.5 - Adresformulier', detectedStep);
 
-      // First, we need to select "Ja" for the question about installation address
-      // Look for radio buttons that ask about accepting the installation address
+      // Check if there are any radio buttons on this page (some variants have them, some don't)
       const radioButtons = document.querySelectorAll('input[type="radio"]');
-      let addressConfirmRadio = null;
+      console.log(`🔍 Found ${radioButtons.length} radio buttons on address form`);
 
-      for (const radio of radioButtons) {
-        // Find the "Ja" option near text about installation address
-        const label = radio.closest('label, tr, div');
-        if (label && label.textContent.includes('installatieadres') && radio.value === 'Ja') {
-          addressConfirmRadio = radio;
-          break;
-        }
-      }
+      // If there ARE radio buttons, we need to select "Ja" for address confirmation
+      if (radioButtons.length > 0) {
+        let addressConfirmRadio = null;
 
-      // If we can't find via value, try to find any radio button near the installation address question
-      if (!addressConfirmRadio) {
-        const allRadios = Array.from(document.querySelectorAll('input[type="radio"]'));
-        // Look for the first radio button (usually "Ja") in a group
-        for (let i = 0; i < allRadios.length; i++) {
-          const radio = allRadios[i];
-          const container = radio.closest('table, div, fieldset');
-          if (container && container.textContent.includes('installatieadres')) {
-            // Take the first radio (should be "Ja")
-            addressConfirmRadio = radio;
-            break;
+        // Try to find the "Ja" radio button
+        for (const radio of radioButtons) {
+          const container = radio.closest('table, tr, div, fieldset, form');
+          if (container) {
+            const text = container.textContent.toLowerCase();
+            // Look for various question patterns about installation address
+            if (text.includes('installatieadres') || text.includes('kadaster') || text.includes('woning')) {
+              const radioLabel = document.querySelector(`label[for="${radio.id}"]`);
+              const labelText = radioLabel ? radioLabel.textContent.trim().toLowerCase() : '';
+
+              // Check if this is the "Ja" option
+              if (labelText.includes('ja') || radio.value === 'false' || radio.value === 'true' || radio.value === 'Ja') {
+                console.log(`✅ Found "Ja" radio button: ${radio.id}`);
+                addressConfirmRadio = radio;
+                break;
+              }
+
+              // If first in group of 2, assume it's "Ja"
+              const sameNameRadios = document.querySelectorAll(`input[name="${radio.name}"]`);
+              if (sameNameRadios.length === 2 && sameNameRadios[0] === radio) {
+                console.log(`✅ Found "Ja" radio (first in group): ${radio.id}`);
+                addressConfirmRadio = radio;
+                break;
+              }
+            }
           }
         }
+
+        // Click the radio button if found and not already checked
+        if (addressConfirmRadio && !addressConfirmRadio.checked) {
+          console.log(`🎯 Clicking "Ja" radio button`);
+          await clickElement(addressConfirmRadio);
+          await unthrottledDelay(500);
+        } else if (!addressConfirmRadio) {
+          console.log('⚠️ No "Ja" radio button found, but continuing (may not be needed)');
+        } else {
+          console.log('✅ "Ja" radio already selected');
+        }
+      } else {
+        console.log('ℹ️ No radio buttons on this page - this is just an address display form');
       }
 
-      if (addressConfirmRadio && !addressConfirmRadio.checked) {
-        console.log('Clicking "Ja" for installation address confirmation');
-        await clickElement(addressConfirmRadio);
-        await unthrottledDelay(500);
-      }
-
-      // Check again after radio button click
+      // Check if automation was stopped
       if (automationStopped) {
-        console.log('❌ Automation stopped during address confirmation');
+        console.log('❌ Automation stopped during address form');
+        return;
+      }
+
+      // Check if there are any validation errors on the page
+      await unthrottledDelay(300); // Wait for validation to update
+      const validationErrors = document.querySelectorAll('.error, .validation-error, [class*="error"]');
+      const hasErrors = Array.from(validationErrors).some(el =>
+        el.offsetHeight > 0 && el.textContent.trim().length > 0
+      );
+
+      if (hasErrors) {
+        console.error('⚠️ Validation errors detected on the form!');
+        Array.from(validationErrors).forEach(err => {
+          if (err.offsetHeight > 0) console.log('  -', err.textContent.trim());
+        });
+        updateStatus('⚠️ Formulier bevat fouten - controleer handmatig', '10.5 - Validatiefout');
+        automationPaused = true;
         return;
       }
 
@@ -2301,17 +2376,123 @@ async function startFullAutomation(config) {
       const volgendeButton = document.querySelector('input[value="Volgende"]') ||
                             document.querySelector('#btnVolgendeTab');
       if (volgendeButton) {
-        console.log('Clicking Volgende on installation address form');
+        console.log('✅ Clicking Volgende on installation address form');
         await clickElement(volgendeButton);
         // After clicking Volgende, we should reach the "Add measure" page
         sessionStorage.setItem('automationStep', 'address_form_completed');
+      } else {
+        console.error('❌ Could not find Volgende button');
+        updateStatus('⚠️ Kan Volgende knop niet vinden', '10.5 - Handmatige actie');
+        automationPaused = true;
       }
       return;
     }
 
-    // Step 11: Add measure
+    // Step 9: Installation address confirmation (appears after intermediair)
+    // This page asks "We hebben het onderstaande adres overgenomen als installatieadres, klopt dit?"
+    if (currentStep === 'installation_address_confirmation' ||
+        currentStep === 'correspondence_done' ||
+        currentStep === 'address_form_completed') {
+
+      // Check if we're on the installation address confirmation page
+      if (detectedStep === 'installation_address_confirmation') {
+        console.log('Step 9: Installation address confirmation page');
+        updateStatus('Installatieadres bevestigen', '9 - Adres Bevestiging', detectedStep);
+
+        // Find and click "Ja" radio button
+        const radioButtons = document.querySelectorAll('input[type="radio"]');
+        let jaRadio = null;
+
+        for (const radio of radioButtons) {
+          // Check the label or nearby text
+          const label = document.querySelector(`label[for="${radio.id}"]`);
+          const labelText = label ? label.textContent.trim().toLowerCase() : '';
+
+          // First radio in a group of 2 is typically "Ja"
+          const sameNameRadios = document.querySelectorAll(`input[name="${radio.name}"]`);
+
+          if (labelText === 'ja' || (sameNameRadios.length === 2 && sameNameRadios[0] === radio)) {
+            jaRadio = radio;
+            break;
+          }
+        }
+
+        if (jaRadio && !jaRadio.checked) {
+          console.log('🎯 Clicking "Ja" for installation address confirmation');
+          await clickElement(jaRadio);
+          await unthrottledDelay(500);
+        } else if (jaRadio) {
+          console.log('✅ "Ja" already selected');
+        }
+
+        // Find Volgende button - try multiple selectors
+        let volgendeButton = document.querySelector('input[value="Volgende"]');
+
+        if (!volgendeButton) {
+          volgendeButton = document.querySelector('#btnVolgendeTab');
+        }
+
+        if (!volgendeButton) {
+          // Search for any button/input with "Volgende" text
+          const allButtons = document.querySelectorAll('button, input[type="submit"], input[type="button"]');
+          for (const btn of allButtons) {
+            if (btn.textContent.includes('Volgende') || btn.value?.includes('Volgende')) {
+              volgendeButton = btn;
+              break;
+            }
+          }
+        }
+
+        if (volgendeButton) {
+          console.log('✅ Found Volgende button, clicking to proceed to Add Measure page');
+          await clickElement(volgendeButton);
+          await unthrottledDelay(1000);
+          sessionStorage.setItem('automationStep', 'installation_address_confirmed');
+
+          // Continue automation
+          unthrottledDelay(1500).then(() => startFullAutomation(config));
+        } else {
+          console.error('❌ Could not find Volgende button!');
+          updateStatus('⚠️ Kan Volgende knop niet vinden', '9 - Handmatige actie');
+          automationPaused = true;
+        }
+        return;
+      }
+    }
+
+    // Step 11: Add measure OR proceed if measure already exists
     if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.addInvestering') &&
-        (currentStep === 'bag_different_done' || currentStep === 'address_form_completed')) {
+        (currentStep === 'bag_different_done' || currentStep === 'address_form_completed' || currentStep === 'installation_address_confirmed')) {
+
+      // First, check if there's already a measure in the table with status "Compleet"
+      const hasMeasureInTable = Array.from(document.querySelectorAll('table tr, tbody tr')).some(row => {
+        const text = row.textContent.toLowerCase();
+        return text.includes('warmtepomp') || text.includes('compleet') || text.includes('ka07399');
+      });
+
+      if (hasMeasureInTable) {
+        console.log('✅ Step 11: Measure already added, clicking Volgende to proceed');
+        updateStatus('Maatregel al toegevoegd, doorgaan', '11 - Doorgaan', detectedStep);
+
+        // Click Volgende button to proceed to next step
+        const volgendeButton = document.querySelector('input[value="Volgende"]') ||
+                              document.querySelector('#btnVolgendeTab');
+
+        if (volgendeButton) {
+          await clickElement(volgendeButton);
+          // After clicking, page will navigate or update
+          // Keep current step so we can detect if we're still on same page or moved forward
+          sessionStorage.setItem('automationStep', 'measure_already_exists_clicked_volgende');
+          console.log('→ Clicked Volgende, waiting for page transition or update');
+        } else {
+          console.error('⚠️ Volgende button not found');
+          updateStatus('Klik handmatig op Volgende', '11 - Handmatige actie');
+          automationPaused = true;
+        }
+        return;
+      }
+
+      // No measure yet, add one
       console.log('Step 11: Adding measure');
       updateStatus('Maatregel toevoegen', '11 - Maatregel Toevoegen', detectedStep);
       await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.addInvestering');
@@ -2321,10 +2502,8 @@ async function startFullAutomation(config) {
       console.log('Waiting for measure modal to open...');
       await unthrottledDelay(1500);
 
-      // Continue automation to select warmtepomp
-      setTimeout(() => {
-        startFullAutomation(config);
-      }, 500);
+      // Continue automation to select warmtepomp (break call chain to prevent memory buildup)
+      unthrottledDelay(500).then(() => startFullAutomation(config));
       return;
     }
     
@@ -2339,10 +2518,8 @@ async function startFullAutomation(config) {
       console.log('Waiting for meldcode search step to appear...');
       await unthrottledDelay(1500);
 
-      // Continue automation to search for meldcode
-      setTimeout(() => {
-        startFullAutomation(config);
-      }, 500);
+      // Continue automation to search for meldcode (break call chain to prevent memory buildup)
+      unthrottledDelay(500).then(() => startFullAutomation(config));
       return;
     }
 
@@ -2418,10 +2595,8 @@ async function startFullAutomation(config) {
 
         sessionStorage.setItem('automationStep', 'warmtepomp_selected');
 
-        // Continue automation to fill dates
-        setTimeout(() => {
-          startFullAutomation(config);
-        }, 1500);
+        // Continue automation to fill dates (break call chain to prevent memory buildup)
+        unthrottledDelay(1500).then(() => startFullAutomation(config));
         return;
       } else {
         console.log('⚠️ Search input not found or no meldcode configured');
@@ -2510,10 +2685,8 @@ async function startFullAutomation(config) {
       await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende');
       sessionStorage.setItem('automationStep', 'installation_details_done');
 
-      // Continue automation after modal closes
-      setTimeout(() => {
-        startFullAutomation(config);
-      }, 1500);
+      // Continue automation after modal closes (break call chain to prevent memory buildup)
+      unthrottledDelay(1500).then(() => startFullAutomation(config));
       return;
     }
     
@@ -2537,8 +2710,8 @@ async function startFullAutomation(config) {
       if (modalAlreadyOpen) {
         console.log('✅ Step 16: Meldcode modal already open, proceeding to search');
         sessionStorage.setItem('automationStep', 'meldcode_lookup_opened');
-        // Continue to next step immediately to start searching
-        createTimeout(() => startFullAutomation(config), 1000);
+        // Continue to next step immediately to start searching (break call chain to prevent memory buildup)
+        unthrottledDelay(1000).then(() => startFullAutomation(config));
         return;
       }
 
@@ -2549,8 +2722,8 @@ async function startFullAutomation(config) {
         await clickElement(lookupButton);
         sessionStorage.setItem('automationStep', 'meldcode_lookup_opened');
 
-        // Wait for modal to open, then continue
-        createTimeout(() => startFullAutomation(config), 1500);
+        // Wait for modal to open, then continue (break call chain to prevent memory buildup)
+        unthrottledDelay(1500).then(() => startFullAutomation(config));
         return;
       }
     }
@@ -2646,10 +2819,8 @@ async function startFullAutomation(config) {
       }
       sessionStorage.setItem('automationStep', 'meldcode_selected');
 
-      // Continue automation after meldcode selection
-      setTimeout(() => {
-        startFullAutomation(config);
-      }, 1500);
+      // Continue automation after meldcode selection (break call chain to prevent memory buildup)
+      unthrottledDelay(1500).then(() => startFullAutomation(config));
       return;
     }
 
@@ -2665,6 +2836,34 @@ async function startFullAutomation(config) {
     if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.0\\.btn_ToevoegenBijlage') && currentStep === 'meldcode_selected') {
       console.log('Step 18: File upload page');
       updateStatus('Documenten uploaden', '18 - Documenten Uploaden', detectedStep);
+
+      // FIRST: Check if documents are already uploaded by looking at the page
+      // Look for document names or upload success indicators in the DOM
+      const uploadedDocuments = Array.from(document.querySelectorAll('*')).filter(el => {
+        const text = el.textContent;
+        return text && (
+          text.includes('betaalbewijs') ||
+          text.includes('factuur') ||
+          text.includes('.pdf') ||
+          text.includes('.jpg') ||
+          text.includes('.jpeg') ||
+          text.includes('.png')
+        );
+      });
+
+      const documentsAlreadyUploaded = uploadedDocuments.length >= 2; // At least 2 documents should be visible
+
+      if (documentsAlreadyUploaded) {
+        console.log('✅ Documents already uploaded (found via DOM check), skipping upload step');
+        console.log('Found documents:', uploadedDocuments.map(el => el.textContent.trim()).slice(0, 5));
+        // Skip to clicking Volgende
+      } else if (!config.betaalbewijs || !config.factuur) {
+        // Documents NOT uploaded AND files not in config (recovery scenario)
+        console.log('⚠️ Documents not uploaded yet, but files are missing from config (recovery scenario)');
+        updateStatus('Upload ontbrekende documenten handmatig', '18 - Handmatige upload vereist');
+        alert('Upload betaalbewijs en/of factuur handmatig, en klik daarna op Hervat.');
+        return;
+      }
 
       // Upload betaalbewijs (betaalbewijs) - eerste document (VERPLICHT)
       if (config.betaalbewijs) {
@@ -2682,14 +2881,6 @@ async function startFullAutomation(config) {
         await unthrottledDelay(1500);
         await uploadFile(config.factuur);
         await unthrottledDelay(2000);
-      }
-
-      // Controleer of verplichte documenten aanwezig zijn
-      if (!config.betaalbewijs || !config.factuur) {
-        console.log('Missing documents - manual intervention required');
-        updateStatus('Upload ontbrekende documenten handmatig', '18 - Handmatige upload vereist');
-        alert('Upload betaalbewijs en/of factuur handmatig, en klik daarna op Hervat.');
-        return;
       }
 
       // Click the Volgende button to proceed
@@ -2732,11 +2923,9 @@ async function startFullAutomation(config) {
 
         sessionStorage.setItem('automationStep', 'files_handled');
 
-        // Continue automation after clicking Volgende
+        // Continue automation after clicking Volgende (break call chain to prevent memory buildup)
         console.log('✅ Volgende clicked, continuing to next step...');
-        setTimeout(() => {
-          startFullAutomation(config);
-        }, 2000);
+        unthrottledDelay(2000).then(() => startFullAutomation(config));
         return;
       } else {
         console.log('⚠️ Volgende button not found, may need manual intervention');
@@ -2755,17 +2944,26 @@ async function startFullAutomation(config) {
       )
     );
 
+    // Check if we're already on measure overview page (has measure table)
+    const hasMeasureTableNow = Array.from(document.querySelectorAll('td, th')).some(cell =>
+      cell.textContent && cell.textContent.trim() === 'Meldcode'
+    );
+
+    // ONLY handle vervolgstap modal if we're NOT on measure overview page
     if ((currentStep === 'vervolgstap_modal' ||
          currentStep === 'files_handled' ||
          detectedStep === 'vervolgstap_modal') &&
-        hasVervolgstapModalNow) {
+        hasVervolgstapModalNow &&
+        !hasMeasureTableNow) {
       console.log('Step 18.4: Vervolgstap modal present, looking for action button');
       updateStatus('Vervolgstap modal verwerken', '18.4 - Vervolgstap Modal', detectedStep);
 
       await unthrottledDelay(800);
 
-      // Find the action button in the modal - try multiple button names
+      // Find the action button in the modal
+      // IMPORTANT: Always prioritize "Volgende" over "Kiezen" to avoid adding duplicate measures
       let actionButton = null;
+      let kiezenButton = null;
       const buttons = document.querySelectorAll('input[type="submit"], input[type="button"], button');
 
       console.log(`Checking ${buttons.length} buttons for action button`);
@@ -2773,15 +2971,24 @@ async function startFullAutomation(config) {
         const buttonText = (btn.value || btn.textContent || '').trim();
         console.log(`Button text: "${buttonText}"`);
 
-        // Try multiple button names that might appear in this modal
-        if (buttonText === 'Volgende' ||
-            buttonText === 'Kiezen' ||
-            buttonText.includes('Volgende') ||
-            buttonText.includes('Kiezen')) {
+        // First priority: "Volgende" button
+        if (buttonText === 'Volgende' || buttonText.includes('Volgende')) {
           actionButton = btn;
-          console.log(`✅ Found action button: "${buttonText}"`);
-          break;
+          console.log(`✅ Found "Volgende" button (preferred)`);
+          break; // Stop searching - Volgende is always preferred
         }
+
+        // Second priority: "Kiezen" button (only if Volgende not found)
+        if (buttonText === 'Kiezen' || buttonText.includes('Kiezen')) {
+          kiezenButton = btn;
+          console.log(`ℹ️ Found "Kiezen" button (will use if no Volgende)`);
+        }
+      }
+
+      // Use Volgende if found, otherwise fall back to Kiezen
+      if (!actionButton && kiezenButton) {
+        actionButton = kiezenButton;
+        console.log(`⚠️ No "Volgende" found, using "Kiezen" button`);
       }
 
       if (actionButton) {
@@ -2799,10 +3006,8 @@ async function startFullAutomation(config) {
         sessionStorage.setItem('automationStep', 'measure_overview');
         console.log('→ Forced step to measure_overview after vervolgstap modal');
 
-        // Continue automation
-        setTimeout(() => {
-          startFullAutomation(config);
-        }, 2000);
+        // Continue automation (break call chain to prevent memory buildup)
+        unthrottledDelay(2000).then(() => startFullAutomation(config));
         return;
       } else {
         console.log('⚠️ Action button not found in modal, logging all button texts for debugging:');
@@ -2818,9 +3023,9 @@ async function startFullAutomation(config) {
     }
 
     // Step 18.5: Measure overview page - "Maatregel toegevoegd" page with Wijzig/Verwijder buttons
-    // After vervolgstap modal, we force step to measure_overview regardless of detection
-    if (currentStep === 'measure_overview') {
-      console.log('Step 18.5: Looking for Volgende button on measure overview page');
+    // This runs when we detect the measure overview page OR when we forced the step after vervolgstap modal
+    if (currentStep === 'measure_overview' || detectedStep === 'measure_overview') {
+      console.log('Step 18.5: On measure overview page, looking for Volgende button');
       updateStatus('Doorgaan vanaf maatregeloverzicht', '18.5 - Maatregeloverzicht', detectedStep);
 
       // Wait a bit for the page to be fully loaded
@@ -2846,10 +3051,8 @@ async function startFullAutomation(config) {
         await unthrottledDelay(1000);
         sessionStorage.setItem('automationStep', 'measure_overview_clicked');
 
-        // Continue automation to handle potential dialog
-        setTimeout(() => {
-          startFullAutomation(config);
-        }, 1500);
+        // Continue automation to handle potential dialog (break call chain to prevent memory buildup)
+        unthrottledDelay(1500).then(() => startFullAutomation(config));
         return;
       } else {
         console.log('⚠️ No Volgende button found (neither main nor wizard)');
@@ -2899,10 +3102,8 @@ async function startFullAutomation(config) {
           await unthrottledDelay(1000);
           sessionStorage.setItem('automationStep', 'measure_confirmed');
 
-          // Continue automation
-          setTimeout(() => {
-            startFullAutomation(config);
-          }, 2000);
+          // Continue automation (break call chain to prevent memory buildup)
+          unthrottledDelay(2000).then(() => startFullAutomation(config));
           return;
         } else {
           console.log('⚠️ "Ja, volgende" button not found');
@@ -2913,16 +3114,16 @@ async function startFullAutomation(config) {
         // No dialog appeared, continue to next step
         console.log('No confirmation dialog found, continuing to final confirmation');
         sessionStorage.setItem('automationStep', 'measure_confirmed');
-        setTimeout(() => {
-          startFullAutomation(config);
-        }, 1000);
+        // Continue automation (break call chain to prevent memory buildup)
+        unthrottledDelay(1000).then(() => startFullAutomation(config));
         return;
       }
     }
 
     // Step 18.7: Final measure overview page with subsidy amount - click Volgende
     if (currentStep === 'final_measure_overview' ||
-        (currentStep === 'measure_confirmed' && detectedStep === 'final_measure_overview')) {
+        (currentStep === 'measure_confirmed' && detectedStep === 'final_measure_overview') ||
+        (currentStep === 'measure_already_exists_clicked_volgende' && detectedStep === 'final_measure_overview')) {
       console.log('Step 18.7: On final measure overview page, clicking Volgende');
       updateStatus('Doorgaan vanaf eindoverzicht', '18.7 - Eindoverzicht', detectedStep);
 
@@ -2940,9 +3141,8 @@ async function startFullAutomation(config) {
         await unthrottledDelay(1000);
         sessionStorage.setItem('automationStep', 'final_measure_overview_done');
 
-        setTimeout(() => {
-          startFullAutomation(config);
-        }, 2000);
+        // Continue automation (break call chain to prevent memory buildup)
+        unthrottledDelay(2000).then(() => startFullAutomation(config));
         return;
       } else {
         console.log('⚠️ Volgende button not found');
@@ -2982,7 +3182,7 @@ async function startFullAutomation(config) {
 
     // Step 19: Final confirmation - "Ja, volgende" button
     if (document.querySelector('#QuestionEmbedding_585_default') &&
-        (currentStep === 'files_handled' || currentStep === 'measure_overview_done' || currentStep === 'measure_confirmed' || currentStep === 'final_measure_overview_done' || currentStep === 'final_review_done')) {
+        (currentStep === 'files_handled' || currentStep === 'measure_overview_done' || currentStep === 'measure_confirmed' || currentStep === 'measure_already_exists_clicked_volgende' || currentStep === 'final_measure_overview_done' || currentStep === 'final_review_done')) {
       console.log('Step 19: Final confirmation');
       updateStatus('Laatste bevestiging', '19 - Bevestiging', detectedStep);
       await clickElement('#QuestionEmbedding_585_default');
@@ -3291,19 +3491,17 @@ window.addEventListener('load', async () => {
 
     updateStatus('Pagina geladen, automatisering doorgaan...', currentStep);
 
-    // Simple delay then continue - no retry loop
-    createTimeout(() => {
-      if (automationStopped) {
-        console.log('❌ Automation stopped before timeout executed');
-        return;
-      }
-      if (automationPaused) {
-        console.log('⏸ Automation paused before timeout executed');
-        return;
-      }
+    // Use unthrottledDelay instead of setTimeout to avoid background tab throttling
+    unthrottledDelay(2000).then(() => {
       console.log('Starting automation after page load');
       startFullAutomation(config);
-    }, 2000);
+    }).catch(err => {
+      if (err.message === 'Automation stopped') {
+        console.log('❌ Automation stopped during page load delay');
+      } else {
+        console.error('Error during page load delay:', err);
+      }
+    });
   }
 });
 
@@ -3331,17 +3529,16 @@ document.addEventListener('DOMContentLoaded', () => {
     updateStatus('Wachten...', currentStep, detectedStep);
 
     if (currentStep && currentStep !== 'start') {
-      createTimeout(() => {
-        if (automationStopped) {
-          console.log('❌ Automation stopped before timeout executed');
-          return;
-        }
-        if (automationPaused) {
-          console.log('⏸ Automation paused before timeout executed');
-          return;
-        }
+      // Use unthrottledDelay instead of setTimeout to avoid background tab throttling
+      unthrottledDelay(2000).then(() => {
         startFullAutomation(config);
-      }, 2000);
+      }).catch(err => {
+        if (err.message === 'Automation stopped') {
+          console.log('❌ Automation stopped during DOMContentLoaded delay');
+        } else {
+          console.error('Error during DOMContentLoaded delay:', err);
+        }
+      });
     }
   }
 });
@@ -3349,13 +3546,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // Also check periodically if panel needs to be recreated (in case DOM changes)
 // Using unthrottled loop to work properly in background tabs
 (async () => {
-  while (true) {
+  while (!automationStopped) {
     await unthrottledDelay(2000);
-
-    // Don't recreate panel if automation has been stopped
-    if (automationStopped) {
-      continue;
-    }
 
     const automationConfig = sessionStorage.getItem('automationConfig');
     if (automationConfig && !document.getElementById('isde-automation-panel')) {
@@ -3366,4 +3558,5 @@ document.addEventListener('DOMContentLoaded', () => {
       updateStatus('Klaar', currentStep, detectedStep);
     }
   }
+  console.log('✅ Panel recreation loop terminated - automation stopped');
 })();
