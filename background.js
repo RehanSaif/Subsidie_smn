@@ -40,6 +40,8 @@ chrome.action.onClicked.addListener(async (tab) => {
  * 4. Als content script niet geladen is, injecteer het eerst
  * 5. Probeer opnieuw na injectie
  */
+const STORAGE_NAMESPACE = (chrome.extension && chrome.extension.inIncognitoContext) ? 'incog' : 'normal';
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'startAutomationFromPopup') {
     // Zoek de momenteel actieve tab in het huidige venster
@@ -50,7 +52,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return;
       }
 
-      const configKey = `automation_config_${currentTab.id}`;
+      const configKey = `automation_config_${STORAGE_NAMESPACE}_${currentTab.id}`;
 
       let configToStore;
       try {

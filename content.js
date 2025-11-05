@@ -760,7 +760,21 @@ async function resolveAutomationConfigFromRequest(request) {
   if (request.configKey) {
     console.log('🔐 Loading automation config from storage for key:', request.configKey);
     const result = await chrome.storage.local.get(request.configKey);
-    const storedConfig = result[request.configKey];
+    let storedConfig = result[request.configKey];
+
+    if (!storedConfig) {
+      // Probeer legacy sleutel (zonder namespace prefix)
+      const namespacePatternMatch = request.configKey.match(/^automation_config_([^_]+)_([0-9]+)$/);
+      if (namespacePatternMatch) {
+        const legacyKey = `automation_config_${namespacePatternMatch[2]}`;
+        const legacyResult = await chrome.storage.local.get(legacyKey);
+        if (legacyResult[legacyKey]) {
+          console.log('📦 Found legacy automation config, migrating to namespaced key');
+          storedConfig = legacyResult[legacyKey];
+          await chrome.storage.local.remove(legacyKey);
+        }
+      }
+    }
 
     if (!storedConfig) {
       throw new Error('Geen automatiseringsconfiguratie gevonden voor dit tabblad.');
@@ -3080,6 +3094,15 @@ async function startFullAutomation(config) {
     const hasMeasureTableNow = Array.from(document.querySelectorAll('td, th')).some(cell =>
       cell.textContent && cell.textContent.trim() === 'Meldcode'
     );
+
+    // DEBUG: Log vervolgstap modal detection
+    console.log('🔍 Vervolgstap modal detection:');
+    console.log('  - hasVervolgstapModalNow:', hasVervolgstapModalNow);
+    console.log('  - hasMeasureTableNow:', hasMeasureTableNow);
+    console.log('  - currentStep:', currentStep);
+    console.log('  - detectedStep:', detectedStep);
+    console.log('  - Step condition matches:', (currentStep === 'vervolgstap_modal' || currentStep === 'files_handled' || detectedStep === 'vervolgstap_modal'));
+    console.log('  - Full condition:', (currentStep === 'vervolgstap_modal' || currentStep === 'files_handled' || detectedStep === 'vervolgstap_modal') && hasVervolgstapModalNow && !hasMeasureTableNow);
 
     // ONLY handle vervolgstap modal if we're NOT on measure overview page
     if ((currentStep === 'vervolgstap_modal' ||

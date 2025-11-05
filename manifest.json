@@ -33,6 +33,7 @@
   "side_panel": {
     "default_path": "popup.html"
   },
+  "incognito": "split",
   "content_scripts": [
     {
       "matches": ["https://eloket.dienstuitvoering.nl/*"],

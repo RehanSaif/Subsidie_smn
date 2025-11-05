@@ -83,6 +83,36 @@ async function waitForMistralRateLimit() {
 let isLoadingTabData = false;
 
 /**
+ * Houdt bij welke browser window deze side panel instantie volgt.
+ * Wordt gebruikt om tab events uit andere windows te negeren.
+ */
+let currentTrackedWindowId = null;
+
+/**
+ * Namespace voor opslag sleutels zodat incognito en normale profielen nooit
+ * elkaars data overschrijven (zelfs met overlappende tab ID's).
+ */
+const STORAGE_NAMESPACE = (chrome.extension && chrome.extension.inIncognitoContext) ? 'incog' : 'normal';
+
+/**
+ * Helper om consistente storage keys op te bouwen.
+ * @param {string} prefix - Prefix voor het type data (formData/documents/automation)
+ * @param {number|string} tabId - Tab ID
+ * @returns {string} samengestelde storage key
+ */
+function buildStorageKey(prefix, tabId) {
+  return `${prefix}_${STORAGE_NAMESPACE}_${tabId}`;
+}
+
+/**
+ * Biedt achterwaartse compatibiliteit: probeer oude key (zonder namespace) als
+ * de nieuwe key nog geen data bevat.
+ */
+function getLegacyKey(prefix, tabId) {
+  return `${prefix}_tab_${tabId}`;
+}
+
+/**
  * Haalt het huidige tab ID op.
  * Voor een popup moeten we expliciet het browser window vinden, niet het popup window.
  * @returns {Promise<number>} Tab ID van de actieve tab
@@ -100,6 +130,7 @@ async function getCurrentTabId() {
   const focusedWindow = windows.find(w => w.focused) || windows[0];
 
   if (focusedWindow) {
+    currentTrackedWindowId = focusedWindow.id;
     // Vind de actieve tab in dit window
     const activeTab = focusedWindow.tabs.find(t => t.active);
 
@@ -112,8 +143,13 @@ async function getCurrentTabId() {
   // Fallback: probeer direct query (zou niet moeten gebeuren)
   console.warn('⚠️ Fallback: using direct tab query');
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  console.log(`🔍 Fallback tab ID: ${tab.id}, URL: ${tab.url}`);
-  return tab.id;
+  if (tab) {
+    currentTrackedWindowId = tab.windowId;
+    console.log(`🔍 Fallback tab ID: ${tab.id}, URL: ${tab.url}`);
+    return tab.id;
+  }
+
+  throw new Error('Geen actieve tab gevonden');
 }
 
 /**
@@ -122,7 +158,7 @@ async function getCurrentTabId() {
  * @param {Object} formData - Formulier data om op te slaan
  */
 async function saveFormDataForTab(tabId, formData) {
-  const key = `formData_tab_${tabId}`;
+  const key = buildStorageKey('formData', tabId);
   await chrome.storage.local.set({ [key]: formData });
   console.log(`💾 Form data saved for tab ${tabId}:`, formData);
 }
@@ -133,10 +169,24 @@ async function saveFormDataForTab(tabId, formData) {
  * @returns {Promise<Object|null>} Opgeslagen formulier data of null
  */
 async function loadFormDataForTab(tabId) {
-  const key = `formData_tab_${tabId}`;
-  const result = await chrome.storage.local.get(key);
-  console.log(`📂 Loading form data for tab ${tabId}:`, result[key] || 'No saved data');
-  return result[key] || null;
+  const key = buildStorageKey('formData', tabId);
+  let result = await chrome.storage.local.get(key);
+
+  if (!result[key]) {
+    const legacyKey = getLegacyKey('formData', tabId);
+    if (legacyKey !== key) {
+      result = await chrome.storage.local.get(legacyKey);
+      if (result[legacyKey]) {
+        console.log(`📂 Migrating legacy form data for tab ${tabId}`);
+        await chrome.storage.local.set({ [key]: result[legacyKey] });
+        await chrome.storage.local.remove(legacyKey);
+      }
+    }
+  }
+
+  const data = result[key] || result[getLegacyKey('formData', tabId)] || null;
+  console.log(`📂 Loading form data for tab ${tabId}:`, data || 'No saved data');
+  return data;
 }
 
 /**
@@ -169,16 +219,30 @@ async function autoSaveFormData() {
       return;
     }
 
-    // Use tracked tab ID instead of querying Chrome (prevents race condition)
+    // Capture tab ID at the START of this function
     const tabId = currentTrackedTabId;
     if (tabId === null) {
       console.warn('⚠️ Cannot auto-save: no tab ID tracked yet');
       return;
     }
 
+    // Collect form data from UI
     const formData = collectFormData();
+
+    // CRITICAL: Re-check that we're still on the same tab
+    // If user switched tabs while we were collecting data, abort save
+    if (currentTrackedTabId !== tabId) {
+      console.warn(`⚠️ Auto-save aborted: tab changed from ${tabId} to ${currentTrackedTabId} during collection`);
+      return;
+    }
+
     console.log(`💾 AUTO-SAVING for tab ${tabId}:`, Object.keys(formData).filter(k => formData[k]).length, 'fields with data');
     await saveFormDataForTab(tabId, formData);
+
+    // Final check after async operation
+    if (currentTrackedTabId !== tabId) {
+      console.warn(`⚠️ Tab changed to ${currentTrackedTabId} after save completed for tab ${tabId}`);
+    }
   } catch (error) {
     console.error('Error auto-saving form data:', error);
   }
@@ -196,21 +260,35 @@ async function cleanupClosedTabsData() {
     const storage = await chrome.storage.local.get(null);
     const keysToRemove = [];
 
+    const newPrefixes = [
+      `formData_${STORAGE_NAMESPACE}_`,
+      `documents_${STORAGE_NAMESPACE}_`,
+      `automation_config_${STORAGE_NAMESPACE}_`
+    ];
+
     for (const key in storage) {
-      let tabIdString = null;
-      if (key.startsWith('formData_tab_')) {
-        tabIdString = key.replace('formData_tab_', '');
-      } else if (key.startsWith('documents_tab_')) {
-        tabIdString = key.replace('documents_tab_', '');
-      } else if (key.startsWith('automation_config_')) {
-        tabIdString = key.replace('automation_config_', '');
+      let tabId = null;
+
+      for (const prefix of newPrefixes) {
+        if (key.startsWith(prefix)) {
+          tabId = parseInt(key.slice(prefix.length), 10);
+          break;
+        }
       }
 
-      if (tabIdString !== null) {
-        const tabId = parseInt(tabIdString, 10);
-        if (!Number.isNaN(tabId) && !openTabIds.has(tabId)) {
-          keysToRemove.push(key);
+      // Legacy fallback
+      if (tabId === null) {
+        if (key.startsWith('formData_tab_')) {
+          tabId = parseInt(key.replace('formData_tab_', ''), 10);
+        } else if (key.startsWith('documents_tab_')) {
+          tabId = parseInt(key.replace('documents_tab_', ''), 10);
+        } else if (key.startsWith('automation_config_')) {
+          tabId = parseInt(key.replace('automation_config_', ''), 10);
         }
+      }
+
+      if (tabId !== null && !Number.isNaN(tabId) && !openTabIds.has(tabId)) {
+        keysToRemove.push(key);
       }
     }
 
@@ -229,7 +307,7 @@ async function cleanupClosedTabsData() {
  * @param {Object} documents - Object met documenten: { betaalbewijs, factuur, machtigingsbewijs }
  */
 async function saveDocumentsForTab(tabId, documents) {
-  const key = `documents_tab_${tabId}`;
+  const key = buildStorageKey('documents', tabId);
   await chrome.storage.local.set({ [key]: documents });
   console.log(`📎 Documents saved for tab ${tabId}:`, {
     betaalbewijs: documents.betaalbewijs?.name || null,
@@ -244,10 +322,24 @@ async function saveDocumentsForTab(tabId, documents) {
  * @returns {Promise<Object|null>} Opgeslagen documenten of null
  */
 async function loadDocumentsForTab(tabId) {
-  const key = `documents_tab_${tabId}`;
-  const result = await chrome.storage.local.get(key);
-  console.log(`📂 Loading documents for tab ${tabId}:`, result[key] ? 'Found' : 'No documents');
-  return result[key] || null;
+  const key = buildStorageKey('documents', tabId);
+  let result = await chrome.storage.local.get(key);
+
+  if (!result[key]) {
+    const legacyKey = getLegacyKey('documents', tabId);
+    if (legacyKey !== key) {
+      result = await chrome.storage.local.get(legacyKey);
+      if (result[legacyKey]) {
+        console.log(`📂 Migrating legacy documents for tab ${tabId}`);
+        await chrome.storage.local.set({ [key]: result[legacyKey] });
+        await chrome.storage.local.remove(legacyKey);
+      }
+    }
+  }
+
+  const data = result[key] || result[getLegacyKey('documents', tabId)] || null;
+  console.log(`📂 Loading documents for tab ${tabId}:`, data ? 'Found' : 'No documents');
+  return data;
 }
 
 /**
@@ -1565,11 +1657,23 @@ document.getElementById('machtigingsformulier').addEventListener('change', async
       } else {
         // User is still in same tab - normal flow with UI updates
         // Vul formuliervelden in met geëxtraheerde data
-        const fieldsFound = fillFormFields(extractedData);
+        const result = fillFormFields(extractedData);
+        const fieldsFound = result.fieldsFound;
+        const hasWarnings = result.hasWarnings;
 
         // Toon succesbericht met aantal gevonden velden
         if (fieldsFound > 0) {
-          showExtractionStatus(`✅ ${fieldsFound} veld(en) succesvol ingevuld!`, 'extractionStatus', 'success', 5000);
+          if (hasWarnings) {
+            // Als er warnings zijn, toon aangepast bericht en wacht langer
+            const warningFields = Object.keys(result.warnings).join(', ');
+            showExtractionStatus(`✅ ${fieldsFound} veld(en) ingevuld - controleer validatie warnings voor: ${warningFields}`, 'extractionStatus', 'warning', 8000);
+            console.warn(`⚠️ Velden ingevuld met validatie warnings:`, result.warnings);
+
+            // Wacht 3 seconden extra zodat gebruiker warnings kan zien
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          } else {
+            showExtractionStatus(`✅ ${fieldsFound} veld(en) succesvol ingevuld!`, 'extractionStatus', 'success', 5000);
+          }
         } else {
           showExtractionStatus('⚠️ Geen gegevens gevonden. Controleer de console voor details.', 'extractionStatus', 'warning', 5000);
         }
@@ -1901,7 +2005,15 @@ function fillFormFields(extractedData) {
     }
   }
 
-  return fieldsFound;
+  // Bepaal of er validatie warnings zijn
+  const hasWarnings = Object.keys(validationWarnings).length > 0;
+
+  // Return object met info over gevonden velden en warnings
+  return {
+    fieldsFound,
+    hasWarnings,
+    warnings: validationWarnings
+  };
 }
 
 // ============================================================================
@@ -3638,18 +3750,16 @@ document.getElementById('startAutomation').addEventListener('click', () => {
     // KRITIEK: Verify dat currentTrackedTabId matcht met actieve tab
     // Dit voorkomt dat we data van Tab A sturen naar Tab B
     if (currentTrackedTabId !== currentTab.id) {
-      console.error(`❌ TAB MISMATCH DETECTED!`);
-      console.error(`   currentTrackedTabId: ${currentTrackedTabId}`);
-      console.error(`   Active tab ID: ${currentTab.id}`);
-      console.error(`   This would send wrong data to the automation!`);
-      showStatus('⚠️ Tab sync probleem. Klik nogmaals op Start Automatisering.', 'error');
+      console.warn(`⚠️ TAB MISMATCH DETECTED - Auto-syncing...`);
+      console.warn(`   currentTrackedTabId: ${currentTrackedTabId}`);
+      console.warn(`   Active tab ID: ${currentTab.id}`);
 
-      // Synchroniseer de tabs
-      reloadFormDataForTab(currentTab.id);
-      return;
+      // Auto-synchroniseer de tabs in plaats van te stoppen
+      currentTrackedTabId = currentTab.id;
+      console.log(`✅ Auto-synced to tab ${currentTab.id}`);
+    } else {
+      console.log(`✅ Tab verified: currentTrackedTabId (${currentTrackedTabId}) === active tab (${currentTab.id})`);
     }
-
-    console.log(`✅ Tab verified: currentTrackedTabId (${currentTrackedTabId}) === active tab (${currentTab.id})`);
 
     // Controleer of we op de juiste website zijn
     if (!currentTab.url || !currentTab.url.includes('eloket.dienstuitvoering.nl')) {
@@ -3786,14 +3896,16 @@ document.getElementById('resetInfo').addEventListener('click', async () => {
     console.log(`🗑️ Resetting info for tab ${tabId}`);
 
     // Verwijder opgeslagen formulier data voor deze tab
-    const formDataKey = `formData_tab_${tabId}`;
-    await chrome.storage.local.remove(formDataKey);
-    console.log(`✅ Removed storage key: ${formDataKey}`);
+    const formDataKey = buildStorageKey('formData', tabId);
+    const legacyFormDataKey = getLegacyKey('formData', tabId);
+    await chrome.storage.local.remove([formDataKey, legacyFormDataKey]);
+    console.log(`✅ Removed storage keys: ${formDataKey}, ${legacyFormDataKey}`);
 
     // Verwijder opgeslagen documenten voor deze tab
-    const documentsKey = `documents_tab_${tabId}`;
-    await chrome.storage.local.remove(documentsKey);
-    console.log(`✅ Removed storage key: ${documentsKey}`);
+    const documentsKey = buildStorageKey('documents', tabId);
+    const legacyDocumentsKey = getLegacyKey('documents', tabId);
+    await chrome.storage.local.remove([documentsKey, legacyDocumentsKey]);
+    console.log(`✅ Removed storage keys: ${documentsKey}, ${legacyDocumentsKey}`);
 
     // Reset alle formulier velden naar leeg
     getAllFieldIds().forEach(fieldId => {
@@ -4071,7 +4183,7 @@ let currentReloadOperationId = 0;
  *
  * @param {number} tabId - Tab ID om data voor te laden
  */
-async function reloadFormDataForTab(tabId) {
+async function reloadFormDataForTab(tabId, windowId = undefined) {
   // Generate unique operation ID to detect if another reload started
   const operationId = ++currentReloadOperationId;
   console.log(`🔄 Reloading form and document data for tab ${tabId} (operation ${operationId})`);
@@ -4080,6 +4192,20 @@ async function reloadFormDataForTab(tabId) {
   isLoadingTabData = true;
 
   try {
+    let resolvedWindowId = windowId;
+    if (typeof resolvedWindowId !== 'number') {
+      try {
+        const tabInfo = await chrome.tabs.get(tabId);
+        resolvedWindowId = tabInfo.windowId;
+      } catch (error) {
+        console.warn(`⚠️ Unable to determine window ID for tab ${tabId}:`, error);
+      }
+    }
+
+    if (typeof resolvedWindowId === 'number') {
+      currentTrackedWindowId = resolvedWindowId;
+    }
+
     // Check if this operation was superseded by a newer reload
     const checkSuperseded = () => {
       if (currentReloadOperationId !== operationId) {
@@ -4118,6 +4244,10 @@ async function reloadFormDataForTab(tabId) {
     if (savedFormData) {
       // Laad opgeslagen waarden
       console.log(`✅ Found saved form data for tab ${tabId}`);
+
+      // Check before filling fields
+      if (checkSuperseded()) return;
+
       getAllFieldIds().forEach(fieldId => {
         const field = document.getElementById(fieldId);
         if (field && savedFormData[fieldId] !== undefined) {
@@ -4127,6 +4257,10 @@ async function reloadFormDataForTab(tabId) {
     } else {
       // Geen opgeslagen data - reset naar lege velden
       console.log(`📝 No saved data for tab ${tabId} - showing empty form`);
+
+      // Check before clearing fields
+      if (checkSuperseded()) return;
+
       getAllFieldIds().forEach(fieldId => {
         const field = document.getElementById(fieldId);
         if (field) {
@@ -4147,6 +4281,9 @@ async function reloadFormDataForTab(tabId) {
       machtigingsbewijs: savedDocuments?.machtigingsbewijs ? 'YES' : 'NO'
     });
 
+    // Check if superseded before updating documents
+    if (checkSuperseded()) return;
+
     if (savedDocuments) {
       console.log(`✅ Found saved documents for tab ${tabId}`);
 
@@ -4165,6 +4302,9 @@ async function reloadFormDataForTab(tabId) {
         }
       }
 
+      // Check again (UI operations can take time)
+      if (checkSuperseded()) return;
+
       // Herstel factuur
       if (savedDocuments.factuur) {
         factuurData = savedDocuments.factuur;
@@ -4179,6 +4319,9 @@ async function reloadFormDataForTab(tabId) {
           console.log(`  → Hiding factuur (not in this tab)`);
         }
       }
+
+      // Check again
+      if (checkSuperseded()) return;
 
       // Herstel machtigingsbewijs
       if (savedDocuments.machtigingsbewijs) {
@@ -4227,20 +4370,37 @@ async function reloadFormDataForTab(tabId) {
       }
     }
 
+    // Check if superseded before final updates
+    if (checkSuperseded()) return;
+
     // Update de tracked tab ID
     console.log(`✏️ Updating currentTrackedTabId from ${currentTrackedTabId} to ${tabId}`);
     currentTrackedTabId = tabId;
+    if (typeof resolvedWindowId === 'number') {
+      console.log(`🪟 Tracking window ${resolvedWindowId}`);
+      currentTrackedWindowId = resolvedWindowId;
+    }
 
     // Re-valideer alle velden om warnings te tonen voor ongeldige waardes
     revalidateAllFields();
+
+    // Final check before updating button state
+    if (checkSuperseded()) return;
 
     // Update de "Start Automatisering" knop status
     updateStartButtonState();
   } finally {
     // Only reset loading flag if this is still the current operation
     if (currentReloadOperationId === operationId) {
-      isLoadingTabData = false;
-      console.log(`✅ Finished loading data for tab ${tabId} (operation ${operationId})`);
+      // Add small delay before allowing auto-save again
+      // This prevents auto-save from triggering immediately while UI is still rendering
+      setTimeout(() => {
+        // Double-check operation ID hasn't changed during delay
+        if (currentReloadOperationId === operationId) {
+          isLoadingTabData = false;
+          console.log(`✅ Finished loading data for tab ${tabId} (operation ${operationId}) - auto-save re-enabled`);
+        }
+      }, 100); // 100ms delay to allow UI to stabilize
     } else {
       console.log(`⏭️ Skipped resetting loading flag for operation ${operationId} (current: ${currentReloadOperationId})`);
     }
@@ -4252,16 +4412,23 @@ async function reloadFormDataForTab(tabId) {
  * Dit zorgt ervoor dat de side panel altijd de data van de actieve tab toont.
  */
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
-  console.log('🔄 Tab switched to:', activeInfo.tabId);
+  console.log('🔄 Tab switched to:', activeInfo.tabId, 'in window', activeInfo.windowId);
+
+  if (currentTrackedWindowId !== null && activeInfo.windowId !== currentTrackedWindowId) {
+    console.log('↩️ Ignoring activation from another window');
+    return;
+  }
 
   // Controleer of we van tab zijn gewisseld
   if (currentTrackedTabId !== null && currentTrackedTabId !== activeInfo.tabId) {
     console.log(`↔️ Switching from tab ${currentTrackedTabId} to ${activeInfo.tabId}`);
-    await reloadFormDataForTab(activeInfo.tabId);
+    await reloadFormDataForTab(activeInfo.tabId, activeInfo.windowId);
   } else if (currentTrackedTabId === null) {
     // Eerste keer dat we een tab detecteren
     currentTrackedTabId = activeInfo.tabId;
-    console.log(`🎯 Initial tab detected: ${activeInfo.tabId}`);
+    currentTrackedWindowId = activeInfo.windowId;
+    console.log(`🎯 Initial tab detected: ${activeInfo.tabId} (window ${activeInfo.windowId})`);
+    await reloadFormDataForTab(activeInfo.tabId, activeInfo.windowId);
   }
 });
 
@@ -4270,10 +4437,13 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
  * Als de actieve tab navigeert naar een nieuwe pagina, herlaad de data.
  */
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  // Alleen reageren als deze tab actief is en de URL is veranderd
+  // Alleen reageren als deze tab actief is, bij onze window hoort, en de URL is veranderd
   if (tab.active && changeInfo.url && currentTrackedTabId === tabId) {
+    if (currentTrackedWindowId !== null && tab.windowId !== currentTrackedWindowId) {
+      return;
+    }
     console.log('🔄 Active tab URL changed to:', changeInfo.url);
-    await reloadFormDataForTab(tabId);
+    await reloadFormDataForTab(tabId, tab.windowId);
   }
 });
 
