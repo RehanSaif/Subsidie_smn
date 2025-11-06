@@ -75,75 +75,6 @@ let lastExecutedStep = null;
 let stepExecutionCount = 0;
 const MAX_STEP_RETRIES = 4; // Automatisch stoppen na 4 pogingen op dezelfde stap (verhoogd voor langzame page loads)
 
-// ============================================================================
-// SELECTOR REGISTRY - SINGLE SOURCE OF TRUTH
-// ============================================================================
-/**
- * Centraal register van alle DOM selectors.
- * Bij website wijzigingen: update hier, niet in 350+ plekken!
- */
-const SELECTORS = {
-  // Navigation
-  continueButton: 'input[value="Volgende"]',
-  continueTabButton: '#btnVolgendeTab',
-  btn12: '#btn12',
-
-  // Personal info
-  bsn: '#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edBSNnummer',
-  initials: '#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edVoorletters2',
-  lastName: '#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edAchternaam2',
-  genderMale: '#link_aanv\\.0\\.link_aanv_persoon\\.0\\.choice_Geslacht_M',
-  genderFemale: '#link_aanv\\.0\\.link_aanv_persoon\\.0\\.choice_Geslacht_V',
-
-  // Contact
-  phone: '#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_telefoon\\.0\\.edTelefoonField3',
-  email: '#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_email\\.0\\.edEmailField3',
-  iban: '#link_aanv\\.0\\.edIBAN',
-
-  // Address
-  postalCode: '#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode',
-  houseNumber: '#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edHuisnummer2',
-  houseNumberAddition: '#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edToevoeging2',
-  addressDifferent: '#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.Adresafwijkend_J',
-
-  // Installation
-  meldcodeLookup: '#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.lookup_meldcode',
-  purchaseDate: '#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.DatumAangeschaft',
-  installationDate: '#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.DatumInstallatie',
-  warmtepompChoice: '#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.choice_warmtepomp',
-  addMeasure: '#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.addInvestering',
-  bagDifferentYes: '#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.BAGafwijkend_J',
-  wizardNext: '#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende',
-
-  // Company
-  kvkNumber: '#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_KvK',
-  companyName: '#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_Naam',
-  dutchCompany: '#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_NL_jn_J',
-
-  // Intermediary
-  extraContactPerson: '#link_int\\.0\\.link_int_organisatie\\.0\\.edExtraContactpersoon_n_int',
-  digitalCorrespondence: '#link_int\\.0\\.edDigitaleCorrespondentie_J',
-
-  // Documents
-  fileUploadButton: '#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.0\\.btn_ToevoegenBijlage',
-  fileInput: '#lip_modalWindow div.content input[type="file"], #lip_attachments_resumable input[type="file"]',
-
-  // Checkboxes
-  naarWaarheid: '#NaarWaarheid',
-  akkoord: '#cbAccoord',
-  infoRead: '#FWS_Aanvraag_ISDEPA\\.0\\.InfoGelezen_JN',
-
-  // Modals
-  lipModalWindow: '#lip_modalWindow',
-  lipMatchcode: '#lip_matchcode',
-
-  // Pages
-  startLink: '#page_1_navigation_3_link',
-  catalogLink: 'a[id^="catalog_NieuweAanvraag"], a[id^="catalog_nieuweaanvraag"]',
-  finalConfirmation: '#QuestionEmbedding_585_default',
-  submitButton: 'input[value="Indienen"]',
-};
-
 /**
  * Audio object voor keep-alive functionaliteit.
  * Speelt een stille audio loop af om Chrome tab throttling te voorkomen.
@@ -1424,17 +1355,17 @@ async function uploadFile(fileData) {
 function fillCurrentPage(config) {
   // Persoonlijke informatie en bedrijfsvelden
   const fields = [
-    [SELECTORS.bsn, config.bsn],
-    [SELECTORS.initials, config.initials],
-    [SELECTORS.lastName, config.lastName],
-    [SELECTORS.phone, config.phone],
-    [SELECTORS.email, config.email],
-    [SELECTORS.iban, config.iban],
-    [SELECTORS.postalCode, config.postalCode],
-    [SELECTORS.houseNumber, config.houseNumber],
-    [SELECTORS.houseNumberAddition, config.houseNumberAddition],
-    [SELECTORS.companyName, config.companyName],
-    [SELECTORS.kvkNumber, config.kvkNumber]
+    ['#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edBSNnummer', config.bsn],
+    ['#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edVoorletters2', config.initials],
+    ['#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edAchternaam2', config.lastName],
+    ['#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_telefoon\\.0\\.edTelefoonField3', config.phone],
+    ['#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_email\\.0\\.edEmailField3', config.email],
+    ['#link_aanv\\.0\\.edIBAN', config.iban],
+    ['#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode', config.postalCode],
+    ['#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edHuisnummer2', config.houseNumber],
+    ['#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edToevoeging2', config.houseAddition],
+    ['#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_Naam', config.companyName],
+    ['#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_KvK', config.kvkNumber]
   ];
 
   fields.forEach(([selector, value]) => {
@@ -1545,7 +1476,7 @@ function detectCurrentStep() {
   // Stap 20: Eindvoorwaarden pagina
   // -------------------------------------------------------------------------
   // Moet BEIDE elementen hebben: akkoord checkbox EN indienen knop
-  if (document.querySelector(SELECTORS.akkoord) && document.querySelector(SELECTORS.submitButton)) {
+  if (document.querySelector('#cbAccoord') && document.querySelector('input[value="Indienen"]')) {
     console.log('🎯 Detected: final_confirmed - Terms page with submit button');
     return 'final_confirmed';
   }
@@ -1581,7 +1512,7 @@ function detectCurrentStep() {
   }
 
   // Step 19: Final confirmation question
-  if (document.querySelector(SELECTORS.finalConfirmation)) {
+  if (document.querySelector('#QuestionEmbedding_585_default')) {
     console.log('🎯 Detected: final_confirmation - Final confirmation question');
     return 'final_confirmation';
   }
@@ -1663,7 +1594,7 @@ function detectCurrentStep() {
 
   // Step 18: File upload page
   // BUT NOT if the confirmation dialog is visible (dialog takes precedence)
-  const hasFileUploadButton = document.querySelector(SELECTORS.fileUploadButton);
+  const hasFileUploadButton = document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.0\\.btn_ToevoegenBijlage');
   if (hasFileUploadButton && !hasMaatregelenDialog) {
     console.log('🎯 Detected: meldcode_selected - File upload page');
     return 'meldcode_selected';
@@ -1687,7 +1618,7 @@ function detectCurrentStep() {
   }
 
   // Step 16: Meldcode lookup button
-  if (document.querySelector(SELECTORS.meldcodeLookup)) {
+  if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.lookup_meldcode')) {
     console.log('🎯 Detected: date_continued - Meldcode lookup button visible');
     return 'date_continued';
   }
@@ -1710,30 +1641,30 @@ function detectCurrentStep() {
 
   // Step 13: Installation details modal (date fields)
   // BUT ONLY if we're NOT on the final review page (which also has these fields visible)
-  if (document.querySelector(SELECTORS.purchaseDate) &&
-      document.querySelector(SELECTORS.installationDate) &&
+  if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.DatumAangeschaft') &&
+      document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.DatumInstallatie') &&
       !hasControleerGegevens && !hasVerzendenTab) {
     console.log('🎯 Detected: warmtepomp_selected - Installation date modal');
     return 'warmtepomp_selected';
   }
 
   // Step 12: Warmtepomp choice radio button
-  if (document.querySelector(SELECTORS.warmtepompChoice)) {
+  if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.choice_warmtepomp')) {
     console.log('🎯 Detected: measure_added - Warmtepomp selection modal');
     return 'measure_added';
   }
 
   // Step 11: Add measure button
-  if (document.querySelector(SELECTORS.addMeasure)) {
+  if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.addInvestering')) {
     console.log('🎯 Detected: bag_different_done - Add measure page');
     return 'bag_different_done';
   }
 
   // Step 10: BAG different page - Check this FIRST before bag_address_form
   // This page has the BAGafwijkend_J radio button (Ja/Nee for address confirmation)
-  if (document.querySelector(SELECTORS.bagDifferentYes)) {
+  if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.BAGafwijkend_J')) {
     // Additional check: make sure we're not on the "add measure" page
-    const hasAddMeasureButton = document.querySelector(SELECTORS.addMeasure);
+    const hasAddMeasureButton = document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.addInvestering');
     if (!hasAddMeasureButton) {
       console.log('🎯 Detected: address_different_done - BAG confirmation page');
       return 'address_different_done';
@@ -1774,27 +1705,27 @@ function detectCurrentStep() {
   }
 
   // Step 9: Address different checkbox
-  if (document.querySelector(SELECTORS.addressDifferent)) {
+  if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.Adresafwijkend_J')) {
     console.log('🎯 Detected: correspondence_done - Address page');
     return 'correspondence_done';
   }
 
   // Step 7-8: Intermediary page (BOTH contact person AND digital correspondence on same page)
-  if (document.querySelector(SELECTORS.extraContactPerson) &&
-      document.querySelector(SELECTORS.digitalCorrespondence)) {
+  if (document.querySelector('#link_int\\.0\\.link_int_organisatie\\.0\\.edExtraContactpersoon_n_int') &&
+      document.querySelector('#link_int\\.0\\.edDigitaleCorrespondentie_J')) {
     console.log('🎯 Detected: personal_info_done - Intermediary page (combined)');
     return 'personal_info_done';
   }
 
   // Step 6: Personal info (BSN + initials confirms this page)
-  if (document.querySelector(SELECTORS.bsn) &&
-      document.querySelector(SELECTORS.initials)) {
+  if (document.querySelector('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edBSNnummer') &&
+      document.querySelector('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edVoorletters2')) {
     console.log('🎯 Detected: info_acknowledged - Personal details page');
     return 'info_acknowledged';
   }
 
   // Step 5: Info acknowledgment checkbox
-  if (document.querySelector(SELECTORS.infoRead)) {
+  if (document.querySelector('#FWS_Aanvraag_ISDEPA\\.0\\.InfoGelezen_JN')) {
     console.log('🎯 Detected: declarations_done - Info acknowledgment page');
     return 'declarations_done';
   }
@@ -1802,13 +1733,13 @@ function detectCurrentStep() {
   // Step 4: Declarations page
   // Simple detection: Just check for the unique "NaarWaarheid" checkbox
   // This is more robust than checking multiple elements that might change after user interaction
-  if (document.querySelector(SELECTORS.naarWaarheid)) {
+  if (document.querySelector('#NaarWaarheid')) {
     console.log('🎯 Detected: first_volgende_clicked - Declarations page');
     return 'first_volgende_clicked';
   }
 
   // Step 3: First Volgende button
-  if (document.querySelector(SELECTORS.btn12)) {
+  if (document.querySelector('#btn12')) {
     console.log('🎯 Detected: isde_selected - First Volgende page');
     return 'isde_selected';
   }
@@ -1840,7 +1771,7 @@ function detectCurrentStep() {
 
   // Step 2: ISDE catalog page - SIMPLE detection
   // Just check if the catalog link exists (ID starts with "catalog_NieuweAanvraag")
-  const catalogLink = document.querySelector(SELECTORS.catalogLink);
+  const catalogLink = document.querySelector('a[id^="catalog_NieuweAanvraag"], a[id^="catalog_nieuweaanvraag"]');
 
   console.log('Simple detection:');
   console.log('  - Found catalog link:', !!catalogLink);
@@ -1856,7 +1787,7 @@ function detectCurrentStep() {
   // Step 2: Introductie page (role selection: Aanvrager/Intermediair)
   // IMPORTANT: Must distinguish from declarations page which ALSO has Aanvrager/Intermediair
   // The intro page does NOT have the NaarWaarheid checkbox
-  const hasNaarWaarheidCheckbox = document.querySelector(SELECTORS.naarWaarheid);
+  const hasNaarWaarheidCheckbox = document.querySelector('#NaarWaarheid');
 
   const hasRoleQuestion = Array.from(document.querySelectorAll('*')).some(el =>
     el.textContent && (
@@ -1881,7 +1812,7 @@ function detectCurrentStep() {
 
   // Step 1: Start page
   // Has the "Nieuwe aanvraag" button but NOT the catalog link
-  const startLinkById = document.querySelector(SELECTORS.startLink);
+  const startLinkById = document.querySelector('#page_1_navigation_3_link');
   const startLinkByText = Array.from(document.querySelectorAll('a')).find(link => {
     const text = (link.textContent || link.innerText || '').trim().toLowerCase();
     return text === 'nieuwe aanvraag' || text === 'start formulier' || text.includes('nieuwe aanvraag');
@@ -2056,7 +1987,7 @@ async function startFullAutomation(config) {
       }
 
       // Gebruik exacte selector uit opname
-      let startLink = document.querySelector(SELECTORS.startLink);
+      let startLink = document.querySelector('#page_1_navigation_3_link');
       if (!startLink) {
         startLink = Array.from(document.querySelectorAll('a')).find(link => {
           const text = (link.textContent || link.innerText || '').trim().toLowerCase();
@@ -2087,7 +2018,7 @@ async function startFullAutomation(config) {
             pollCount++;
             console.log(`Polling for catalog page (${pollCount})...`);
 
-            const catalogLink = document.querySelector(SELECTORS.catalogLink);
+            const catalogLink = document.querySelector('a[id^="catalog_NieuweAanvraag"]');
             if (catalogLink) {
               console.log('✅ Catalog page detected via polling!');
               updateStatus('Catalogus pagina geladen', 'nieuwe_aanvraag_geklikt');
@@ -2317,24 +2248,24 @@ async function startFullAutomation(config) {
     }
 
     // Step 3: Click first Volgende button
-    if (document.querySelector(SELECTORS.btn12) && (currentStep === 'isde_selected' || detectedStep === 'isde_selected')) {
+    if (document.querySelector('#btn12') && (currentStep === 'isde_selected' || detectedStep === 'isde_selected')) {
       console.log('Step 3: Clicking first Volgende');
       updateStatus('Klik op Volgende knop', '3 - Eerste Volgende', detectedStep);
       // Set the step BEFORE clicking to ensure it's saved
       sessionStorage.setItem('automationStep', 'first_volgende_clicked');
       console.log('Set automationStep to:', sessionStorage.getItem('automationStep'));
-      await clickElement(SELECTORS.btn12);
+      await clickElement('#btn12');
       return;
     }
-
+    
     // Step 5: Declarations page (after intro role selection OR after first volgende)
     // Note: This page can be reached from multiple paths, so accept multiple currentStep values
-    if (document.querySelector(SELECTORS.naarWaarheid) && (currentStep === 'first_volgende_clicked' || currentStep === 'intro_role_completed' || currentStep === 'intro_role_selection')) {
+    if (document.querySelector('#NaarWaarheid') && (currentStep === 'first_volgende_clicked' || currentStep === 'intro_role_completed' || currentStep === 'intro_role_selection')) {
       console.log('Step 5: Filling declarations');
       updateStatus('Verklaringen invullen', '4 - Verklaringen', detectedStep);
 
       // Use ensureChecked for all checkboxes to prevent unchecking already checked boxes
-      await ensureChecked(SELECTORS.naarWaarheid);
+      await ensureChecked('#NaarWaarheid');
       await ensureChecked('#cbTussenpersoonJ');
       await ensureChecked('#link_aanv\\.0\\.cbFWS_Deelnemer_SoortP'); // Participant type checkbox
       await ensureChecked('#FWS_Aanvraag_ISDEPA\\.0\\.edTypePand_eigenWoning_print');
@@ -2349,12 +2280,12 @@ async function startFullAutomation(config) {
 
     // Step 5: Information acknowledgment
     // Accept both currentStep and detectedStep to handle page load timing issues
-    if (document.querySelector(SELECTORS.infoRead) &&
+    if (document.querySelector('#FWS_Aanvraag_ISDEPA\\.0\\.InfoGelezen_JN') &&
         (currentStep === 'declarations_done' || detectedStep === 'declarations_done')) {
       console.log('Step 5: Acknowledging information');
       updateStatus('Informatie bevestigen', '5 - Info Bevestiging', detectedStep);
-      await ensureChecked(SELECTORS.infoRead);
-      await clickElement(SELECTORS.continueTabButton);
+      await ensureChecked('#FWS_Aanvraag_ISDEPA\\.0\\.InfoGelezen_JN');
+      await clickElement('#btnVolgendeTab');
       sessionStorage.setItem('automationStep', 'info_acknowledged');
       return;
     }
@@ -2364,19 +2295,19 @@ async function startFullAutomation(config) {
     // =========================================================================
     // Vult alle persoonlijke gegevens in: BSN, naam, telefoon, email, IBAN, adres.
     // Gebruikt extra vertragingen tussen velden om robot detectie te vermijden.
-    if (document.querySelector(SELECTORS.bsn) &&
+    if (document.querySelector('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edBSNnummer') &&
         (currentStep === 'info_acknowledged' || detectedStep === 'info_acknowledged')) {
       console.log('Step 6: Filling personal information');
       updateStatus('Persoonlijke gegevens invullen', '6 - Persoonlijke Gegevens', detectedStep);
 
       // Vul velden met extra vertragingen om robot detectie te voorkomen
-      await fillInput(SELECTORS.bsn, config.bsn);
+      await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edBSNnummer', config.bsn);
       await unthrottledDelay(1000 + Math.random() * 500); // Mensachtig - robot detectie preventie
 
-      await fillInput(SELECTORS.initials, config.initials);
+      await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edVoorletters2', config.initials);
       await unthrottledDelay(800 + Math.random() * 400); // Mensachtig - robot detectie preventie
 
-      await fillInput(SELECTORS.lastName, config.lastName);
+      await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edAchternaam2', config.lastName);
       await unthrottledDelay(700 + Math.random() * 300); // Mensachtig - robot detectie preventie
 
       // Gender selection based on config
@@ -2387,36 +2318,36 @@ async function startFullAutomation(config) {
       }
       await unthrottledDelay(600 + Math.random() * 400); // Mensachtig - robot detectie preventie
 
-      await fillInput(SELECTORS.phone, config.phone);
+      await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_telefoon\\.0\\.edTelefoonField3', config.phone);
       await unthrottledDelay(800 + Math.random() * 400); // Mensachtig - robot detectie preventie
 
-      await fillInput(SELECTORS.email, config.email);
+      await fillInput('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.link_aanv_persoon_email\\.0\\.edEmailField3', config.email);
       await unthrottledDelay(900 + Math.random() * 500); // Mensachtig - robot detectie preventie
 
-      await fillInput(SELECTORS.iban, config.iban);
+      await fillInput('#link_aanv\\.0\\.edIBAN', config.iban);
       await unthrottledDelay(3000); // Extra lange pauze voor IBAN validatie
 
-      await fillInput(SELECTORS.postalCode, config.postalCode);
+      await fillInput('#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode', config.postalCode);
       await unthrottledDelay(700 + Math.random() * 300); // Mensachtig - robot detectie preventie
 
-      await fillInput(SELECTORS.houseNumber, config.houseNumber);
+      await fillInput('#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edHuisnummer2', config.houseNumber);
       await unthrottledDelay(600 + Math.random() * 300); // Mensachtig - robot detectie preventie
 
-      await fillInput(SELECTORS.houseNumberAddition, config.houseAddition);
+      await fillInput('#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edToevoeging2', config.houseAddition);
       await unthrottledDelay(700 + Math.random() * 400); // Mensachtig - robot detectie preventie
-
+      
       // Check postal address different checkbox
       await clickElement('#link_aanv\\.0\\.edPostadres_anders_J');
       await unthrottledDelay(1000);
-
-      await clickElement(SELECTORS.continueTabButton);
+      
+      await clickElement('#btnVolgendeTab');
       sessionStorage.setItem('automationStep', 'personal_info_done');
       return;
     }
-
+    
     // Step 7 & 8 COMBINED: Intermediary page (both questions on same page)
-    if (document.querySelector(SELECTORS.extraContactPerson) &&
-        document.querySelector(SELECTORS.digitalCorrespondence) &&
+    if (document.querySelector('#link_int\\.0\\.link_int_organisatie\\.0\\.edExtraContactpersoon_n_int') &&
+        document.querySelector('#link_int\\.0\\.edDigitaleCorrespondentie_J') &&
         currentStep === 'personal_info_done') {
       console.log('Step 7-8: Filling intermediary page (contact person + digital correspondence)');
       updateStatus('Intermediair gegevens invullen', '7-8 - Intermediair', detectedStep);
