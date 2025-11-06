@@ -73,7 +73,7 @@ document.addEventListener('visibilitychange', () => {
  */
 let lastExecutedStep = null;
 let stepExecutionCount = 0;
-const MAX_STEP_RETRIES = 2; // Automatisch stoppen na 2 pogingen op dezelfde stap
+const MAX_STEP_RETRIES = 4; // Automatisch stoppen na 4 pogingen op dezelfde stap (verhoogd voor langzame page loads)
 
 /**
  * Audio object voor keep-alive functionaliteit.
@@ -3189,27 +3189,44 @@ async function startFullAutomation(config) {
       console.log('Step 18: File upload page');
       updateStatus('Documenten uploaden', '18 - Documenten Uploaden', detectedStep);
 
-      // FIRST: Check if documents are already uploaded by looking at the page
-      // Look for document names or upload success indicators in the DOM
-      const uploadedDocuments = Array.from(document.querySelectorAll('*')).filter(el => {
-        const text = el.textContent;
-        return text && (
-          text.includes('betaalbewijs') ||
-          text.includes('factuur') ||
-          text.includes('.pdf') ||
-          text.includes('.jpg') ||
-          text.includes('.jpeg') ||
-          text.includes('.png')
-        );
-      });
+      // SMART CHECK: Detecteer welke documenten AL geüpload zijn
+      // Zoek in "Overzicht bijlagen" sectie naar bestandsnamen
+      console.log('🔍 Checking which documents are already uploaded...');
+
+      const pageText = document.body.textContent.toLowerCase();
+
+      // Check of betaalbewijs al geüpload is
+      // Zoek naar "betaalbewijs" of de filename in de pagina
+      const betaalbewijsFilename = config.betaalbewijs ? config.betaalbewijs.name.toLowerCase() : '';
+      const betaalbewijsAlreadyUploaded =
+        pageText.includes('betalingsbewijs.pdf') ||
+        pageText.includes('betalingsbewijs.jpg') ||
+        pageText.includes('betalingsbewijs.jpeg') ||
+        pageText.includes('betalingsbewijs.png') ||
+        pageText.includes('betaalbewijs.pdf') ||
+        pageText.includes('betaalbewijs.jpg') ||
+        pageText.includes('betaalbewijs.jpeg') ||
+        pageText.includes('betaalbewijs.png') ||
+        (betaalbewijsFilename && pageText.includes(betaalbewijsFilename));
+
+      // Check of factuur al geüpload is
+      const factuurFilename = config.factuur ? config.factuur.name.toLowerCase() : '';
+      const factuurAlreadyUploaded =
+        pageText.includes('factuur.pdf') ||
+        pageText.includes('factuur.jpg') ||
+        pageText.includes('factuur.jpeg') ||
+        pageText.includes('factuur.png') ||
+        (factuurFilename && pageText.includes(factuurFilename));
+
+      console.log('📋 Document upload status:');
+      console.log('  Betaalbewijs already uploaded:', betaalbewijsAlreadyUploaded);
+      console.log('  Factuur already uploaded:', factuurAlreadyUploaded);
 
       await ensureDocumentsForUpload(config);
 
-      const documentsAlreadyUploaded = uploadedDocuments.length >= 2; // At least 2 documents should be visible
-
-      if (documentsAlreadyUploaded) {
-        console.log('✅ Documents already uploaded (found via DOM check), skipping upload step');
-        console.log('Found documents:', uploadedDocuments.map(el => el.textContent.trim()).slice(0, 5));
+      // Check of BEIDE documenten al geüpload zijn
+      if (betaalbewijsAlreadyUploaded && factuurAlreadyUploaded) {
+        console.log('✅ Both documents already uploaded, skipping upload step');
         // Skip to clicking Volgende
       } else if (!config.betaalbewijs || !config.factuur) {
         // Documents NOT uploaded AND files not in config (recovery scenario)
@@ -3217,24 +3234,30 @@ async function startFullAutomation(config) {
         updateStatus('⚠️ Upload documenten handmatig en herstart automatisering', '18 - Documenten ontbreken');
         automationStopped = true;
         return;
-      }
+      } else {
+        // Upload ALLEEN de documenten die nog NIET geüpload zijn
 
-      // Upload betaalbewijs (betaalbewijs) - eerste document (VERPLICHT)
-      if (config.betaalbewijs) {
-        console.log('Uploading betaalbewijs:', config.betaalbewijs.name);
-        await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.0\\.btn_ToevoegenBijlage');
-        await unthrottledDelay(2000); // Increased from 1500 to 2000
-        await uploadFile(config.betaalbewijs);
-        await unthrottledDelay(2000);
-      }
+        // Upload betaalbewijs (betaalbewijs) - eerste document (VERPLICHT)
+        if (config.betaalbewijs && !betaalbewijsAlreadyUploaded) {
+          console.log('📤 Uploading betaalbewijs:', config.betaalbewijs.name);
+          await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.0\\.btn_ToevoegenBijlage');
+          await unthrottledDelay(2000);
+          await uploadFile(config.betaalbewijs);
+          await unthrottledDelay(2000);
+        } else if (config.betaalbewijs && betaalbewijsAlreadyUploaded) {
+          console.log('✅ Betaalbewijs already uploaded, skipping');
+        }
 
-      // Upload factuur (factuur) - tweede document (VERPLICHT)
-      if (config.factuur) {
-        console.log('Uploading factuur:', config.factuur.name);
-        await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.1\\.btn_ToevoegenBijlage');
-        await unthrottledDelay(2000); // Increased from 1500 to 2000
-        await uploadFile(config.factuur);
-        await unthrottledDelay(2000);
+        // Upload factuur (factuur) - tweede document (VERPLICHT)
+        if (config.factuur && !factuurAlreadyUploaded) {
+          console.log('📤 Uploading factuur:', config.factuur.name);
+          await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.1\\.btn_ToevoegenBijlage');
+          await unthrottledDelay(2000);
+          await uploadFile(config.factuur);
+          await unthrottledDelay(2000);
+        } else if (config.factuur && factuurAlreadyUploaded) {
+          console.log('✅ Factuur already uploaded, skipping');
+        }
       }
 
       // Click the Volgende button to proceed
@@ -3702,7 +3725,8 @@ window.addEventListener('load', async () => {
     updateStatus('Pagina geladen, automatisering doorgaan...', currentStep);
 
     // Use unthrottledDelay instead of setTimeout to avoid background tab throttling
-    unthrottledDelay(2000).then(() => {
+    // Verhoogd naar 3500ms voor langzame page loads (voorkomt loop detectie)
+    unthrottledDelay(3500).then(() => {
       console.log('Starting automation after page load');
       startFullAutomation(config);
     }).catch(err => {
@@ -3740,7 +3764,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (currentStep && currentStep !== 'start') {
       // Use unthrottledDelay instead of setTimeout to avoid background tab throttling
-      unthrottledDelay(2000).then(() => {
+      // Verhoogd naar 3500ms voor langzame page loads (voorkomt loop detectie)
+      unthrottledDelay(3500).then(() => {
         startFullAutomation(config);
       }).catch(err => {
         if (err.message === 'Automation stopped') {
