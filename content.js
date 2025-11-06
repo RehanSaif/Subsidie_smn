@@ -793,27 +793,6 @@ async function resolveAutomationConfigFromRequest(request) {
   throw new Error('Geen automatiseringsconfiguratie ontvangen.');
 }
 
-function cleanupAutomationFiles(config) {
-  return new Promise(resolve => {
-    if (!config || !Array.isArray(config._storageCleanupKeys) || config._storageCleanupKeys.length === 0) {
-      resolve();
-      return;
-    }
-
-    const keysToRemove = Array.from(new Set(config._storageCleanupKeys));
-    if (keysToRemove.length === 0) {
-      resolve();
-      return;
-    }
-
-    chrome.storage.local.remove(keysToRemove, () => {
-      console.log('🧹 Cleaned up automation files from storage:', keysToRemove);
-      config._storageCleanupKeys = [];
-      resolve();
-    });
-  });
-}
-
 function startAutomationWithConfig(config) {
   console.log('Starting automation with config:', config);
   // Reset vlag bij het starten van nieuwe automatisering
@@ -873,37 +852,6 @@ function startAutomationWithConfig(config) {
   createStatusPanel();
   updateStatus('Automatisering gestart', 'Initialiseren');
 
-  // Toon belangrijke waarschuwing: houd tab actief
-  const initialWarning = document.createElement('div');
-  initialWarning.style.cssText = `
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      background: #d1ecf1;
-      border: 2px solid #17a2b8;
-      border-radius: 8px;
-      padding: 14px 18px;
-      max-width: 320px;
-      font-size: 13px;
-      color: #0c5460;
-      z-index: 10001;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      line-height: 1.5;
-    `;
-  initialWarning.innerHTML = `
-      <strong>✅ Multi-tab ondersteuning actief!</strong><br>
-      Dit tabblad kan op de achtergrond draaien zonder vertraging.
-      Je kunt <strong>meerdere tabs tegelijk</strong> laten runnen.
-    `;
-  document.body.appendChild(initialWarning);
-
-  // Verwijder waarschuwing na 8 seconden
-  unthrottledDelay(8000).then(() => {
-    initialWarning.remove();
-  }).catch(() => {
-    // Ignore errors tijdens het verwijderen van de banner
-  });
-
   // Haal bestandsgegevens op uit chrome.storage.local als er keys zijn opgegeven
   // Dit is nodig omdat bestanden niet direct via messages kunnen worden verzonden
   const filesToRetrieve = [];
@@ -911,11 +859,16 @@ function startAutomationWithConfig(config) {
   if (config.factuurKey) filesToRetrieve.push(config.factuurKey);
   if (config.machtigingsbewijsKey) filesToRetrieve.push(config.machtigingsbewijsKey);
 
-    if (filesToRetrieve.length > 0) {
-      console.log('📥 Retrieving files from chrome.storage.local:', filesToRetrieve);
-      chrome.storage.local.get(filesToRetrieve, (result) => {
-        // Vervang keys met daadwerkelijke bestandsgegevens
-        if (config.betaalbewijsKey) {
+  const storageKeyMap = {};
+  if (config.betaalbewijsKey) storageKeyMap.betaalbewijs = config.betaalbewijsKey;
+  if (config.factuurKey) storageKeyMap.factuur = config.factuurKey;
+  if (config.machtigingsbewijsKey) storageKeyMap.machtigingsbewijs = config.machtigingsbewijsKey;
+
+  if (filesToRetrieve.length > 0) {
+    console.log('📥 Retrieving files from chrome.storage.local:', filesToRetrieve);
+    chrome.storage.local.get(filesToRetrieve, (result) => {
+      // Vervang keys met daadwerkelijke bestandsgegevens
+      if (config.betaalbewijsKey) {
           config.betaalbewijs = result[config.betaalbewijsKey];
           delete config.betaalbewijsKey;
         }
@@ -929,15 +882,45 @@ function startAutomationWithConfig(config) {
       }
 
         console.log('✅ Files retrieved successfully for session:', config.sessionId);
-        config._storageCleanupKeys = filesToRetrieve;
+        config._storageKeyMap = storageKeyMap;
+        config._storageCleanupKeys = Object.values(storageKeyMap);
         startFullAutomation(config);
       });
     } else {
+      config._storageKeyMap = storageKeyMap;
       config._storageCleanupKeys = [];
       startFullAutomation(config);
     }
 
   return true;
+}
+
+async function ensureDocumentsForUpload(config) {
+  if (!config) {
+    return;
+  }
+
+  const map = config._storageKeyMap || {};
+  const types = ['betaalbewijs', 'factuur', 'machtigingsbewijs'];
+  const missingTypes = types.filter(type => !config[type] && map[type]);
+
+  if (missingTypes.length === 0) {
+    return;
+  }
+
+  const keys = missingTypes.map(type => map[type]);
+  const result = await new Promise(resolve => {
+    chrome.storage.local.get(keys, resolve);
+  });
+
+  missingTypes.forEach(type => {
+    const key = map[type];
+    const data = result[key];
+    if (data) {
+      console.log(`🔁 Rehydrated document "${type}" from storage key ${key}`);
+      config[type] = data;
+    }
+  });
 }
 
 // ============================================================================
@@ -1094,6 +1077,52 @@ async function clickElement(selectorOrElement) {
   // Voer de klik uit en wacht daarna
   element.click();
   await unthrottledDelay(1000); // Mensachtig - robot detectie preventie
+}
+
+/**
+ * Zorgt ervoor dat een checkbox is aangevinkt.
+ * Klikt alleen als de checkbox nog niet checked is.
+ * Voorkomt toggle-gedrag waarbij een al aangevinkte checkbox wordt uitgevinkt.
+ *
+ * @param {string|HTMLElement} selectorOrElement - CSS selector of element
+ */
+async function ensureChecked(selectorOrElement) {
+  if (automationStopped) {
+    console.log('❌ Check cancelled - automation stopped');
+    return;
+  }
+
+  // Verkrijg het element
+  let element;
+  if (typeof selectorOrElement === 'string') {
+    element = await waitForElement(selectorOrElement);
+  } else {
+    element = selectorOrElement;
+  }
+
+  if (automationStopped) {
+    console.log('❌ Check cancelled - automation stopped');
+    return;
+  }
+
+  // Check of het al is aangevinkt
+  if (element.checked) {
+    console.log(`✓ Checkbox already checked: ${typeof selectorOrElement === 'string' ? selectorOrElement : element.id}`);
+    return; // Al aangevinkt, niets doen
+  }
+
+  // Niet aangevinkt, dus klik erop
+  console.log(`☐ → ☑ Checking: ${typeof selectorOrElement === 'string' ? selectorOrElement : element.id}`);
+  element.scrollIntoView({behavior: 'smooth', block: 'center'});
+  await unthrottledDelay(500);
+
+  if (automationStopped) {
+    console.log('❌ Check cancelled - automation stopped');
+    return;
+  }
+
+  element.click();
+  await unthrottledDelay(1000);
 }
 
 /**
@@ -1682,10 +1711,10 @@ function detectCurrentStep() {
     return 'declarations_done';
   }
 
-  // Step 4: Declarations (multiple unique checkboxes)
-  if (document.querySelector('#NaarWaarheid') &&
-      document.querySelector('#cbTussenpersoonJ') &&
-      document.querySelector('#FWS_Aanvraag_ISDEPA\\.0\\.edTypePand_eigenWoning_print')) {
+  // Step 4: Declarations page
+  // Simple detection: Just check for the unique "NaarWaarheid" checkbox
+  // This is more robust than checking multiple elements that might change after user interaction
+  if (document.querySelector('#NaarWaarheid')) {
     console.log('🎯 Detected: first_volgende_clicked - Declarations page');
     return 'first_volgende_clicked';
   }
@@ -1734,6 +1763,32 @@ function detectCurrentStep() {
   if (catalogLink) {
     console.log('🎯 Detected: nieuwe_aanvraag_clicked - ISDE catalog (found catalog link)');
     return 'nieuwe_aanvraag_clicked';
+  }
+
+  // Step 2: Introductie page (role selection: Aanvrager/Intermediair)
+  // IMPORTANT: Must distinguish from declarations page which ALSO has Aanvrager/Intermediair
+  // The intro page does NOT have the NaarWaarheid checkbox
+  const hasNaarWaarheidCheckbox = document.querySelector('#NaarWaarheid');
+
+  const hasRoleQuestion = Array.from(document.querySelectorAll('*')).some(el =>
+    el.textContent && (
+      el.textContent.includes('Wat is uw rol bij deze aanvraag') ||
+      el.textContent.includes('Toelichting rol')
+    )
+  );
+  const hasAanvragerOption = Array.from(document.querySelectorAll('label, *')).some(el =>
+    el.textContent && el.textContent.trim() === 'Aanvrager'
+  );
+  const hasIntermediairOption = Array.from(document.querySelectorAll('label, *')).some(el =>
+    el.textContent && el.textContent.trim() === 'Intermediair'
+  );
+
+  // ONLY detect as intro page if:
+  // 1. Has role question OR both role options
+  // 2. Does NOT have NaarWaarheid checkbox (that's declarations page)
+  if ((hasRoleQuestion || (hasAanvragerOption && hasIntermediairOption)) && !hasNaarWaarheidCheckbox) {
+    console.log('🎯 Detected: intro_role_selection - Introductie page (role selection)');
+    return 'intro_role_selection';
   }
 
   // Step 1: Start page
@@ -1864,9 +1919,6 @@ async function startFullAutomation(config) {
     }
 
     console.log('Using step:', currentStep);
-
-    // Sla voortgang periodiek op voor crash recovery
-    saveProgressForRecovery();
 
     // -------------------------------------------------------------------------
     // Loop detectie: Voorkom infinite loops
@@ -2090,8 +2142,94 @@ async function startFullAutomation(config) {
       }
     }
 
+    // Step 4: Introductie page - select role (Aanvrager/Intermediair)
+    // This page appears AFTER clicking the first Volgende button
+    // IMPORTANT: Only process if we're ACTUALLY on the intro page (no NaarWaarheid checkbox)
+    const isActuallyIntroPage = !document.querySelector('#NaarWaarheid');
+
+    if (isActuallyIntroPage && (currentStep === 'intro_role_selection' || (currentStep === 'first_volgende_clicked' && detectedStep === 'intro_role_selection'))) {
+      console.log('Step 4: Selecting role on introductie page');
+      updateStatus('Rol selecteren (Aanvrager)', '4 - Introductie', detectedStep);
+
+      // Find the "Aanvrager" radio button - try multiple strategies
+      let aanvragerRadio = null;
+
+      // Strategy 1: Find via label with for attribute
+      const allRadios = document.querySelectorAll('input[type="radio"]');
+      console.log(`Found ${allRadios.length} radio buttons on page`);
+
+      for (const radio of allRadios) {
+        // Check label via for attribute
+        if (radio.id) {
+          const label = document.querySelector(`label[for="${radio.id}"]`);
+          if (label) {
+            console.log(`Radio ${radio.id} has label: "${label.textContent.trim()}"`);
+            if (label.textContent.includes('Aanvrager')) {
+              aanvragerRadio = radio;
+              console.log('✅ Found Aanvrager via label[for]');
+              break;
+            }
+          }
+        }
+
+        // Check parent label
+        const parentLabel = radio.closest('label');
+        if (parentLabel && parentLabel.textContent.includes('Aanvrager')) {
+          aanvragerRadio = radio;
+          console.log('✅ Found Aanvrager via parent label');
+          break;
+        }
+
+        // Check next sibling text
+        if (radio.nextSibling && radio.nextSibling.textContent && radio.nextSibling.textContent.includes('Aanvrager')) {
+          aanvragerRadio = radio;
+          console.log('✅ Found Aanvrager via next sibling');
+          break;
+        }
+      }
+
+      if (aanvragerRadio) {
+        console.log('✅ Found Aanvrager radio button, selecting...');
+        aanvragerRadio.checked = true;
+        aanvragerRadio.click();
+
+        // Trigger change event to ensure form updates
+        aanvragerRadio.dispatchEvent(new Event('change', { bubbles: true }));
+        await unthrottledDelay(500);
+
+        // Find and click the Volgende button
+        const volgendeButton = Array.from(document.querySelectorAll('input[type="submit"], input[type="button"], button')).find(btn =>
+          (btn.value && btn.value.includes('Volgende')) ||
+          (btn.textContent && btn.textContent.includes('Volgende'))
+        );
+
+        if (volgendeButton) {
+          console.log('✅ Found Volgende button, clicking to declarations page...');
+          sessionStorage.setItem('automationStep', 'intro_role_completed');
+          await clickElement(volgendeButton);
+          return;
+        } else {
+          console.error('❌ Volgende button not found on intro page');
+          updateStatus('⚠️ Klik handmatig op Volgende', '4 - Handmatige actie');
+          automationStopped = true;
+          return;
+        }
+      } else {
+        console.error('❌ Aanvrager radio button not found');
+        console.log('Available radio buttons:');
+        allRadios.forEach((radio, idx) => {
+          const label = radio.id ? document.querySelector(`label[for="${radio.id}"]`) : null;
+          const parentLabel = radio.closest('label');
+          console.log(`  Radio ${idx}: id="${radio.id}", label="${label?.textContent}", parent="${parentLabel?.textContent}"`);
+        });
+        updateStatus('⚠️ Aanvrager optie niet gevonden', '4 - Fout');
+        automationStopped = true;
+        return;
+      }
+    }
+
     // Step 3: Click first Volgende button
-    if (document.querySelector('#btn12') && currentStep === 'isde_selected') {
+    if (document.querySelector('#btn12') && (currentStep === 'isde_selected' || detectedStep === 'isde_selected')) {
       console.log('Step 3: Clicking first Volgende');
       updateStatus('Klik op Volgende knop', '3 - Eerste Volgende', detectedStep);
       // Set the step BEFORE clicking to ensure it's saved
@@ -2101,26 +2239,33 @@ async function startFullAutomation(config) {
       return;
     }
     
-    // Step 4: Declarations page
-    if (document.querySelector('#NaarWaarheid') && currentStep === 'first_volgende_clicked') {
-      console.log('Step 4: Filling declarations');
+    // Step 5: Declarations page (after intro role selection OR after first volgende)
+    // Note: This page can be reached from multiple paths, so accept multiple currentStep values
+    if (document.querySelector('#NaarWaarheid') && (currentStep === 'first_volgende_clicked' || currentStep === 'intro_role_completed' || currentStep === 'intro_role_selection')) {
+      console.log('Step 5: Filling declarations');
       updateStatus('Verklaringen invullen', '4 - Verklaringen', detectedStep);
-      await clickElement('#NaarWaarheid');
-      await clickElement('#cbTussenpersoonJ');
-      await clickElement('#link_aanv\\.0\\.cbFWS_Deelnemer_SoortP'); // Added participant type checkbox
-      await clickElement('#FWS_Aanvraag_ISDEPA\\.0\\.edTypePand_eigenWoning_print');
-      await clickElement('#FWS_Aanvraag_ISDEPA\\.0\\.edReedsGeinstalleerd_j_print');
-      await clickElement('#FWS_Aanvraag_ISDEPA\\.0\\.edAankoopbewijs_j_print');
+
+      // Use ensureChecked for all checkboxes to prevent unchecking already checked boxes
+      await ensureChecked('#NaarWaarheid');
+      await ensureChecked('#cbTussenpersoonJ');
+      await ensureChecked('#link_aanv\\.0\\.cbFWS_Deelnemer_SoortP'); // Participant type checkbox
+      await ensureChecked('#FWS_Aanvraag_ISDEPA\\.0\\.edTypePand_eigenWoning_print');
+      await ensureChecked('#FWS_Aanvraag_ISDEPA\\.0\\.edReedsGeinstalleerd_j_print');
+      await ensureChecked('#FWS_Aanvraag_ISDEPA\\.0\\.edAankoopbewijs_j_print');
+
+      // Click Volgende button (not a checkbox)
       await clickElement('#btn14');
       sessionStorage.setItem('automationStep', 'declarations_done');
       return;
     }
 
     // Step 5: Information acknowledgment
-    if (document.querySelector('#FWS_Aanvraag_ISDEPA\\.0\\.InfoGelezen_JN') && currentStep === 'declarations_done') {
+    // Accept both currentStep and detectedStep to handle page load timing issues
+    if (document.querySelector('#FWS_Aanvraag_ISDEPA\\.0\\.InfoGelezen_JN') &&
+        (currentStep === 'declarations_done' || detectedStep === 'declarations_done')) {
       console.log('Step 5: Acknowledging information');
       updateStatus('Informatie bevestigen', '5 - Info Bevestiging', detectedStep);
-      await clickElement('#FWS_Aanvraag_ISDEPA\\.0\\.InfoGelezen_JN');
+      await ensureChecked('#FWS_Aanvraag_ISDEPA\\.0\\.InfoGelezen_JN');
       await clickElement('#btnVolgendeTab');
       sessionStorage.setItem('automationStep', 'info_acknowledged');
       return;
@@ -2131,7 +2276,8 @@ async function startFullAutomation(config) {
     // =========================================================================
     // Vult alle persoonlijke gegevens in: BSN, naam, telefoon, email, IBAN, adres.
     // Gebruikt extra vertragingen tussen velden om robot detectie te vermijden.
-    if (document.querySelector('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edBSNnummer') && currentStep === 'info_acknowledged') {
+    if (document.querySelector('#link_aanv\\.0\\.link_aanv_persoon\\.0\\.edBSNnummer') &&
+        (currentStep === 'info_acknowledged' || detectedStep === 'info_acknowledged')) {
       console.log('Step 6: Filling personal information');
       updateStatus('Persoonlijke gegevens invullen', '6 - Persoonlijke Gegevens', detectedStep);
 
@@ -2399,8 +2545,8 @@ async function startFullAutomation(config) {
       
       if (addressDifferentCheckbox) {
         console.log('Found address different checkbox, clicking');
-        await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.Adresafwijkend_J');
-        
+        await ensureChecked('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.Adresafwijkend_J');
+
         const nextButton = document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.next');
         if (nextButton) {
           await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.next');
@@ -2421,7 +2567,8 @@ async function startFullAutomation(config) {
     
     // Step 10: BAG address confirmation
     // This page has the BAGafwijkend_J radio button - click it to confirm the address
-    if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.BAGafwijkend_J') && currentStep === 'address_different_done') {
+    if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.BAGafwijkend_J') &&
+        (currentStep === 'address_different_done' || detectedStep === 'address_different_done')) {
       console.log('Step 10: BAG address confirmation');
       updateStatus('BAG adres bevestigen', '10 - BAG Bevestiging');
 
@@ -2682,7 +2829,8 @@ async function startFullAutomation(config) {
     }
     
     // Step 12: Select warmtepomp
-    if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.choice_warmtepomp') && currentStep === 'measure_added') {
+    if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.choice_warmtepomp') &&
+        (currentStep === 'measure_added' || detectedStep === 'measure_added')) {
       console.log('Step 12: Selecting warmtepomp');
       updateStatus('Warmtepomp selecteren', '12 - Maatregel Selectie', detectedStep);
       await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.choice_warmtepomp');
@@ -2780,7 +2928,8 @@ async function startFullAutomation(config) {
     }
     
     // Step 13: Fill installation details and dates
-    if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.DatumAangeschaft') && currentStep === 'warmtepomp_selected') {
+    if (document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.DatumAangeschaft') &&
+        (currentStep === 'warmtepomp_selected' || detectedStep === 'warmtepomp_selected')) {
       console.log('Step 13: Setting purchase and installation dates');
       updateStatus('Datums en installatiedetails instellen', '13 - Installatie Details', detectedStep);
 
@@ -2847,7 +2996,8 @@ async function startFullAutomation(config) {
         await fillInput('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.InstallBedrijf_KvK', config.kvkNumber);
       } else {
         console.error('❌ KvK field still not found after waiting!');
-        alert('KvK field not found. Please manually check the "Dutch company" checkbox and fill the KvK field, then click Continue.');
+        updateStatus('⚠️ KvK veld niet gevonden - vul handmatig in', '13 - Handmatige actie vereist');
+        automationStopped = true;
         return;
       }
 
@@ -2865,7 +3015,8 @@ async function startFullAutomation(config) {
     }
     
     // Step 14: Continue after installation details (removed redundant company details step)
-    if (currentStep === 'installation_details_done' && document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende')) {
+    if ((currentStep === 'installation_details_done' || detectedStep === 'installation_details_done') &&
+        document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende')) {
       console.log('Step 14: Doorgaan na installatiedetails');
       await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_volgende');
       sessionStorage.setItem('automationStep', 'date_continued');
@@ -3029,6 +3180,8 @@ async function startFullAutomation(config) {
         );
       });
 
+      await ensureDocumentsForUpload(config);
+
       const documentsAlreadyUploaded = uploadedDocuments.length >= 2; // At least 2 documents should be visible
 
       if (documentsAlreadyUploaded) {
@@ -3037,9 +3190,9 @@ async function startFullAutomation(config) {
         // Skip to clicking Volgende
       } else if (!config.betaalbewijs || !config.factuur) {
         // Documents NOT uploaded AND files not in config (recovery scenario)
-        console.log('⚠️ Documents not uploaded yet, but files are missing from config (recovery scenario)');
-        updateStatus('Upload ontbrekende documenten handmatig', '18 - Handmatige upload vereist');
-        alert('Upload betaalbewijs en/of factuur handmatig, stop de automatisering en start daarna opnieuw.');
+        console.log('⚠️ Documents not uploaded yet, but files are missing from config');
+        updateStatus('⚠️ Upload documenten handmatig en herstart automatisering', '18 - Documenten ontbreken');
+        automationStopped = true;
         return;
       }
 
@@ -3100,7 +3253,6 @@ async function startFullAutomation(config) {
         await unthrottledDelay(1000);
 
         sessionStorage.setItem('automationStep', 'files_handled');
-        await cleanupAutomationFiles(config);
 
         // Continue automation after clicking Volgende (break call chain to prevent memory buildup)
         console.log('✅ Volgende clicked, continuing to next step...');
@@ -3108,8 +3260,8 @@ async function startFullAutomation(config) {
         return;
       } else {
         console.log('⚠️ Volgende button not found, may need manual intervention');
-        updateStatus('Klik handmatig op Volgende', '18 - Handmatige actie');
-        alert('Documents uploaded. Please click Volgende manually to continue.');
+        updateStatus('⚠️ Klik handmatig op Volgende om door te gaan', '18 - Handmatige actie');
+        automationStopped = true;
         return;
       }
     }
@@ -3421,7 +3573,7 @@ async function startFullAutomation(config) {
     // De gebruiker moet HANDMATIG de checkbox aanvinken en op "Indienen" klikken
     // voor de finale verzending. Dit is opzettelijk handmatig om de gebruiker
     // volledige controle te geven over de uiteindelijke indiening.
-    if (document.querySelector('#cbAccoord') && currentStep === 'final_confirmed') {
+    if (document.querySelector('#cbAccoord') && (currentStep === 'final_confirmed' || detectedStep === 'final_confirmed')) {
       console.log('Step 20: Laatste pagina bereikt, scrollen naar beneden voor handmatige controle');
       updateStatus('✅ Voltooid! Controleer en verstuur', '20 - Eindcontrole', detectedStep);
 
@@ -3459,178 +3611,14 @@ async function startFullAutomation(config) {
 
     // Anders is het een echte fout
     console.error('Automation error:', error);
-    alert('Automation error: ' + error.message);
+    updateStatus(`❌ Fout: ${error.message}`, 'ERROR');
+    automationStopped = true;
   }
 }
 
 // ============================================================================
-// SECTIE 8: CRASH RECOVERY & PAGE LOAD EVENT LISTENER
+// SECTIE 8: PAGE LOAD EVENT LISTENER
 // ============================================================================
-
-/**
- * Sla voortgang periodiek op voor crash recovery.
- * Dit gebeurt in chrome.storage.local (persistent) zodat na een crash
- * de voortgang hersteld kan worden.
- *
- * MULTI-TAB SUPPORT:
- * Gebruikt sessionId (uniek per tab) om recovery data te isoleren.
- * Dit voorkomt dat meerdere tabs elkaars recovery data overschrijven.
- */
-async function saveProgressForRecovery() {
-  const config = sessionStorage.getItem('automationConfig');
-  const step = sessionStorage.getItem('automationStep');
-
-  if (config && step) {
-    // Gebruik de currentTabId (uniek per tab) voor multi-tab support
-    const recoveryKey = `automation_recovery_${currentTabId}`;
-
-    const recoveryData = {
-      config: config,
-      step: step,
-      timestamp: Date.now(),
-      url: window.location.href,
-      tabId: currentTabId
-    };
-
-    await chrome.storage.local.set({ [recoveryKey]: recoveryData });
-    console.log(`💾 Progress saved for recovery (tab ${currentTabId}):`, step);
-  }
-}
-
-/**
- * Probeer te herstellen van een crash.
- * Toont een dialoog aan de gebruiker om te kiezen tussen hervatten of opnieuw starten.
- *
- * MULTI-TAB SUPPORT:
- * Zoekt naar recovery data voor alle sessies, maar geeft prioriteit aan de meest recente
- * die niet te oud is. Dit voorkomt conflicten tussen meerdere tabs.
- *
- * @returns {boolean} True als recovery succesvol, false als gebruiker opnieuw wil starten
- */
-function attemptCrashRecovery() {
-  return new Promise((resolve) => {
-    // Check alleen voor recovery data van DEZE specifieke tab
-    const recoveryKey = `automation_recovery_${currentTabId}`;
-
-    chrome.storage.local.get(recoveryKey, (result) => {
-      if (!result[recoveryKey]) {
-        console.log(`ℹ️ Geen recovery data gevonden voor tab ${currentTabId}`);
-        resolve(false);
-        return;
-      }
-
-      const recoveryData = result[recoveryKey];
-      const age = Date.now() - recoveryData.timestamp;
-
-      // Skip te oude data (max 1 uur)
-      if (age > 3600000) {
-        console.log(`⚠️ Recovery data te oud voor tab ${currentTabId}, wordt verwijderd`);
-        chrome.storage.local.remove(recoveryKey);
-        resolve(false);
-        return;
-      }
-
-      console.log(`✅ Recovery data gevonden voor tab ${currentTabId}:`, recoveryData.step);
-
-      // Maak recovery panel
-      const panel = document.createElement('div');
-      panel.id = 'crash-recovery-panel';
-      panel.style.cssText = `
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: white;
-        border: 3px solid #ff9800;
-        border-radius: 16px;
-        padding: 30px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.3);
-        z-index: 9999999;
-        max-width: 450px;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      `;
-
-      panel.innerHTML = `
-        <div style="text-align: center;">
-          <div style="font-size: 48px; margin-bottom: 16px;">⚠️</div>
-          <h2 style="margin: 0 0 16px 0; color: #ff9800; font-size: 20px;">Automatisering Onderbroken</h2>
-          <p style="color: #666; margin-bottom: 8px; font-size: 14px;">
-            De automatisering werd onderbroken bij stap:
-          </p>
-          <p style="background: #f8f9fa; padding: 12px; border-radius: 8px; margin-bottom: 20px; font-weight: 600; color: #212529;">
-            ${recoveryData.step.replace(/_/g, ' ')}
-          </p>
-          <p style="color: #666; font-size: 13px; margin-bottom: 24px;">
-            Wil je doorgaan vanaf deze stap of opnieuw beginnen?
-          </p>
-          <div style="display: flex; gap: 12px; justify-content: center;">
-            <button id="recovery-resume" style="
-              background: #28a745;
-              color: white;
-              border: none;
-              padding: 12px 24px;
-              border-radius: 8px;
-              font-size: 14px;
-              font-weight: 600;
-              cursor: pointer;
-              transition: all 0.2s;
-            ">✓ Hervatten</button>
-            <button id="recovery-restart" style="
-              background: #6c757d;
-              color: white;
-              border: none;
-              padding: 12px 24px;
-              border-radius: 8px;
-              font-size: 14px;
-              font-weight: 600;
-              cursor: pointer;
-              transition: all 0.2s;
-            ">⟳ Opnieuw Beginnen</button>
-          </div>
-        </div>
-      `;
-
-      document.body.appendChild(panel);
-
-      // Add hover effects
-      const style = document.createElement('style');
-      style.textContent = `
-        #recovery-resume:hover { background: #218838 !important; transform: translateY(-1px); }
-        #recovery-restart:hover { background: #5a6268 !important; transform: translateY(-1px); }
-      `;
-      document.head.appendChild(style);
-
-      // Event listeners
-      document.getElementById('recovery-resume').addEventListener('click', () => {
-        console.log('✅ Gebruiker kiest: Hervatten vanaf', recoveryData.step);
-        panel.remove();
-        style.remove();
-
-        // Herstel session storage
-        sessionStorage.setItem('automationConfig', recoveryData.config);
-        sessionStorage.setItem('automationStep', recoveryData.step);
-
-        // Verwijder deze specifieke recovery data (niet alle recovery data!)
-        chrome.storage.local.remove(recoveryKey);
-
-        resolve(true);
-      });
-
-      document.getElementById('recovery-restart').addEventListener('click', () => {
-        console.log('🔄 Gebruiker kiest: Opnieuw beginnen');
-        panel.remove();
-        style.remove();
-
-        // Verwijder alle automation data voor deze sessie
-        sessionStorage.removeItem('automationConfig');
-        sessionStorage.removeItem('automationStep');
-        chrome.storage.local.remove(recoveryKey);
-
-        resolve(false);
-      });
-    });
-  });
-}
 
 /**
  * Event listener voor Page Visibility API.
@@ -3674,28 +3662,16 @@ window.addEventListener('load', async () => {
   let automationConfig = sessionStorage.getItem('automationConfig');
   let currentStep = sessionStorage.getItem('automationStep');
 
-  // CRASH RECOVERY: als sessionStorage leeg is, probeer te herstellen
+  // Als sessionStorage leeg is, stop - gebruiker moet handmatig opnieuw starten
   if (!automationConfig || !currentStep) {
-    console.log('🔍 SessionStorage leeg, checking for crash recovery...');
-    const recovered = await attemptCrashRecovery();
-
-    if (recovered) {
-      // Herstel was succesvol, haal data opnieuw op
-      automationConfig = sessionStorage.getItem('automationConfig');
-      currentStep = sessionStorage.getItem('automationStep');
-      console.log('✅ Crash recovery succesvol, hervatten vanaf:', currentStep);
-    } else {
-      console.log('ℹ️ Geen recovery of gebruiker koos opnieuw beginnen');
-      return;
-    }
+    console.log('ℹ️ Geen actieve automatisering - sessionStorage leeg');
+    console.log('💡 Klik op "Start Automatisering" in de sidebar om te starten');
+    return;
   }
 
   if (automationConfig) {
     const config = JSON.parse(automationConfig);
     console.log('Automatisering doorgaan na pagina laden, stap:', currentStep);
-
-    // Sla voortgang op voor crash recovery
-    await saveProgressForRecovery();
 
     // Recreate status panel after page load
     createStatusPanel();

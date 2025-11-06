@@ -3859,20 +3859,31 @@ document.getElementById('startAutomation').addEventListener('click', () => {
       return;
     }
 
-    // Documenten worden NIET opgeslagen - alleen doorgegeven aan automatisering
-    console.log('🚀 Starting automation - documents will NOT be saved for next session');
+    console.log('🚀 Starting automation');
     console.log(`📋 Sending config from tab ${currentTrackedTabId} to content script in tab ${currentTab.id}`);
 
-    // Haal volledige config op inclusief bedrijfsgegevens en contactpersoon uit storage
-    chrome.storage.local.get(['isdeConfig'], (result) => {
-      // Log voor debugging multi-tab scenarios
-      console.log('📝 Building config for automation:');
-      console.log(`   Target tab ID: ${currentTab.id}`);
-      console.log(`   Tracked tab ID: ${currentTrackedTabId}`);
-      console.log(`   BSN: ${document.getElementById('bsn').value?.substring(0, 3)}... (first 3 digits)`);
-      console.log(`   Name: ${document.getElementById('initials').value} ${document.getElementById('lastName').value}`);
+    // BELANGRIJK: Laad eerst de opgeslagen documenten voor deze tab
+    // Dit zorgt ervoor dat documenten beschikbaar blijven na Stop/herstart
+    loadDocumentsForTab(currentTrackedTabId).then(savedDocuments => {
+      console.log('📂 Loaded documents from storage:', savedDocuments);
 
-      const config = {
+      // Gebruik opgeslagen documenten als ze beschikbaar zijn, anders fallback naar globale variabelen
+      const documentsToUse = {
+        betaalbewijs: savedDocuments?.betaalbewijs || betaalbewijsData,
+        factuur: savedDocuments?.factuur || factuurData,
+        machtigingsbewijs: savedDocuments?.machtigingsbewijs || machtigingsbewijsData
+      };
+
+      // Haal volledige config op inclusief bedrijfsgegevens en contactpersoon uit storage
+      chrome.storage.local.get(['isdeConfig'], (result) => {
+        // Log voor debugging multi-tab scenarios
+        console.log('📝 Building config for automation:');
+        console.log(`   Target tab ID: ${currentTab.id}`);
+        console.log(`   Tracked tab ID: ${currentTrackedTabId}`);
+        console.log(`   BSN: ${document.getElementById('bsn').value?.substring(0, 3)}... (first 3 digits)`);
+        console.log(`   Name: ${document.getElementById('initials').value} ${document.getElementById('lastName').value}`);
+
+        const config = {
         // Klantgegevens uit formulier
         bsn: document.getElementById('bsn').value,
         initials: document.getElementById('initials').value,
@@ -3902,10 +3913,10 @@ document.getElementById('startAutomation').addEventListener('click', () => {
         contactPhone: result.isdeConfig?.contactPhone || '0682795068',
         contactEmail: result.isdeConfig?.contactEmail || 'administratie@saman.nl',
 
-        // Document data (wordt later vervangen door storage keys)
-        betaalbewijs: betaalbewijsData,
-        factuur: factuurData,
-        machtigingsbewijs: machtigingsbewijsData
+        // Document data (geladen uit storage, blijft beschikbaar na Stop/herstart)
+        betaalbewijs: documentsToUse.betaalbewijs,
+        factuur: documentsToUse.factuur,
+        machtigingsbewijs: documentsToUse.machtigingsbewijs
       };
 
       // Log welke documenten worden verzonden
@@ -3955,7 +3966,8 @@ document.getElementById('startAutomation').addEventListener('click', () => {
           // Popup blijft open - gebruiker kan van tab wisselen en terugkomen
         });
       });
-    });
+      }); // Einde chrome.storage.local.get
+    }); // Einde loadDocumentsForTab promise
   });
 });
 
