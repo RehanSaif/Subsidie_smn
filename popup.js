@@ -3470,15 +3470,22 @@ function revalidateAllFields() {
     }
   }
 
-  // Valideer geslacht
+  // Valideer geslacht - maar toon waarschuwing NIET als veld nog niet is "touched"
+  // Waarschuwing wordt alleen getoond via blur event of bij submit attempt
   const genderField = document.getElementById('gender');
-  if (genderField) {
-    if (!genderField.value) {
-      showFieldWarning('gender', 'genderWarning', `⚠️ Selecteer geslacht`);
-    } else {
+  if (genderField && genderField.value) {
+    // Als er een waarde is, check of het een geldige waarde is
+    const hasValidGender = genderField.value !== '' &&
+                          genderField.value !== '-- Selecteer --' &&
+                          (genderField.value === 'male' || genderField.value === 'female');
+
+    if (hasValidGender) {
+      // Valid gender geselecteerd - verwijder eventuele waarschuwing
       showFieldWarning('gender', 'genderWarning', null);
     }
+    // Als invalid, laat bestaande waarschuwing staan (niet opnieuw tonen)
   }
+  // Als leeg, doe niets (geen waarschuwing tonen bij page load)
 
   console.log('✅ Re-validated all fields');
 }
@@ -3675,6 +3682,37 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Gender selection validation
+  const genderField = document.getElementById('gender');
+  if (genderField) {
+    // On change: validate and show/hide warning
+    genderField.addEventListener('change', function() {
+      const hasValidGender = this.value &&
+                            this.value !== '' &&
+                            this.value !== '-- Selecteer --' &&
+                            (this.value === 'male' || this.value === 'female');
+
+      if (hasValidGender) {
+        showFieldWarning('gender', 'genderWarning', null);
+      } else {
+        showFieldWarning('gender', 'genderWarning', `⚠️ Selecteer geslacht`);
+      }
+    });
+
+    // On blur: show warning only if touched but invalid
+    genderField.addEventListener('blur', function() {
+      const hasValidGender = this.value &&
+                            this.value !== '' &&
+                            this.value !== '-- Selecteer --' &&
+                            (this.value === 'male' || this.value === 'female');
+
+      if (!hasValidGender && this.value) {
+        // Touched but invalid - show warning
+        showFieldWarning('gender', 'genderWarning', `⚠️ Selecteer geslacht`);
+      }
+    });
+  }
+
   // Street sanitization
   const streetField = document.getElementById('street');
   if (streetField) {
@@ -3864,8 +3902,28 @@ document.getElementById('startAutomation').addEventListener('click', () => {
 
     // BELANGRIJK: Laad eerst de opgeslagen documenten voor deze tab
     // Dit zorgt ervoor dat documenten beschikbaar blijven na Stop/herstart
+    console.log('='.repeat(60));
+    console.log('📂 DOCUMENT LOADING DEBUG');
+    console.log('📂 Current tracked tab ID:', currentTrackedTabId);
+    console.log('📂 Storage namespace:', STORAGE_NAMESPACE);
+    console.log('📂 Expected storage key:', `documents_${STORAGE_NAMESPACE}_${currentTrackedTabId}`);
+    console.log('='.repeat(60));
+
     loadDocumentsForTab(currentTrackedTabId).then(savedDocuments => {
       console.log('📂 Loaded documents from storage:', savedDocuments);
+      if (savedDocuments) {
+        console.log('  ✓ Betaalbewijs:', savedDocuments.betaalbewijs ? savedDocuments.betaalbewijs.name : 'NOT SET');
+        console.log('  ✓ Factuur:', savedDocuments.factuur ? savedDocuments.factuur.name : 'NOT SET');
+        console.log('  ✓ Machtigingsbewijs:', savedDocuments.machtigingsbewijs ? savedDocuments.machtigingsbewijs.name : 'NOT SET');
+      } else {
+        console.log('  ❌ NO DOCUMENTS FOUND IN STORAGE FOR THIS TAB!');
+      }
+
+      console.log('📂 Global variables:', {
+        betaalbewijsData: betaalbewijsData ? betaalbewijsData.name : 'null',
+        factuurData: factuurData ? factuurData.name : 'null',
+        machtigingsbewijsData: machtigingsbewijsData ? machtigingsbewijsData.name : 'null'
+      });
 
       // Gebruik opgeslagen documenten als ze beschikbaar zijn, anders fallback naar globale variabelen
       const documentsToUse = {
@@ -3873,6 +3931,12 @@ document.getElementById('startAutomation').addEventListener('click', () => {
         factuur: savedDocuments?.factuur || factuurData,
         machtigingsbewijs: savedDocuments?.machtigingsbewijs || machtigingsbewijsData
       };
+
+      console.log('📂 Final documents to use:', {
+        betaalbewijs: documentsToUse.betaalbewijs ? documentsToUse.betaalbewijs.name : 'NOT SET',
+        factuur: documentsToUse.factuur ? documentsToUse.factuur.name : 'NOT SET',
+        machtigingsbewijs: documentsToUse.machtigingsbewijs ? documentsToUse.machtigingsbewijs.name : 'NOT SET'
+      });
 
       // Haal volledige config op inclusief bedrijfsgegevens en contactpersoon uit storage
       chrome.storage.local.get(['isdeConfig'], (result) => {

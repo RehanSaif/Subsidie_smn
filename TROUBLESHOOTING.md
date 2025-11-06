@@ -241,11 +241,124 @@ Status: "Vul eerst alle verplichte velden in: BSN, Telefoon, ..."
 - Verplichte velden zie je in de rode foutmelding
 - Upload BEIDE documenten (betaalbewijs + factuur)
 
-### 3. Loop Detectie: Zelfde Stap Herhaalt
+### 3. Checkboxes Worden Uitgevinkt na Stop/Start
+
+**Symptomen:**
+```
+1. Automatisering vult formulier in, vinkt checkboxes aan
+2. Gebruiker klikt "Stop"
+3. Gebruiker klikt "Start Automatisering" opnieuw
+4. Checkboxes die al aangevinkt waren worden UIT gevinkt
+```
+
+**Oorzaak:**
+`clickElement()` klikt altijd, zelfs als checkbox al aangevinkt is. Dit togglet de checkbox: ON → OFF.
+
+**Oplossing (Automatisch Gefixed):**
+
+De extensie gebruikt nu `ensureChecked()` in plaats van `clickElement()` voor alle checkboxes:
+
+```javascript
+// ensureChecked() checkt eerst de state
+if (element.checked) {
+  console.log('✓ Checkbox already checked');
+  return; // Skip klik
+}
+// Alleen klikken als NIET checked
+element.click();
+```
+
+**Toegepast op:**
+- Declarations checkboxes (Naar waarheid, Tussenpersoon, etc.)
+- Info acknowledgment checkbox
+- Address confirmation checkboxes
+- Alle andere boolean velden
+
+**Console Output:**
+```
+✓ Checkbox already checked: #NaarWaarheid
+☐ → ☑ Checking: #cbTussenpersoonJ
+```
+
+### 4. "Page Not Recognized" na Navigatie
+
+**Symptomen:**
+```
+Console: "⚠️ Detected: unknown - No matching elements found"
+Status panel: Blijft hangen op oude stap
+Automatisering stopt ondanks dat pagina correct is geladen
+```
+
+**Oorzaak:**
+Race condition: `sessionStorage.automationStep` update na page load, maar DOM is al gedetecteerd. Handler matcht niet omdat `currentStep !== detectedStep`.
+
+**Oplossing (Automatisch Gefixed):**
+
+Handlers accepteren nu beide:
+```javascript
+// VOOR
+if (currentStep === 'declarations_done') {
+  // alleen als sessionStorage match
+}
+
+// NA
+if (currentStep === 'declarations_done' || detectedStep === 'declarations_done') {
+  // match als ÓÓÍT van beide matcht
+}
+```
+
+**Gefixed in 7+ handlers:**
+- Info acknowledgment
+- Intermediair contact
+- Address different
+- BAG different
+- Measure overview
+- Measure confirmation
+- Final measure overview
+- Final confirmed
+
+**Effect:**
+Automatisering gaat nu direct door na page load, zonder handmatig ingrijpen.
+
+### 5. Loop Detectie: "date_continued" Herhaalt
 
 **Symptomen:**
 ```
 Status panel: "⚠️ LOOP GEDETECTEERD: Stap 'date_continued' wordt herhaald"
+Console: "🛑 LOOP DETECTED: Same step executed 2 times"
+Screenshot toont: Loop tussen Step 14 en Step 16
+```
+
+**Oorzaak:**
+Handler voor `date_continued` (Step 16) voert te snel uit na "Volgende" klik in Step 14. Pagina is nog niet volledig geladen, meldcode lookup button is nog niet beschikbaar.
+
+**Oplossing (Automatisch Gefixed):**
+
+2000ms delay toegevoegd voordat meldcode modal wordt gechecked:
+
+```javascript
+// content.js, regels 3030-3032
+if (currentStep === 'date_continued') {
+  console.log('Step 16: Checking for meldcode modal...');
+
+  // BELANGRIJK: Wacht eerst tot pagina volledig geladen is
+  await unthrottledDelay(2000);
+
+  // Nu pas modal checken
+  const modalAlreadyOpen = ...
+}
+```
+
+**Effect:**
+- Loop tussen date_continued en meldcode_lookup is geëlimineerd
+- Automatisering wacht nu correct op page load
+- Geen handmatig ingrijpen meer nodig
+
+### 6. Loop Detectie: Algemeen
+
+**Symptomen:**
+```
+Status panel: "⚠️ LOOP GEDETECTEERD: Stap 'step_name' wordt herhaald"
 Console: "🛑 LOOP DETECTED: Same step executed 3 times"
 ```
 
@@ -750,16 +863,133 @@ Error: "Mistral OCR error (413): File too large"
   - Afbeelding: verklein resolutie tot max 2000px breed
   - Converteer naar JPEG met lagere kwaliteit
 
-### 2. Verkeerde Gegevens Geëxtraheerd
+### 2. OCR Extraheert Veld maar Met Fouten
 
 **Symptomen:**
-- BSN is verkeerd
-- IBAN heeft foute cijfers
+```
+✅ IBAN found via AI: "NLO3RAB00123456789"
+⚠️ BSN found but invalid: "12345678O"
+✅ Meldcode found: "KAO6175"
+⚠️ Postcode found: "12O4 AB"
+```
+
+**Oorzaak:**
+OCR verwart visueel vergelijkbare karakters:
+- **O vs 0** (letter O vs cijfer nul)
+- **I vs 1 vs l** (hoofdletter i vs cijfer 1 vs kleine letter L)
+- **S vs 5** (letter S vs cijfer vijf)
+- **8 vs B** (cijfer acht vs letter B)
+- **Z vs 2, G vs 6** (minder frequent)
+
+**Oplossing (Automatisch Gecorrigeerd):**
+
+De extensie heeft **15 sanitization functies** die automatisch OCR fouten corrigeren:
+
+**IBAN Correctie (Meest Complex):**
+```
+Input:  "NLO3RAB00I23456789"
+Step 1: Fix checksum "O3" → "03"
+Step 2: Fix bank code "RAB0" → "RABO"
+Step 3: Fix account "0I23456789" → "0123456789"
+Output: "NL03RABO0123456789" ✅
+```
+
+**BSN Correctie:**
+```
+Input:  "12345678O"
+Output: "123456789" ✅ (+ 11-proef validatie)
+```
+
+**Postcode Correctie:**
+```
+Input:  "12O4 AB"
+Output: "1204 AB" ✅ (alleen cijfers gecorrigeerd, letters blijven)
+```
+
+**Meldcode Correctie:**
+```
+Input:  "KAO6175"
+Output: "KA06175" ✅
+```
+
+**Bank Code Specifieke Correcties:**
+```
+"RAB0" → "RABO"  (RABO bank heeft O, niet 0)
+"ING8" → "INGB"  (ING heeft B, niet 8)
+"A8NA" → "ABNA"  (ABN AMRO heeft B, niet 8)
+"5NSB" → "SNSB"  (SNS heeft S, niet 5)
+"8UNQ" → "BUNQ"  (Bunq heeft B, niet 8)
+"TR10" → "TRIO"  (Trio heeft O, niet 0)
+```
+
+**Console Output Bij Auto-Correctie:**
+```
+✅ IBAN found via AI: NLO3RAB00123456789
+🔧 Extracting IBAN from combined field: NLO3RAB00123456789 RABONL2U → NLO3RAB00123456789
+🔧 IBAN bank code corrected: RAB0 → RABO
+📝 IBAN auto-corrected on blur: NL03RABO0123456789
+✅ IBAN checksum validation: PASSED
+```
+
+**Hoe Te Controleren:**
+
+1. **Check Console** voor auto-correctie logs
+2. **Check Popup Velden** - gesanitized waarde verschijnt automatisch
+3. **Test Handmatig**:
+   ```javascript
+   // In browser console:
+   sanitizeIBAN("NLO3RAB00123456789")
+   // Returns: "NL03RABO0123456789"
+   ```
+
+**Wanneer Handmatige Correctie Nodig Is:**
+
+Auto-correctie faalt als:
+- Te veel karakters fout (>30% van veld)
+- Verkeerde structuur (bijv. BSN met 8 cijfers ipv 9)
+- Checksum blijft invalid na correctie
+- Onbekende bankcode in IBAN
+
+**Volledige Lijst van Sanitization Functies:**
+
+| Veld | Auto-Correcties |
+|------|-----------------|
+| **BSN** | O→0, I→1, S→5 + 11-proef validatie |
+| **IBAN** | 5-fase correctie (zie boven) + modulo-97 validatie |
+| **Telefoon** | +31→0, spaties/streepjes weg, 10-cijfer check |
+| **Email** | Format check, trailing dots/commas weg |
+| **Postcode** | O→0 in cijfers (niet in letters!), format "1234 AB" |
+| **Meldcode** | O→0, uppercase, KA##### format |
+| **Voorletters** | "jhm" → "J.H.M.", cijfers weg |
+| **Achternaam** | "VAN DER BERG" → "van der Berg" |
+| **Straat** | "hoofdstraat" → "Hoofdstraat" |
+| **Huisnummer** | "123a" → nummer: "123", toevoeging: "A" |
+| **Plaats** | "den haag" → "Den Haag" |
+| **Geslacht** | "Man"/"M" → "male", "Vrouw"/"V" → "female" |
+| **Aardgas** | "Ja"/"1" → "yes", "Nee"/"0" → "no" |
+| **Datum** | "15/03/2024" → "15-03-2024", "2024-03-15" → "15-03-2024" |
+
+**Real-Time Correctie:**
+
+Alle velden hebben `blur` event listeners die automatisch corrigeren:
+```
+1. Gebruiker upload document → OCR extraheert data
+2. Velden worden ingevuld (mogelijk met OCR errors)
+3. Gebruiker tabbed door velden → blur event fired
+4. Sanitization functie draait → waarde wordt gecorrigeerd
+5. Gecorrigeerde waarde verschijnt in veld
+```
+
+### 3. Verkeerde Gegevens Geëxtraheerd
+
+**Symptomen:**
+- BSN is compleet verkeerd (niet alleen OCR error)
+- IBAN is van andere persoon
 - Naam is bedrijfsnaam ipv klantnaam
 
 **Mogelijke Oorzaken:**
 
-#### A. OCR Verwart Klant en Bedrijf
+**A. OCR Verwart Klant en Bedrijf**
 
 **Debug in Console:**
 ```javascript
@@ -1167,7 +1397,71 @@ sessionStorage.setItem('lastClickFor_StapX', now.toString());
 
 ## Document Upload Mislukt
 
-### 1. Bestanden Worden Niet Geüpload
+### 1. "Element #lip_modalWindow input not found" Error
+
+**Symptomen:**
+```
+Console: "❌ Automation error: Error: Element #lip_modalWindow div.content input[type="file"], #lip_attachments_resumable input[type="file"] not found within timeout"
+Status panel: "Step: ERROR"
+Popup toont: "Fout: Element #lip_modalWindow... not found"
+```
+
+**Oorzaak:**
+De upload modal laadt te langzaam en het script probeert het file input te vinden voordat het beschikbaar is.
+
+**Oplossing (Automatisch Gefixed):**
+
+De extensie heeft nu verbeterde timing:
+- **Pre-upload delay**: 2000ms (was 1500ms)
+- **File input timeout**: 10000ms (was 5000ms)
+- **Diagnostic logging**: Toont modal state in console
+
+**Als het nog steeds faalt:**
+
+1. **Check Console Logs** voor details:
+   ```
+   🔍 Looking for file input in modal...
+   ✅ Modal found: <div id="lip_modalWindow">
+   Modal display style: block
+   ⚠️ Modal #lip_modalWindow not found in DOM
+   ```
+
+2. **Als modal niet gevonden wordt:**
+   - Klik handmatig "Bijlage toevoegen" knop
+   - Check of modal verschijnt
+   - Inspecteer modal element (F12 → Elements)
+   - ID kan veranderd zijn (update selector in `uploadFile()`)
+
+3. **Als modal found maar file input niet:**
+   ```
+   📋 All file inputs on page: 2
+     Input 0: file_upload_1 visible: true
+     Input 1: hidden_upload visible: false
+   ```
+   - Check welke input zichtbaar is
+   - Update selector in `waitForElement()` call
+
+4. **Handmatige Workaround:**
+   - Klik "Pauze" als error verschijnt
+   - Upload documenten handmatig via website
+   - Klik "Hervat" om door te gaan
+
+**Technische Details:**
+
+De verbeteringen in `content.js` (regels 1300-1346):
+```javascript
+// Verhoogde timeouts
+await clickElement('#btn_ToevoegenBijlage');
+await unthrottledDelay(2000);  // Was 1500ms
+
+// Langere wachttijd voor file input
+const fileInput = await waitForElement(
+  '#lip_modalWindow div.content input[type="file"]',
+  10000  // Was 5000ms
+);
+```
+
+### 2. Bestanden Worden Niet Geüpload
 
 **Symptomen:**
 ```
@@ -1446,6 +1740,13 @@ Voor complexe problemen:
 
 ---
 
-**Document Versie**: 1.0
-**Laatste Update**: 2025-01-26
+**Document Versie**: 1.1
+**Laatste Update**: 2025-11-06
 **Auteur**: Rehan (met hulp van Claude AI)
+
+**Changelog v1.1 (2025-11-06):**
+- Toegevoegd: Sectie 3 - Checkboxes worden uitgevinkt na Stop/Start
+- Toegevoegd: Sectie 4 - "Page Not Recognized" na navigatie
+- Toegevoegd: Sectie 5 - Loop detectie: "date_continued" herhaalt
+- Bijgewerkt: Document Upload sectie met nieuwe error troubleshooting
+- Bijgewerkt: Alle oplossingen zijn nu automatisch gefixed in de code

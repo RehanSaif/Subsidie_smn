@@ -1301,8 +1301,21 @@ async function uploadFile(fileData) {
   if (!fileData) return;
 
   try {
+    console.log('🔍 Looking for file input in modal...');
+
+    // Check if modal is visible first
+    const modal = document.querySelector('#lip_modalWindow');
+    if (modal) {
+      console.log('✅ Modal found:', modal);
+      console.log('Modal display style:', window.getComputedStyle(modal).display);
+    } else {
+      console.log('⚠️ Modal #lip_modalWindow not found in DOM');
+    }
+
     // Zoek het file input element (zit in de modal)
-    const fileInput = await waitForElement('#lip_modalWindow div.content input[type="file"], #lip_attachments_resumable input[type="file"]', 5000);
+    // Increased timeout from 5000 to 10000 to give modal more time to load
+    const fileInput = await waitForElement('#lip_modalWindow div.content input[type="file"], #lip_attachments_resumable input[type="file"]', 10000);
+    console.log('✅ File input found:', fileInput);
 
     // Converteer base64 data naar Blob
     const response = await fetch(fileData.data);
@@ -1319,9 +1332,15 @@ async function uploadFile(fileData) {
     // Trigger change event om het formulier te notificeren
     fileInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-    console.log('File uploaded successfully:', fileData.name);
+    console.log('✅ File uploaded successfully:', fileData.name);
   } catch (error) {
-    console.error('Error uploading file:', error);
+    console.error('❌ Error uploading file:', error);
+    // Log what file inputs ARE available
+    const allFileInputs = document.querySelectorAll('input[type="file"]');
+    console.log('📋 All file inputs on page:', allFileInputs.length);
+    allFileInputs.forEach((input, i) => {
+      console.log(`  Input ${i}:`, input.id || input.className, 'visible:', input.offsetParent !== null);
+    });
     throw error;
   }
 }
@@ -2306,7 +2325,7 @@ async function startFullAutomation(config) {
       await unthrottledDelay(900 + Math.random() * 500); // Mensachtig - robot detectie preventie
 
       await fillInput('#link_aanv\\.0\\.edIBAN', config.iban);
-      await unthrottledDelay(1000 + Math.random() * 500); // Mensachtig - robot detectie preventie
+      await unthrottledDelay(3000); // Extra lange pauze voor IBAN validatie
 
       await fillInput('#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode', config.postalCode);
       await unthrottledDelay(700 + Math.random() * 300); // Mensachtig - robot detectie preventie
@@ -3027,6 +3046,10 @@ async function startFullAutomation(config) {
     if (currentStep === 'date_continued') {
       console.log('Step 16: Checking for meldcode modal...');
 
+      // BELANGRIJK: Wacht eerst tot de pagina volledig geladen is na Volgende klik
+      // Anders krijgen we een loop omdat de lookup button nog niet beschikbaar is
+      await unthrottledDelay(2000);
+
       // Check if modal is already open
       const modalAlreadyOpen = Array.from(document.querySelectorAll('*')).some(el =>
         el.textContent && el.textContent.includes('Selecteer hier uw keuze')
@@ -3200,7 +3223,7 @@ async function startFullAutomation(config) {
       if (config.betaalbewijs) {
         console.log('Uploading betaalbewijs:', config.betaalbewijs.name);
         await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.0\\.btn_ToevoegenBijlage');
-        await unthrottledDelay(1500);
+        await unthrottledDelay(2000); // Increased from 1500 to 2000
         await uploadFile(config.betaalbewijs);
         await unthrottledDelay(2000);
       }
@@ -3209,7 +3232,7 @@ async function startFullAutomation(config) {
       if (config.factuur) {
         console.log('Uploading factuur:', config.factuur.name);
         await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.1\\.btn_ToevoegenBijlage');
-        await unthrottledDelay(1500);
+        await unthrottledDelay(2000); // Increased from 1500 to 2000
         await uploadFile(config.factuur);
         await unthrottledDelay(2000);
       }

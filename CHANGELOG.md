@@ -7,6 +7,49 @@ en dit project volgt [Semantic Versioning](https://semver.org/lang/nl/).
 
 ## [Unreleased]
 
+### Fixed
+- **Checkbox Toggle Bug**: Checkboxes worden niet meer ge-unchecked bij Stop/Start
+  - Nieuwe functie: `ensureChecked()` - controleert checkbox state voordat het klikt
+  - Toegepast op alle checkboxes in declarations, info acknowledgment, en address handlers
+  - Voorkomt: Checkbox aangevinkt → Stop → Start → Checkbox wordt UIT gevinkt
+  - Files: `content.js` (regels 1075-1112, toegepast in regels 2235-2245 en meer)
+
+- **Race Condition Fix**: Pagina detectie na navigatie gefixed
+  - Handlers accepteren nu beide `currentStep` OF `detectedStep`
+  - Voorkomt "page not recognized" errors na page transitions
+  - Gefixed in 7+ handlers: declarations_done, personal_info_done, date_continued, etc.
+  - Files: `content.js` (regels 2264-2265, 2232, 2279-2280, 2570-2571, 2832-2833, 2931-2932, 3018-3019, 3573)
+
+- **Document Persistence Bug**: Geuploade documenten blijven nu bewaard na Stop/restart
+  - Documents worden correct opgeslagen in `documents_${STORAGE_NAMESPACE}_${tabId}`
+  - Comprehensive debug logging toegevoegd voor diagnose
+  - Namespace support: 'incog' vs 'normal' voor incognito mode
+  - Files: `popup.js` (regels 3865-3912)
+
+- **Gender Validation Warning**: "Selecteer geslacht" warning niet meer getoond bij page load
+  - `revalidateAllFields()` toont nu alleen warnings voor touched fields
+  - Blur en change event listeners toegevoegd
+  - Voorkomt: Warning getoond terwijl gebruiker nog niets heeft ingevuld
+  - Files: `popup.js` (regels 3473-3488, 3685-3714)
+
+- **IBAN Validation Delay**: Extra lange pauze na IBAN invulling voor website validatie
+  - Verhoogd van 1000-1500ms naar 3000ms
+  - Geeft website meer tijd om IBAN checksum te valideren
+  - Files: `content.js` (regel 2309)
+
+- **Meldcode Loop Detection**: Loop tussen date_continued en meldcode_lookup gefixed
+  - 2000ms delay toegevoegd voordat meldcode modal wordt gechecked
+  - Geeft pagina tijd om volledig te laden na Volgende klik
+  - Voorkomt: "Loop detected: Step 'date_continued' executed 2 times"
+  - Files: `content.js` (regels 3030-3032)
+
+- **File Upload Timeout Error**: Document upload modal timing verbeterd
+  - Delay na "Bijlage toevoegen" klik verhoogd: 1500ms → 2000ms
+  - File input timeout verhoogd: 5000ms → 10000ms
+  - Comprehensive diagnostic logging toegevoegd (modal state, file inputs)
+  - Voorkomt: "Element #lip_modalWindow div.content input[type="file"] not found"
+  - Files: `content.js` (regels 1300-1346, 3207, 3216)
+
 ### Added
 - **Multi-tab ondersteuning**: Meerdere tabs (tot 10+) kunnen nu parallel runnen zonder vertraging
   - Geïmplementeerd audio keep-alive systeem om Chrome tab throttling te voorkomen
@@ -100,11 +143,32 @@ en dit project volgt [Semantic Versioning](https://semver.org/lang/nl/).
 - Minimale geheugen overhead (~100KB voor audio context)
 - Tab throttling: 100-1000x vertraging → normale snelheid
 
+### Documentation Updates (v1.1 - 2025-11-06)
+- **CHANGELOG.md**: Toegevoegd "Fixed" sectie met 7 recente bug fixes
+- **TECHNISCHE_OVERDRACHT.md**:
+  - Nieuwe sectie: Checkbox State Management (ensureChecked functie)
+  - Nieuwe sectie: Race Condition Handling
+  - Uitgebreide IBAN Sanitization sectie (5 fasen, voorbeelden)
+  - Overzicht alle 15 field sanitization functies met tabel
+  - OCR error patterns met voor/na voorbeelden
+  - Bijgewerkte Document Upload sectie met diagnostic logging
+- **TROUBLESHOOTING.md**:
+  - Nieuwe sectie: Checkboxes worden uitgevinkt na Stop/Start
+  - Nieuwe sectie: "Page Not Recognized" na navigatie
+  - Nieuwe sectie: Loop detectie "date_continued" herhaalt
+  - Uitgebreide sectie: OCR extraheert veld maar met fouten
+  - Volledige lijst OCR auto-correcties per veld
+  - Document upload timeout troubleshooting
+
 ### Files Changed
 - `content.js`: +190 lines, -30 lines (audio keep-alive systeem)
+- `content.js`: +71 lines (ensureChecked functie + race condition fixes + timing improvements)
 - `popup.js`: +660 lines (comprehensive sanitization functies + real-time validatie + extractie integraties)
 - `popup.js`: +273 lines, -309 lines (refactoring duplicate code - eerdere wijziging)
 - `FIELD_SANITIZATION_ANALYSIS.md`: +1168 lines (nieuwe analyse document)
+- `CHANGELOG.md`: +51 lines (v1.1 updates)
+- `TECHNISCHE_OVERDRACHT.md`: +165 lines (v1.1 updates)
+- `TROUBLESHOOTING.md`: +218 lines (v1.1 updates)
 
 ---
 

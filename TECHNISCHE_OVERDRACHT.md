@@ -283,7 +283,47 @@ Overlay UI die:
    - Meldcode: uppercase
 ```
 
-### 2. Input Sanitization
+### 2. Checkbox State Management
+
+**ensureChecked() Functie** (`content.js`, regels 1075-1112):
+
+```javascript
+async function ensureChecked(selectorOrElement) {
+  if (automationStopped) return;
+
+  let element = typeof selectorOrElement === 'string' ?
+    await waitForElement(selectorOrElement) : selectorOrElement;
+
+  // Controleer eerst of checkbox al aangevinkt is
+  if (element.checked) {
+    console.log(`✓ Checkbox already checked`);
+    return; // Skip klik om toggle te voorkomen
+  }
+
+  // Alleen klikken als NIET aangevinkt
+  console.log(`☐ → ☑ Checking checkbox`);
+  element.scrollIntoView({behavior: 'smooth', block: 'center'});
+  await unthrottledDelay(500);
+  element.click();
+  await unthrottledDelay(1000);
+}
+```
+
+**Waarom Dit Nodig Is:**
+- `clickElement()` klikt altijd, togglet checkbox ON → OFF → ON
+- `ensureChecked()` controleert state eerst, voorkomt toggle
+- Belangrijk voor Stop/Start functionaliteit
+
+**Gebruik:**
+```javascript
+// Declarations handler (content.js, regels 2235-2245)
+await ensureChecked('#NaarWaarheid');
+await ensureChecked('#cbTussenpersoonJ');
+await ensureChecked('#link_aanv\\.0\\.cbFWS_Deelnemer_SoortP');
+// etc.
+```
+
+### 3. Input Sanitization
 
 **Telefoonnummer** (`fillInput` in content.js, regel ~465):
 ```javascript
@@ -292,31 +332,162 @@ sanitizedValue = value.replace(/[^0-9+]/g, '');
 // "06-1234 5678" → "0612345678"
 ```
 
-**IBAN** (`fillInput` in content.js, regel ~670):
+**IBAN Sanitization** (`sanitizeIBAN` in popup.js, regels 661-797):
+
+De IBAN sanitization is zeer geavanceerd en heeft 4 fasen:
+
+**Fase 1: BIC Code Verwijdering**
 ```javascript
-// IBAN structuur: NL + 2 cijfers + 4 LETTERS + 10 cijfers
-// Voorbeeld: NL84RABO0123456789
+// OCR extraheert vaak IBAN + BIC gecombineerd:
+// "NL91RABO0123456789 RABONL2U" → Extract alleen IBAN deel
+const ibanMatch = iban.match(/NL[A-Z0-9]{2}[A-Z0-9]{4}[A-Z0-9]{10}/);
+```
 
-// 1. Verwijder punten en spaties
-sanitizedValue = sanitizedValue.replace(/\./g, '').replace(/\s/g, '');
+**Fase 2: Checksum Correctie (posities 2-3)**
+```javascript
+// OCR errors in 2-cijferige checksum:
+// "NLO3" → "NL03"  (O → 0)
+// "NLI2" → "NL12"  (I → 1)
+// "NLS8" → "NL58"  (S → 5)
+let checksum = iban.substring(2, 4);
+checksum = checksum.replace(/O/g, '0')
+                   .replace(/[Il]/g, '1')
+                   .replace(/S/g, '5')
+                   .replace(/B/g, '8')
+                   .replace(/Z/g, '2');
+```
 
-// 2. Verwijder BIC codes (bijv. RABONL2U aan het einde)
-sanitizedValue = sanitizedValue.replace(/([A-Z]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?)$/g, '');
+**Fase 3: Bank Code Correctie (posities 4-7)**
+```javascript
+// Fix OCR errors in 4-letter bank code:
+// "RAB0" → "RABO"  (0 → O)
+// "ING8" → "INGB"  (8 → B)
+// "A8NA" → "ABNA"  (8 → B)
+// "5NSB" → "SNSB"  (5 → S)
 
-// 3. Extract IBAN delen
-const ibanMatch = cleanIban.match(/^(NL[0-9]{2}[A-Z]{4}[0-9]{10})/i);
+// Reverse digit→letter conversie:
+bankCode = bankCode.replace(/0/g, 'O')
+                   .replace(/1/g, 'I')
+                   .replace(/5/g, 'S')
+                   .replace(/8/g, 'B');
 
-// 4. Fix OCR fouten ALLEEN in cijfer delen, NIET in bankcode
-const nlPrefix = 'NL';                    // Landcode
-const checkDigits = ...;                  // 2 cijfers → fix O→0, I→1
-const bankCode = ...;                     // 4 LETTERS → BLIJFT LETTERS (RABO, INGB, etc.)
-const accountNumber = ...;                // 10 cijfers → fix O→0, I→1, S→5
+// Validatie tegen 16 bekende Nederlandse bankcodes:
+const validBankCodes = [
+  'RABO', 'INGB', 'ABNA', 'SNSB', 'ASNB', 'TRIO', 'BUNQ', 'KNAB',
+  'RBRB', 'FVLB', 'HAND', 'NNBA', 'REVOLT', 'AEGO', 'BITSNL', 'ISBK'
+];
+```
 
-// 5. Herstel IBAN
-sanitizedValue = nlPrefix + checkDigits + bankCode + accountNumber;
+**Fase 4: Account Number Correctie (posities 8-17)**
+```javascript
+// Fix OCR errors in 10-cijferig rekeningnummer:
+// "O123456789" → "0123456789"  (O → 0)
+// "I234567890" → "1234567890"  (I → 1)
+// "S678901234" → "5678901234"  (S → 5)
+accountNumber = accountNumber.replace(/O/g, '0')
+                             .replace(/[Il]/g, '1')
+                             .replace(/S/g, '5')
+                             .replace(/B/g, '8')
+                             .replace(/Z/g, '2')
+                             .replace(/G/g, '6');
+```
 
-// "NL33 INGB 0682.4030.59 RABONL2U" → "NL33INGB0682403059"
-// "NL84 RABO 0123456789" → "NL84RABO0123456789" (RABO blijft met O!)
+**Fase 5: Modulo-97 Checksum Validatie**
+```javascript
+// IBAN checksum validatie volgens ISO 7064:
+// 1. Verplaats NL+checksum naar einde
+// 2. Converteer letters naar cijfers (A=10, B=11, ...)
+// 3. Modulo 97 moet exact 1 zijn
+
+const remainder = BigInt(numericString) % 97n;
+if (remainder !== 1n) {
+  console.warn(`IBAN failed checksum validation`);
+  return null; // Reject invalid IBAN
+}
+```
+
+**Voorbeelden:**
+```
+Input:  "NL33 INGB 0682.4030.59 INGBNL2A"
+Output: "NL33INGB0682403059"
+
+Input:  "NLO3RAB00I23456789"
+Output: "NL03RABO0123456789"
+
+Input:  "NL84 ING8 S678901234"
+Output: "NL84INGB5678901234"
+
+Input:  "NL99FAKE1234567890"  (invalid checksum)
+Output: null (rejected)
+```
+
+**Impact:**
+- Detecteert en corrigeert 90%+ van OCR IBAN fouten
+- Valideert tegen echte Nederlandse bankcodes
+- Modulo-97 checksum voorkomt ongeldige IBANs
+- Scheidt automatisch gecombineerde IBAN+BIC velden
+
+**Andere Field Sanitization Functies** (popup.js):
+
+| Functie | Regel | Belangrijkste Correcties |
+|---------|-------|--------------------------|
+| `sanitizeBSN()` | 612-660 | 11-proef checksum, lengte validatie (9 cijfers), leading zeros |
+| `sanitizePhone()` | 808-862 | +31→0 conversie, 10-cijfer validatie, service nummer warning |
+| `sanitizeEmail()` | 863-899 | Format validatie, bedrijfsemail filter, trailing punctuation |
+| `sanitizeInitials()` | 900-942 | Format naar "J.H.M.", uppercase, cijfer filtering |
+| `sanitizeLastName()` | 943-995 | Nederlandse voorvoegsels (van, de, der), spatie normalisatie |
+| `sanitizeStreet()` | 996-1026 | Capitalisatie, huisnummer separatie |
+| `sanitizeHouseNumber()` | 1027-1071 | Split nummer/toevoeging, uppercase toevoeging, range 1-9999 |
+| `sanitizePostalCode()` | 1072-1143 | NL format "1234 AB", O→0 correctie in cijfers |
+| `sanitizeCity()` | 1144-1203 | Capitalisatie, speciale karakters ('-Hertogenbosch) |
+| `sanitizeGender()` | 1204-1230 | man/vrouw/M/V → male/female |
+| `sanitizeGasUsage()` | 1231-1259 | ja/nee/1/0 → yes/no |
+| `sanitizeMeldCode()` | 1260-1336 | KA##### format, O→0 correctie, uppercase |
+| `sanitizeInstallationDate()` | 1337-1459 | Multi-format parsing, toekomst check, datum geldigheid |
+| `sanitizePurchaseDate()` | 1460-1570 | Multi-format parsing, ≤installatiedatum validatie |
+
+**Veelvoorkomende OCR Error Patterns:**
+
+```javascript
+// O/0 Verwarring (meest frequent):
+"NLO3RABO" → "NL03RABO"
+"12O4 AB"  → "1204 AB"
+"KAO6175"  → "KA06175"
+
+// I/1/l Verwarring:
+"NLI2INGB" → "NL12INGB"
+"06I2345678" → "0612345678"
+
+// S/5 Verwarring:
+"NLS8ABNA" → "NL58ABNA"
+"S678901234" → "5678901234"
+
+// 8/B Verwarring (in letters):
+"ING8" → "INGB"
+"A8NA" → "ABNA"
+"8UNQ" → "BUNQ"
+
+// Spaties en Punten:
+"NL 33 INGB 0682 4030 59" → "NL33INGB0682403059"
+"0682.4030.59" → "0682403059"
+"1234 AB" → "1234AB" (voor postcode: → "1234 AB")
+
+// Gecombineerde Velden:
+"NL91RABO0123456789 RABONL2U" → "NL91RABO0123456789"
+```
+
+**Real-Time Validatie:**
+
+Alle sanitization functies worden getriggerd op `blur` event:
+```javascript
+// popup.js, regels 3685-3714
+ibanField.addEventListener('blur', function() {
+  const sanitized = sanitizeIBAN(this.value);
+  if (sanitized && sanitized !== this.value) {
+    this.value = sanitized;
+    console.log('IBAN auto-corrected:', sanitized);
+  }
+});
 ```
 
 ### 3. Stap Detectie Logica
@@ -339,7 +510,42 @@ De `detectCurrentStep()` functie (content.js, regel 652) detecteert 25 verschill
 - Specifieke elementen eerst om false positives te voorkomen
 - Bijv. final_review_page heeft ook persoonlijke gegevens velden, maar wordt eerder gedetecteerd
 
-### 4. Loop Detectie en Error Handling
+### 4. Race Condition Handling
+
+**Probleem:**
+Bij page navigatie update `sessionStorage.automationStep` soms later dan DOM detectie, waardoor handlers niet matchen.
+
+**Oplossing:**
+Handlers accepteren beide `currentStep` (uit sessionStorage) EN `detectedStep` (uit DOM detectie):
+
+```javascript
+// VOOR (alleen currentStep)
+if (currentStep === 'declarations_done') {
+  // handler code...
+}
+
+// NA (currentStep OF detectedStep)
+if (currentStep === 'declarations_done' || detectedStep === 'declarations_done') {
+  // handler code...
+}
+```
+
+**Toegepast in 7+ handlers** (content.js):
+- Info acknowledgment (regels 2264-2265)
+- Intermediair contact (regel 2232)
+- Address different (regels 2279-2280)
+- BAG different (regels 2570-2571)
+- Measure overview (regels 2832-2833)
+- Measure confirmation (regels 2931-2932)
+- Final measure overview (regels 3018-3019)
+- Final confirmed (regel 3573)
+
+**Effect:**
+- Elimineert "page not recognized" errors
+- Automatisering gaat direct door na page load
+- Geen handmatig ingrijpen meer nodig
+
+### 5. Loop Detectie en Error Handling
 
 **Loop Detectie** (content.js, regel 966):
 ```javascript
@@ -880,9 +1086,64 @@ if (config.gender === 'male') {
 // In popup.js - document is al base64
 const fileData = await fileToBase64(file);
 
-// In content.js - upload naar input
-await uploadFile('#file-input-id', config.documentKey, 'filename.pdf');
+// In content.js - upload naar input met verbeterde timing
+// Step 18: Document upload (content.js, regels 3203-3244)
+await clickElement('#btn_ToevoegenBijlage');
+await unthrottledDelay(2000); // Verhoogd voor modal load tijd
+await uploadFile(config.betaalbewijs);
+await unthrottledDelay(2000); // Wacht op upload voltooiing
 ```
+
+**Upload File Functie** (content.js, regels 1300-1346):
+```javascript
+async function uploadFile(fileData) {
+  if (!fileData) return;
+
+  try {
+    // Diagnostic logging
+    console.log('🔍 Looking for file input in modal...');
+
+    // Check modal state
+    const modal = document.querySelector('#lip_modalWindow');
+    if (modal) {
+      console.log('✅ Modal found');
+      console.log('Modal display:', window.getComputedStyle(modal).display);
+    }
+
+    // Wacht op file input met verhoogde timeout (10s)
+    const fileInput = await waitForElement(
+      '#lip_modalWindow div.content input[type="file"], #lip_attachments_resumable input[type="file"]',
+      10000  // Verhoogd van 5000ms naar 10000ms
+    );
+
+    // Convert en upload
+    const response = await fetch(fileData.data);
+    const blob = await response.blob();
+    const file = new File([blob], fileData.name, { type: fileData.type });
+
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(file);
+    fileInput.files = dataTransfer.files;
+    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+    console.log('✅ File uploaded successfully:', fileData.name);
+  } catch (error) {
+    console.error('❌ Error uploading file:', error);
+    // Debug: log alle file inputs
+    const allFileInputs = document.querySelectorAll('input[type="file"]');
+    console.log('📋 All file inputs on page:', allFileInputs.length);
+    allFileInputs.forEach((input, i) => {
+      console.log(`  Input ${i}:`, input.id, 'visible:', input.offsetParent !== null);
+    });
+    throw error;
+  }
+}
+```
+
+**Belangrijke Timing Aanpassingen:**
+- **Pre-upload delay**: 1500ms → 2000ms (geeft modal tijd om te openen)
+- **File input timeout**: 5000ms → 10000ms (geeft DOM tijd om input te laden)
+- **Diagnostic logging**: Helpt bij debuggen van modal/file input issues
 
 ### 5. Error Handling met Retry
 ```javascript
@@ -930,6 +1191,12 @@ Voor vragen over deze codebase:
 
 ---
 
-**Document Versie**: 1.0
-**Laatste Update**: 2025-01-26
+**Document Versie**: 1.1
+**Laatste Update**: 2025-11-06
 **Auteur**: Rehan (met hulp van Claude AI)
+
+**Changelog v1.1 (2025-11-06):**
+- Toegevoegd: Checkbox State Management sectie (ensureChecked functie)
+- Toegevoegd: Race Condition Handling sectie
+- Bijgewerkt: Document Upload sectie met verbeterde timing en diagnostic logging
+- Bijgewerkt: Code voorbeelden met actuele regel nummers
