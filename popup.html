@@ -334,6 +334,26 @@
       border-color: #fa5252;
       box-shadow: 0 0 0 3px rgba(250, 82, 82, 0.15);
     }
+
+    /* Rode markering voor verplichte velden die nog niet ingevuld zijn */
+    .field-required-missing {
+      border: 2px solid #ff4444 !important;
+      border-radius: 8px !important;
+      background-color: rgba(255, 68, 68, 0.05) !important;
+      animation: shake 0.4s ease-in-out;
+    }
+
+    .field-required-missing:focus {
+      border-color: #ff4444 !important;
+      box-shadow: 0 0 0 4px rgba(255, 68, 68, 0.2) !important;
+    }
+
+    /* Shake animatie voor extra aandacht */
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-5px); }
+      75% { transform: translateX(5px); }
+    }
   </style>
 </head>
 <body>

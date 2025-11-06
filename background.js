@@ -79,18 +79,45 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // Dit bericht bevat de actie en een verwijzing naar de configuratie
         chrome.tabs.sendMessage(currentTab.id, payload, (response) => {
           if (chrome.runtime.lastError) {
+            console.log('⚠️ Content script not loaded, injecting now...');
             // Er is een fout opgetreden - waarschijnlijk is het content script niet geladen
             // Probeer het content script handmatig te injecteren
             chrome.scripting.executeScript({
               target: { tabId: currentTab.id },
               files: ['content.js']
             }, () => {
-              // Wacht 500ms om het script de kans te geven om te initialiseren
-              // Stuur dan het bericht opnieuw
-              setTimeout(() => {
-                chrome.tabs.sendMessage(currentTab.id, payload);
-              }, 500);
+              if (chrome.runtime.lastError) {
+                console.error('❌ Failed to inject content script:', chrome.runtime.lastError.message);
+                return;
+              }
+
+              console.log('✅ Content script injected, waiting for initialization...');
+
+              // Retry met exponential backoff: probeer meerdere keren met toenemende delays
+              const retryDelays = [500, 1000, 2000]; // 500ms, 1s, 2s
+              let retryCount = 0;
+
+              const attemptSend = () => {
+                chrome.tabs.sendMessage(currentTab.id, payload, (response) => {
+                  if (chrome.runtime.lastError) {
+                    retryCount++;
+                    if (retryCount < retryDelays.length) {
+                      console.log(`⏳ Retry ${retryCount}/${retryDelays.length} after ${retryDelays[retryCount]}ms...`);
+                      setTimeout(attemptSend, retryDelays[retryCount]);
+                    } else {
+                      console.error('❌ All retries exhausted. Content script not responding.');
+                    }
+                  } else {
+                    console.log('✅ Message successfully sent to content script on retry', retryCount + 1);
+                  }
+                });
+              };
+
+              // Start eerste retry
+              setTimeout(attemptSend, retryDelays[0]);
             });
+          } else {
+            console.log('✅ Content script already loaded, message sent successfully');
           }
         });
       });

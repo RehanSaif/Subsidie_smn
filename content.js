@@ -793,6 +793,27 @@ async function resolveAutomationConfigFromRequest(request) {
   throw new Error('Geen automatiseringsconfiguratie ontvangen.');
 }
 
+function cleanupAutomationFiles(config) {
+  return new Promise(resolve => {
+    if (!config || !Array.isArray(config._storageCleanupKeys) || config._storageCleanupKeys.length === 0) {
+      resolve();
+      return;
+    }
+
+    const keysToRemove = Array.from(new Set(config._storageCleanupKeys));
+    if (keysToRemove.length === 0) {
+      resolve();
+      return;
+    }
+
+    chrome.storage.local.remove(keysToRemove, () => {
+      console.log('🧹 Cleaned up automation files from storage:', keysToRemove);
+      config._storageCleanupKeys = [];
+      resolve();
+    });
+  });
+}
+
 function startAutomationWithConfig(config) {
   console.log('Starting automation with config:', config);
   // Reset vlag bij het starten van nieuwe automatisering
@@ -890,14 +911,14 @@ function startAutomationWithConfig(config) {
   if (config.factuurKey) filesToRetrieve.push(config.factuurKey);
   if (config.machtigingsbewijsKey) filesToRetrieve.push(config.machtigingsbewijsKey);
 
-  if (filesToRetrieve.length > 0) {
-    console.log('📥 Retrieving files from chrome.storage.local:', filesToRetrieve);
-    chrome.storage.local.get(filesToRetrieve, (result) => {
-      // Vervang keys met daadwerkelijke bestandsgegevens
-      if (config.betaalbewijsKey) {
-        config.betaalbewijs = result[config.betaalbewijsKey];
-        delete config.betaalbewijsKey;
-      }
+    if (filesToRetrieve.length > 0) {
+      console.log('📥 Retrieving files from chrome.storage.local:', filesToRetrieve);
+      chrome.storage.local.get(filesToRetrieve, (result) => {
+        // Vervang keys met daadwerkelijke bestandsgegevens
+        if (config.betaalbewijsKey) {
+          config.betaalbewijs = result[config.betaalbewijsKey];
+          delete config.betaalbewijsKey;
+        }
       if (config.factuurKey) {
         config.factuur = result[config.factuurKey];
         delete config.factuurKey;
@@ -907,22 +928,14 @@ function startAutomationWithConfig(config) {
         delete config.machtigingsbewijsKey;
       }
 
-      console.log('✅ Files retrieved successfully for session:', config.sessionId);
+        console.log('✅ Files retrieved successfully for session:', config.sessionId);
+        config._storageCleanupKeys = filesToRetrieve;
+        startFullAutomation(config);
+      });
+    } else {
+      config._storageCleanupKeys = [];
       startFullAutomation(config);
-
-      // Ruim opslag op nadat automatisering klaar is (60 seconden is voldoende)
-      // Elk tabblad heeft een unieke sessie ID, dus dit verwijdert alleen bestanden van DIT tabblad
-      unthrottledDelay(60000).then(() => {
-        chrome.storage.local.remove(filesToRetrieve, () => {
-          console.log('🧹 Cleaned up temporary files from storage for session:', config.sessionId);
-        });
-      }).catch(() => {
-        // Ignore errors tijdens cleanup - opslag wordt uiteindelijk opgeschoond
-      }); // 60 seconden - genoeg tijd voor bestand upload stap
-    });
-  } else {
-    startFullAutomation(config);
-  }
+    }
 
   return true;
 }
@@ -1725,8 +1738,13 @@ function detectCurrentStep() {
 
   // Step 1: Start page
   // Has the "Nieuwe aanvraag" button but NOT the catalog link
-  if (document.querySelector('#page_1_navigation_3_link')) {
-    console.log('🎯 Detected: start - Main page');
+  const startLinkById = document.querySelector('#page_1_navigation_3_link');
+  const startLinkByText = Array.from(document.querySelectorAll('a')).find(link => {
+    const text = (link.textContent || link.innerText || '').trim().toLowerCase();
+    return text === 'nieuwe aanvraag' || text === 'start formulier' || text.includes('nieuwe aanvraag');
+  });
+  if (startLinkById || startLinkByText) {
+    console.log('🎯 Detected: start - Main page (found Nieuwe aanvraag link)');
     return 'start';
   }
 
@@ -1898,10 +1916,16 @@ async function startFullAutomation(config) {
       }
 
       // Gebruik exacte selector uit opname
-      const nav3Link = document.querySelector('#page_1_navigation_3_link');
-      console.log('Found #page_1_navigation_3_link:', !!nav3Link);
+      let startLink = document.querySelector('#page_1_navigation_3_link');
+      if (!startLink) {
+        startLink = Array.from(document.querySelectorAll('a')).find(link => {
+          const text = (link.textContent || link.innerText || '').trim().toLowerCase();
+          return text === 'nieuwe aanvraag' || text === 'start formulier' || text.includes('nieuwe aanvraag');
+        });
+      }
+      console.log('Found start link:', !!startLink);
 
-      if (nav3Link) {
+      if (startLink) {
         console.log('Step 1: Clicking Nieuwe aanvraag link');
         updateStatus('Klik op Nieuwe aanvraag link', '1 - Navigatie');
 
@@ -1910,7 +1934,7 @@ async function startFullAutomation(config) {
         sessionStorage.setItem('automationStep', 'nieuwe_aanvraag_clicked');
         sessionStorage.setItem('automationConfig', JSON.stringify(config));
 
-        await clickElement(nav3Link);
+        await clickElement(startLink);
 
         // After clicking, a page navigation will occur
         // The window.load event will restart automation at Step 2
@@ -1944,7 +1968,15 @@ async function startFullAutomation(config) {
         updateStatus('Navigeer eerst naar de eLoket hoofdpagina', 'Wachten');
       }
     }
-    
+
+    // PROMOTION: If we already see the first "Volgende" button, skip catalog lookup
+    if (currentStep === 'nieuwe_aanvraag_clicked' && document.querySelector('#btn12')) {
+      console.log('⚡ Detected Volgende button while current step is nieuwe_aanvraag_clicked. Promoting to isde_selected.');
+      currentStep = 'isde_selected';
+      sessionStorage.setItem('automationStep', 'isde_selected');
+      updateStatus('Catalogus pagina gevonden', '2 - ISDE Selectie');
+    }
+
     // Step 2: Click ISDE aanvragen link (try multiple strategies)
     if (currentStep === 'nieuwe_aanvraag_clicked') {
       console.log('Step 2: Looking for ISDE aanvragen link');
@@ -3068,6 +3100,7 @@ async function startFullAutomation(config) {
         await unthrottledDelay(1000);
 
         sessionStorage.setItem('automationStep', 'files_handled');
+        await cleanupAutomationFiles(config);
 
         // Continue automation after clicking Volgende (break call chain to prevent memory buildup)
         console.log('✅ Volgende clicked, continuing to next step...');
@@ -3154,7 +3187,37 @@ async function startFullAutomation(config) {
         actionButton.click();
         console.log(`✅ Clicked "${buttonText}" button in modal`);
 
-        await unthrottledDelay(1500);
+        // CRITICAL: Wacht tot de modal daadwerkelijk weg is uit de DOM
+        // De modal heeft vaak een fade-out animatie die 500-1000ms duurt
+        console.log('⏳ Waiting for vervolgstap modal to disappear...');
+
+        let modalGone = false;
+        let waitAttempts = 0;
+        const maxWaitAttempts = 10; // Max 5 seconden wachten (10 x 500ms)
+
+        while (!modalGone && waitAttempts < maxWaitAttempts) {
+          await unthrottledDelay(500);
+          waitAttempts++;
+
+          // Check of de modal weg is
+          const modalStillPresent = Array.from(document.querySelectorAll('*')).some(el =>
+            el.textContent && (
+              el.textContent.includes('Vervolgstap') ||
+              el.textContent.includes('U heeft deze maatregel volledig ingevuld')
+            )
+          );
+
+          if (!modalStillPresent) {
+            modalGone = true;
+            console.log(`✅ Modal disappeared after ${waitAttempts * 500}ms`);
+          } else {
+            console.log(`⏳ Modal still present (attempt ${waitAttempts}/${maxWaitAttempts})...`);
+          }
+        }
+
+        if (!modalGone) {
+          console.warn('⚠️ Modal did not disappear after 5 seconds, continuing anyway');
+        }
 
         // After vervolgstap modal, go directly to measure_overview step
         // Don't rely on detection, just proceed to the overview
@@ -3708,3 +3771,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   console.log('✅ Panel recreation loop terminated - automation stopped');
 })();
+
+// ============================================================================
+// CONTENT SCRIPT INITIALIZATION COMPLETE
+// ============================================================================
+// Signal to background script that this content script is ready to receive messages
+// This is especially important after manual injection (when extension is reloaded)
+console.log('✅ ISDE Content Script fully initialized and ready');
+
+// Set a flag that can be checked by background script
+if (typeof window !== 'undefined') {
+  window.isdeContentScriptReady = true;
+}

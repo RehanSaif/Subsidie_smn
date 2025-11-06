@@ -558,6 +558,7 @@ const FIELD_LABELS = {
   bsn: 'BSN',
   initials: 'Voorletters',
   lastName: 'Achternaam',
+  gender: 'Geslacht',
   phone: 'Telefoonnummer',
   email: 'E-mailadres',
   iban: 'IBAN',
@@ -1682,6 +1683,17 @@ document.getElementById('machtigingsformulier').addEventListener('change', async
         const formData = collectFormData();
         console.log(`💾 Saving machtigingsformulier OCR data to tab ${uploadTabId}`);
         await saveFormDataForTab(uploadTabId, formData);
+
+        // MARKEER LEGE VERPLICHTE VELDEN na OCR extractie
+        // Wacht even zodat UI update compleet is
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Valideer en markeer ontbrekende velden (maar toon geen error message)
+        const missingFields = validateRequiredFields(true);
+        if (missingFields.length > 0) {
+          console.log(`📌 Marking ${missingFields.length} empty required fields:`, missingFields.join(', '));
+          showExtractionStatus(`ℹ️ Vul nog handmatig in: ${missingFields.join(', ')}`, 'extractionStatus', 'info', 10000);
+        }
       }
 
       // Update de status van de "Start Automatisering" knop
@@ -1728,6 +1740,9 @@ document.getElementById('betaalbewijsDoc').addEventListener('change', async (e) 
     const uploadTabId = currentTrackedTabId;
     console.log('📎 Betaalbewijs uploaded:', file.name, 'for tab', uploadTabId);
 
+    // Verwijder rode markering zodra bestand is geüpload
+    e.target.classList.remove('field-required-missing');
+
     // Converteer bestand naar base64
     const fileData = await fileToBase64(file);
 
@@ -1766,6 +1781,9 @@ document.getElementById('factuurDoc').addEventListener('change', async (e) => {
     // Capture tab ID at start of upload (before any async operations)
     const uploadTabId = currentTrackedTabId;
     console.log('📎 Factuur uploaded:', file.name, 'for tab', uploadTabId);
+
+    // Verwijder rode markering zodra bestand is geüpload
+    e.target.classList.remove('field-required-missing');
 
     // Converteer bestand naar base64
     const fileData = await fileToBase64(file);
@@ -1840,6 +1858,16 @@ document.getElementById('factuurDoc').addEventListener('change', async (e) => {
         const formData = collectFormData();
         console.log(`💾 Saving factuur OCR data to tab ${uploadTabId}`);
         await saveFormDataForTab(uploadTabId, formData);
+
+        // MARKEER LEGE VERPLICHTE VELDEN na factuur extractie
+        // Wacht even zodat UI update compleet is
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Valideer en markeer ontbrekende velden
+        const missingFields = validateRequiredFields(true);
+        if (missingFields.length > 0) {
+          console.log(`📌 Marking ${missingFields.length} empty required fields after factuur OCR:`, missingFields.join(', '));
+        }
       }
 
       // Update de status van de "Start Automatisering" knop
@@ -3298,7 +3326,7 @@ function setupAutoSaveListeners() {
  * Wordt gebruikt om de "Start Automatisering" knop in/uit te schakelen
  * en om te valideren voordat automatisering start.
  */
-function validateRequiredFields() {
+function validateRequiredFields(highlightMissing = false) {
   const missingFields = [];
 
   // Controleer alle verplichte formuliervelden
@@ -3306,15 +3334,50 @@ function validateRequiredFields() {
     const field = document.getElementById(fieldId);
     if (field && !field.value.trim()) {
       missingFields.push(FIELD_LABELS[fieldId]);
+
+      // Markeer veld als leeg (rood)
+      if (highlightMissing) {
+        field.classList.add('field-required-missing');
+      }
+    } else if (field && highlightMissing) {
+      // Verwijder markering als veld wel ingevuld is
+      field.classList.remove('field-required-missing');
     }
   });
 
   // Controleer of documenten zijn geüpload
   if (!betaalbewijsData) {
     missingFields.push('Betaalbewijs');
+
+    // Markeer betaalbewijs upload sectie
+    if (highlightMissing) {
+      const betaalbewijsSection = document.getElementById('betaalbewijsDoc');
+      if (betaalbewijsSection) {
+        betaalbewijsSection.classList.add('field-required-missing');
+      }
+    }
+  } else if (highlightMissing) {
+    const betaalbewijsSection = document.getElementById('betaalbewijsDoc');
+    if (betaalbewijsSection) {
+      betaalbewijsSection.classList.remove('field-required-missing');
+    }
   }
+
   if (!factuurData) {
     missingFields.push('Factuur');
+
+    // Markeer factuur upload sectie
+    if (highlightMissing) {
+      const factuurSection = document.getElementById('factuurDoc');
+      if (factuurSection) {
+        factuurSection.classList.add('field-required-missing');
+      }
+    }
+  } else if (highlightMissing) {
+    const factuurSection = document.getElementById('factuurDoc');
+    if (factuurSection) {
+      factuurSection.classList.remove('field-required-missing');
+    }
   }
 
   return missingFields;
@@ -3407,6 +3470,16 @@ function revalidateAllFields() {
     }
   }
 
+  // Valideer geslacht
+  const genderField = document.getElementById('gender');
+  if (genderField) {
+    if (!genderField.value) {
+      showFieldWarning('gender', 'genderWarning', `⚠️ Selecteer geslacht`);
+    } else {
+      showFieldWarning('gender', 'genderWarning', null);
+    }
+  }
+
   console.log('✅ Re-validated all fields');
 }
 
@@ -3451,8 +3524,16 @@ document.addEventListener('DOMContentLoaded', () => {
   getRequiredFieldIds().forEach(fieldId => {
     const field = document.getElementById(fieldId);
     if (field) {
-      field.addEventListener('input', updateStartButtonState);
-      field.addEventListener('change', updateStartButtonState);
+      field.addEventListener('input', () => {
+        // Verwijder rode markering zodra gebruiker begint te typen
+        field.classList.remove('field-required-missing');
+        updateStartButtonState();
+      });
+      field.addEventListener('change', () => {
+        // Verwijder rode markering bij change event
+        field.classList.remove('field-required-missing');
+        updateStartButtonState();
+      });
     }
   });
 
@@ -3736,11 +3817,22 @@ document.addEventListener('DOMContentLoaded', () => {
  * - Documenten worden opgeruimd na gebruik door content script
  */
 document.getElementById('startAutomation').addEventListener('click', () => {
-  // Valideer alle verplichte velden
-  const missingFields = validateRequiredFields();
+  // Valideer alle verplichte velden EN markeer ze visueel
+  const missingFields = validateRequiredFields(true);
 
   if (missingFields.length > 0) {
     showStatus(`Vul eerst alle verplichte velden in: ${missingFields.join(', ')}`, 'error');
+
+    // Scroll naar het eerste lege veld
+    const firstMissingField = document.querySelector('.field-required-missing');
+    if (firstMissingField) {
+      firstMissingField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Focus op het veld na scroll
+      setTimeout(() => {
+        firstMissingField.focus();
+      }, 500);
+    }
+
     return;
   }
 
