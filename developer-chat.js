@@ -1,72 +1,106 @@
 /**
  * ============================================================================
- * ISDE DEVELOPER CHAT - AI ASSISTANT
+ * ISDE DEVELOPER CHAT - RAG-BASED AI ASSISTANT
  * ============================================================================
  *
  * Standalone tool voor developers om vragen te stellen over de codebase.
- * Gebruikt Mistral AI met embedded codebase kennis.
+ * Gebruikt RAG (Retrieval-Augmented Generation) voor dynamische antwoorden.
+ *
+ * ARCHITECTURE:
+ * 1. Load all source files into memory at page load
+ * 2. When user asks question: Send ALL files + question to LLM
+ * 3. LLM generates answer based on actual code, not hardcoded responses
+ *
+ * SIMPEL & EFFECTIEF: Geen complexe file selection - gewoon altijd alle files laden!
  */
+
+// ============================================================================
+// FILE MANIFEST
+// ============================================================================
+
+const FILE_MANIFEST = [
+  // Core extension files
+  { name: 'manifest.json', path: './manifest.json', type: 'config' },
+  { name: 'config.js', path: './config.js', type: 'code' },
+  { name: 'sanitization.js', path: './sanitization.js', type: 'code' },
+  { name: 'background.js', path: './background.js', type: 'code' },
+  { name: 'content.js', path: './content.js', type: 'code' },
+  { name: 'popup.js', path: './popup.js', type: 'code' },
+  { name: 'popup.html', path: './popup.html', type: 'ui' },
+  { name: 'status-panel.js', path: './status-panel.js', type: 'code' },
+
+  // Documentation
+  { name: 'README.md', path: './README.md', type: 'docs' },
+  { name: 'CHANGELOG.md', path: './docs/CHANGELOG.md', type: 'docs' },
+  { name: 'TECHNISCHE_OVERDRACHT.md', path: './docs/TECHNISCHE_OVERDRACHT.md', type: 'docs' },
+  { name: 'TROUBLESHOOTING.md', path: './docs/TROUBLESHOOTING.md', type: 'docs' },
+];
 
 // ============================================================================
 // STATE MANAGEMENT
 // ============================================================================
 
+let filesCache = {}; // { filename: content }
 let conversationHistory = [];
 let isProcessing = false;
+let filesLoaded = false;
 
 // ============================================================================
-// SYSTEM PROMPT
+// FILE LOADING
 // ============================================================================
 
-const SYSTEM_PROMPT = `Je bent een expert developer assistant voor de ISDE Chrome Extension codebase.
+/**
+ * Laad alle source files in memory.
+ * Dit gebeurt eenmalig bij page load.
+ */
+async function loadAllFiles() {
+  console.log('📚 Loading source files...');
 
-## PROJECT OVERZICHT
-${CODEBASE_KNOWLEDGE.structure.description}
+  for (const file of FILE_MANIFEST) {
+    try {
+      const response = await fetch(file.path);
+      if (response.ok) {
+        const content = await response.text();
+        filesCache[file.name] = {
+          content,
+          type: file.type,
+          lines: content.split('\n').length
+        };
+        console.log(`✅ Loaded ${file.name} (${filesCache[file.name].lines} lines)`);
+      } else {
+        console.warn(`⚠️ Could not load ${file.name}: ${response.status}`);
+      }
+    } catch (error) {
+      console.error(`❌ Error loading ${file.name}:`, error);
+    }
+  }
 
-## CORE FILES
-${CODEBASE_KNOWLEDGE.structure.coreFiles.map(f => `- ${f.file}: ${f.purpose}`).join('\n')}
+  filesLoaded = true;
+  console.log(`✅ Loaded ${Object.keys(filesCache).length}/${FILE_MANIFEST.length} files`);
 
-## ARCHITECTUUR
-${CODEBASE_KNOWLEDGE.architecture.dataFlow}
+  // Update UI
+  updateFilesLoadedStatus();
+}
 
-${CODEBASE_KNOWLEDGE.architecture.selectorRegistry}
+/**
+ * Update UI om aan te geven dat files geladen zijn.
+ */
+function updateFilesLoadedStatus() {
+  const chatContainer = document.getElementById('chatHistory');
+  const emptyState = chatContainer.querySelector('.empty-state');
 
-${CODEBASE_KNOWLEDGE.architecture.configuration}
-
-## FILE LOCATIONS (met line numbers)
-${Object.entries(CODEBASE_KNOWLEDGE.fileLocations).map(([file, info]) =>
-  `${file}: ${info.description}\n${Object.entries(info.sections).map(([name, lines]) =>
-    `  - ${name}: lines ${lines}`
-  ).join('\n')}`
-).join('\n\n')}
-
-## JE TAAK
-Beantwoord developer vragen over:
-- Code vinden en begrijpen
-- Features toevoegen
-- Bugs fixen
-- Selectors updaten
-- Sanitization toevoegen
-
-## ANTWOORD FORMAT
-Geef altijd:
-1. **Directe antwoord** op de vraag
-2. **File + line number** references (bijv. "config.js:193-201")
-3. **Code snippets** waar relevant (gebruik \`\`\`javascript blocks)
-4. **Stap-voor-stap** instructies indien van toepassing
-
-## VOORBEELDEN
-Als developer vraagt "Hoe voeg ik een veld toe?":
-- Geef concrete stappen (1. popup.html, 2. popup.js, etc.)
-- Toon code voorbeelden
-- Reference line numbers
-
-Als developer vraagt "Waar wordt X gedaan?":
-- Geef file + line number
-- Leg kort uit wat daar gebeurt
-- Suggest gerelateerde code
-
-Wees **praktisch**, **precies**, en **beknopt**. Developers willen snel antwoorden.`;
+  if (emptyState) {
+    const filesCount = Object.keys(filesCache).length;
+    emptyState.innerHTML = `
+      <div class="empty-state-icon">💬</div>
+      <div class="empty-state-title">Stel een vraag over de codebase</div>
+      <div class="empty-state-text">
+        ✅ ${filesCount} source files geladen<br>
+        Gebruik quick actions hierboven of type je eigen vraag hieronder
+      </div>
+    `;
+  }
+}
 
 // ============================================================================
 // API FUNCTIONS
@@ -84,64 +118,10 @@ function getMistralKey() {
 }
 
 /**
- * Bouw relevante context op basis van vraag.
- * @param {string} question - User vraag
- * @returns {string} Context string
+ * Stuur request naar Mistral AI.
  */
-function buildContext(question) {
-  const q = question.toLowerCase();
-
-  // Detect topic en return relevante recipe
-  if (q.includes('veld') && (q.includes('toevoeg') || q.includes('nieuw'))) {
-    return `RELEVANTE RECIPE:\n${JSON.stringify(CODEBASE_KNOWLEDGE.recipes.addFormField, null, 2)}`;
-  }
-
-  if (q.includes('selector') && (q.includes('update') || q.includes('wijzig'))) {
-    return `RELEVANTE RECIPE:\n${JSON.stringify(CODEBASE_KNOWLEDGE.recipes.updateSelector, null, 2)}`;
-  }
-
-  if (q.includes('sanitization') || q.includes('validatie')) {
-    return `RELEVANTE RECIPE:\n${JSON.stringify(CODEBASE_KNOWLEDGE.recipes.addSanitization, null, 2)}`;
-  }
-
-  if (q.includes('loop') && q.includes('detect')) {
-    return `RELEVANTE RECIPE:\n${JSON.stringify(CODEBASE_KNOWLEDGE.recipes.fixLoopDetection, null, 2)}`;
-  }
-
-  if (q.includes('statistiek') || q.includes('tracking')) {
-    return `RELEVANTE RECIPE:\n${JSON.stringify(CODEBASE_KNOWLEDGE.recipes.addStatistic, null, 2)}`;
-  }
-
-  // Default: return troubleshooting guide indien relevant
-  for (const [issue, info] of Object.entries(CODEBASE_KNOWLEDGE.troubleshooting)) {
-    if (q.includes(issue.toLowerCase().split(' ')[0])) {
-      return `TROUBLESHOOTING:\n${JSON.stringify(info, null, 2)}`;
-    }
-  }
-
-  // Als geen match, return project structure
-  return `PROJECT STRUCTURE:\n${JSON.stringify(CODEBASE_KNOWLEDGE.structure, null, 2)}`;
-}
-
-/**
- * Stuur vraag naar Mistral AI.
- * @param {string} userQuestion - Developer vraag
- * @returns {Promise<string>} AI antwoord
- */
-async function sendToMistral(userQuestion) {
+async function callMistralAPI(messages, maxTokens = 2000, temperature = 0.3) {
   const apiKey = getMistralKey();
-  const context = buildContext(userQuestion);
-
-  // Build messages array
-  const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
-    { role: 'system', content: context },
-    ...conversationHistory,
-    { role: 'user', content: userQuestion }
-  ];
-
-  console.log('📤 Sending to Mistral AI...');
-  console.log('Context:', context.substring(0, 200) + '...');
 
   const response = await fetch(CONFIG.getMistralUrl('chat/completions'), {
     method: 'POST',
@@ -151,22 +131,92 @@ async function sendToMistral(userQuestion) {
     },
     body: JSON.stringify({
       model: CONFIG.MISTRAL_MODELS.EXTRACTION, // mistral-small-latest
-      messages: messages,
-      max_tokens: 2000,
-      temperature: 0.3 // Lower temperature for more focused, accurate answers
+      messages,
+      max_tokens: maxTokens,
+      temperature
     })
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('Mistral API error:', errorText);
     throw new Error(`Mistral API error: ${response.status} - ${errorText}`);
   }
 
   const data = await response.json();
-  console.log('📥 Response received from Mistral');
-
   return data.choices[0].message.content;
+}
+
+/**
+ * Geef antwoord op vraag met file context.
+ */
+async function answerWithContext(question, relevantFiles) {
+  console.log('💬 Generating answer with full codebase context...');
+
+  // Build context van alle files - VOLLEDIG, geen truncation
+  const context = relevantFiles.map(filename => {
+    const file = filesCache[filename];
+
+    return `
+==================================================
+FILE: ${filename} (${file.type})
+LINES: ${file.lines}
+==================================================
+${file.content}
+`;
+  }).join('\n\n');
+
+  const systemPrompt = `Je bent een expert developer assistant voor de ISDE Chrome Extension codebase.
+
+Je taak is om developer vragen te beantwoorden op basis van de daadwerkelijke source code die je krijgt.
+
+ANTWOORD RICHTLIJNEN:
+- Geef CONCRETE antwoorden met file + line number references
+- Citeer relevante code snippets (gebruik \`\`\`javascript blocks)
+- Geef stap-voor-stap instructies waar relevant
+- Wees PRAKTISCH en PRECIES
+- Als je iets niet weet op basis van de gegeven files, zeg dat eerlijk
+
+FORMAAT:
+1. Begin met direct antwoord op de vraag
+2. Geef file + line references (bijv. "zie popup.js regel 150-180")
+3. Voeg code snippets toe waar nuttig
+4. Eindig met praktische tips/next steps indien relevant`;
+
+  const userPrompt = `SOURCE CODE CONTEXT:
+${context}
+
+DEVELOPER VRAAG:
+${question}
+
+Beantwoord de vraag op basis van bovenstaande source code.`;
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...conversationHistory.slice(-6), // Laatste 3 exchanges voor context
+    { role: 'user', content: userPrompt }
+  ];
+
+  const response = await callMistralAPI(messages, 4000, 0.3); // Meer tokens voor uitgebreide antwoorden
+
+  return response;
+}
+
+/**
+ * Hoofdfunctie: Beantwoord developer vraag met RAG.
+ */
+async function answerQuestion(question) {
+  // Laad gewoon ALLE files - simpeler en werkt altijd!
+  const allFiles = Object.keys(filesCache);
+
+  console.log('📚 Using all files:', allFiles.length);
+
+  // Genereer antwoord met volledige codebase context
+  const answer = await answerWithContext(question, allFiles);
+
+  return {
+    answer,
+    filesUsed: allFiles
+  };
 }
 
 // ============================================================================
@@ -175,10 +225,8 @@ async function sendToMistral(userQuestion) {
 
 /**
  * Voeg message toe aan chat history.
- * @param {string} role - 'user' of 'assistant'
- * @param {string} content - Message text
  */
-function addMessageToUI(role, content) {
+function addMessageToUI(role, content, metadata = null) {
   const chatHistory = document.getElementById('chatHistory');
 
   // Remove empty state als dit het eerste bericht is
@@ -201,7 +249,7 @@ function addMessageToUI(role, content) {
   let formattedContent = content;
 
   // Format ```language blocks
-  formattedContent = formattedContent.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+  formattedContent = formattedContent.replace(/```(\w+)?\n([\s\S]*?)```/g, (_match, _lang, code) => {
     return `<pre><code>${escapeHtml(code.trim())}</code></pre>`;
   });
 
@@ -212,6 +260,16 @@ function addMessageToUI(role, content) {
 
   messageDiv.appendChild(roleDiv);
   messageDiv.appendChild(contentDiv);
+
+  // Add metadata (files used) indien beschikbaar
+  if (metadata && metadata.filesUsed) {
+    const metaDiv = document.createElement('div');
+    metaDiv.className = 'message-metadata';
+    metaDiv.style.cssText = 'margin-top: 10px; font-size: 11px; color: #858585; font-style: italic;';
+    metaDiv.textContent = `📁 Context: ${metadata.filesUsed.join(', ')}`;
+    messageDiv.appendChild(metaDiv);
+  }
+
   chatHistory.appendChild(messageDiv);
 
   // Scroll to bottom
@@ -220,7 +278,6 @@ function addMessageToUI(role, content) {
 
 /**
  * Voeg error message toe.
- * @param {string} error - Error tekst
  */
 function addErrorToUI(error) {
   const chatHistory = document.getElementById('chatHistory');
@@ -267,12 +324,16 @@ function setLoading(loading) {
 // ============================================================================
 
 /**
- * Verwerk user vraag.
- * @param {string} question - User vraag
+ * Verwerk user vraag met RAG.
  */
 async function handleUserQuestion(question) {
   if (!question.trim()) return;
   if (isProcessing) return;
+
+  if (!filesLoaded) {
+    addErrorToUI('Files zijn nog niet geladen. Wacht even en probeer opnieuw.');
+    return;
+  }
 
   try {
     // Add user message to UI
@@ -284,16 +345,20 @@ async function handleUserQuestion(question) {
     // Show loading
     setLoading(true);
 
-    // Get AI response
-    const response = await sendToMistral(question);
+    // Get AI response met RAG
+    const result = await answerQuestion(question);
 
     // Add assistant message to UI
-    addMessageToUI('assistant', response);
+    addMessageToUI('assistant', result.answer, { filesUsed: result.filesUsed });
 
-    // Add to conversation history (keep last 10 messages for context)
-    conversationHistory.push({ role: 'assistant', content: response });
-    if (conversationHistory.length > 10) {
-      conversationHistory = conversationHistory.slice(-10);
+    // Add to conversation history (keep last 8 messages for context)
+    conversationHistory.push({
+      role: 'assistant',
+      content: result.answer
+    });
+
+    if (conversationHistory.length > 8) {
+      conversationHistory = conversationHistory.slice(-8);
     }
 
   } catch (error) {
@@ -308,9 +373,12 @@ async function handleUserQuestion(question) {
 // EVENT LISTENERS
 // ============================================================================
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   const sendBtn = document.getElementById('sendBtn');
   const userInput = document.getElementById('userInput');
+
+  // Load all source files
+  await loadAllFiles();
 
   // Send button click
   sendBtn.addEventListener('click', async () => {
@@ -353,6 +421,6 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem('mistralApiKey', e.target.value);
   });
 
-  console.log('✅ Developer Chat initialized');
-  console.log('📚 Loaded knowledge base with', Object.keys(CODEBASE_KNOWLEDGE.recipes).length, 'recipes');
+  console.log('✅ Developer Chat initialized (RAG-based)');
+  console.log('📚 Loaded', Object.keys(filesCache).length, 'source files');
 });
