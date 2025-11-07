@@ -12,6 +12,9 @@
  * - Dynamisch injecteren van content scripts indien nodig
  */
 
+// Laad configuratie bestand
+importScripts('config.js');
+
 /**
  * Event listener voor wanneer de gebruiker op de extensie icoon klikt
  *
@@ -145,5 +148,45 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }, delay);
 
     return true;
+  }
+
+  // 📊 Statistics: Handle automation completion tracking
+  if (request.action === 'automationCompleted') {
+    const durationMs = request.durationMs;
+    console.log(`📊 Automation completed in ${Math.round(durationMs / 1000)} seconds`);
+
+    // Load current stats
+    chrome.storage.local.get([CONFIG.STORAGE_KEYS.USAGE_STATS], (result) => {
+      const stats = result[CONFIG.STORAGE_KEYS.USAGE_STATS] || {
+        totalCompleted: 0,
+        totalStarted: 0,
+        firstUseDate: null,
+        lastUseDate: null,
+        totalDurationMs: 0
+      };
+
+      // Update stats
+      const updatedStats = {
+        ...stats,
+        totalCompleted: stats.totalCompleted + 1,
+        totalDurationMs: stats.totalDurationMs + durationMs,
+        lastUseDate: new Date().toISOString()
+      };
+
+      // Set firstUseDate als dit de eerste keer is
+      if (!stats.firstUseDate) {
+        updatedStats.firstUseDate = new Date().toISOString();
+      }
+
+      // Save updated stats
+      chrome.storage.local.set({
+        [CONFIG.STORAGE_KEYS.USAGE_STATS]: updatedStats
+      }, () => {
+        console.log('📊 Usage stats updated:', updatedStats);
+        sendResponse({status: 'stats_updated'});
+      });
+    });
+
+    return true; // Async response
   }
 });

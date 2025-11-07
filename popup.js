@@ -26,6 +26,72 @@
  */
 
 // ============================================================================
+// POPUP SELECTOR REGISTRY
+// ============================================================================
+/**
+ * Centraal register van alle popup UI selectors.
+ * Bij HTML wijzigingen: update hier, niet in 120+ plekken!
+ */
+const POPUP_SELECTORS = {
+  // Form fields - Customer data
+  bsn: 'bsn',
+  initials: 'initials',
+  lastName: 'lastName',
+  gender: 'gender',
+  phone: 'phone',
+  email: 'email',
+  iban: 'iban',
+  street: 'street',
+  postalCode: 'postalCode',
+  city: 'city',
+  houseNumber: 'houseNumber',
+  houseAddition: 'houseAddition',
+  purchaseDate: 'purchaseDate',
+  installationDate: 'installationDate',
+  meldCode: 'meldCode',
+  gasUsage: 'gasUsage',
+
+  // Document uploads
+  betaalbewijsDoc: 'betaalbewijsDoc',
+  factuurDoc: 'factuurDoc',
+  machtigingsformulier: 'machtigingsformulier',
+  betaalbewijsName: 'betaalbewijsName',
+  factuurName: 'factuurName',
+  machtigingName: 'machtigingName',
+  extractionStatus: 'extractionStatus',
+  factuurExtractionStatus: 'factuurExtractionStatus',
+
+  // Settings fields
+  mistralApiKey: 'mistralApiKey',
+  settingsCompanyName: 'settingsCompanyName',
+  settingsKvkNumber: 'settingsKvkNumber',
+  settingsContactInitials: 'settingsContactInitials',
+  settingsContactLastName: 'settingsContactLastName',
+  settingsContactGender: 'settingsContactGender',
+  settingsContactPhone: 'settingsContactPhone',
+  settingsContactEmail: 'settingsContactEmail',
+  settingsStatus: 'settingsStatus',
+
+  // Buttons
+  startAutomation: 'startAutomation',
+  resetInfo: 'resetInfo',
+  saveSettingsBtn: 'saveSettingsBtn',
+  settingsBtn: 'settingsBtn',
+  backBtn: 'backBtn',
+
+  // UI elements
+  status: 'status',
+  mainView: 'mainView',
+  settingsView: 'settingsView',
+
+  // CSS class selectors
+  fieldWarning: '.field-warning',
+  fieldInput: '.field-input',
+  fieldRequiredMissing: '.field-required-missing',
+  view: '.view',
+};
+
+// ============================================================================
 // BESTANDSOPSLAG VARIABELEN
 // ============================================================================
 // Deze variabelen slaan de geüploade documenten op als base64 data tijdens
@@ -49,18 +115,18 @@ let machtigingsbewijsData = null;
  * Zorgt ervoor dat er minimaal 2.5 seconden tussen elke API call zit.
  */
 let lastMistralApiCall = 0;
-const MISTRAL_API_DELAY = 2500; // 2.5 seconden tussen calls
 
 /**
  * Wacht tot rate limit window voorbij is voordat een nieuwe API call wordt gedaan.
+ * Gebruikt CONFIG.API_DELAY_MS voor de delay tussen calls.
  * @returns {Promise<void>}
  */
 async function waitForMistralRateLimit() {
   const now = Date.now();
   const timeSinceLastCall = now - lastMistralApiCall;
 
-  if (timeSinceLastCall < MISTRAL_API_DELAY) {
-    const waitTime = MISTRAL_API_DELAY - timeSinceLastCall;
+  if (timeSinceLastCall < CONFIG.API_DELAY_MS) {
+    const waitTime = CONFIG.API_DELAY_MS - timeSinceLastCall;
     console.log(`⏳ Rate limiting: wachten ${Math.round(waitTime / 1000)} seconden...`);
     await new Promise(resolve => setTimeout(resolve, waitTime));
   }
@@ -459,10 +525,10 @@ async function clearFieldsForDocumentType(tabId, documentType) {
 
     // Verberg ook de status berichten
     if (documentType === 'machtigingsbewijs') {
-      const statusDiv = document.getElementById('extractionStatus');
+      const statusDiv = document.getElementById(POPUP_SELECTORS.extractionStatus);
       if (statusDiv) statusDiv.style.display = 'none';
     } else if (documentType === 'factuur') {
-      const statusDiv = document.getElementById('factuurExtractionStatus');
+      const statusDiv = document.getElementById(POPUP_SELECTORS.factuurExtractionStatus);
       if (statusDiv) statusDiv.style.display = 'none';
     }
   }
@@ -621,7 +687,7 @@ function getRequiredFieldIds() {
  * - IBAN bankrekeningnummer
  * - Aardgasgebruik (ja/nee)
  */
-document.getElementById('machtigingsformulier').addEventListener('change', async (e) => {
+document.getElementById(POPUP_SELECTORS.machtigingsformulier).addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (file) {
     // Capture tab ID at start of upload (before any async operations)
@@ -751,7 +817,7 @@ document.getElementById('machtigingsformulier').addEventListener('change', async
  * Het betaalbewijs wordt later geüpload naar het subsidieformulier
  * tijdens de automatisering. Geen OCR extractie nodig voor dit document.
  */
-document.getElementById('betaalbewijsDoc').addEventListener('change', async (e) => {
+document.getElementById(POPUP_SELECTORS.betaalbewijsDoc).addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (file) {
     // Capture tab ID at start of upload
@@ -793,7 +859,7 @@ document.getElementById('betaalbewijsDoc').addEventListener('change', async (e) 
  * - Meldcode: Format KA##### (bijvoorbeeld KA06175)
  * - Installatiedatum: Datum van warmtepomp installatie (DD-MM-YYYY)
  */
-document.getElementById('factuurDoc').addEventListener('change', async (e) => {
+document.getElementById(POPUP_SELECTORS.factuurDoc).addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (file) {
     // Capture tab ID at start of upload (before any async operations)
@@ -853,14 +919,14 @@ document.getElementById('factuurDoc').addEventListener('change', async (e) => {
 
         // Vul meldcode veld in als gevonden
         if (meldcode) {
-          document.getElementById('meldCode').value = meldcode;
+          document.getElementById(POPUP_SELECTORS.meldCode).value = meldcode;
           fieldsFound.push('Meldcode: ' + meldcode);
           console.log('✅ Meldcode extracted:', meldcode);
         }
 
         // Vul installatiedatum veld in als gevonden
         if (installationDate) {
-          document.getElementById('installationDate').value = installationDate;
+          document.getElementById(POPUP_SELECTORS.installationDate).value = installationDate;
           fieldsFound.push('Installatiedatum: ' + installationDate);
           console.log('✅ Installation date extracted:', installationDate);
         }
@@ -1029,22 +1095,22 @@ function fillFormFields(extractedData) {
       const number = houseNumberMatch[1];
       const addition = houseNumberMatch[2];
 
-      document.getElementById('houseNumber').value = number;
+      document.getElementById(POPUP_SELECTORS.houseNumber).value = number;
       fieldsFound++;
 
       if (addition) {
-        document.getElementById('houseAddition').value = addition;
+        document.getElementById(POPUP_SELECTORS.houseAddition).value = addition;
         fieldsFound++;
       }
     } else {
-      document.getElementById('houseNumber').value = extractedData.houseNumber;
+      document.getElementById(POPUP_SELECTORS.houseNumber).value = extractedData.houseNumber;
       fieldsFound++;
     }
   }
 
   // Vul houseAddition apart in als het in extractedData zit
   if (extractedData.houseAddition) {
-    document.getElementById('houseAddition').value = extractedData.houseAddition;
+    document.getElementById(POPUP_SELECTORS.houseAddition).value = extractedData.houseAddition;
     // Check of we dit veld al hebben geteld (als het uit split kwam)
     if (!extractedData.houseNumber || !extractedData.houseNumber.match(/^(\d+)(.+)$/)) {
       fieldsFound++;
@@ -1348,14 +1414,14 @@ async function extractMeldcodeFromFactuur(file) {
         await waitForMistralRateLimit();
 
         // Gebruik Mistral Pixtral Vision AI voor OCR
-        const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+        const response = await fetch(CONFIG.getMistralUrl('chat/completions'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${mistralApiKey}`
           },
           body: JSON.stringify({
-            model: 'pixtral-12b-2409',
+            model: CONFIG.MISTRAL_MODELS.OCR,
             messages: [{
               role: 'user',
               content: [
@@ -1404,14 +1470,14 @@ Extract ALL text but pay special attention to these two critical pieces of infor
       // Wacht voor rate limiting
       await waitForMistralRateLimit();
 
-      const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+      const response = await fetch(CONFIG.getMistralUrl('chat/completions'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${mistralApiKey}`
         },
         body: JSON.stringify({
-          model: 'pixtral-12b-2409',
+          model: CONFIG.MISTRAL_MODELS.OCR,
           messages: [{
             role: 'user',
             content: [
@@ -1492,14 +1558,14 @@ Extract ALL text but pay special attention to these two critical pieces of infor
       // Wacht voor rate limiting
       await waitForMistralRateLimit();
 
-      const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+      const response = await fetch(CONFIG.getMistralUrl('chat/completions'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${mistralApiKey}`
         },
         body: JSON.stringify({
-          model: 'mistral-small-latest',
+          model: CONFIG.MISTRAL_MODELS.EXTRACTION,
           messages: [{
             role: 'user',
             content: `Extract from this Dutch invoice text:
@@ -1682,7 +1748,7 @@ async function extractDataFromForm(file, uploadTabId) {
     // Wacht voor rate limiting
     await waitForMistralRateLimit();
 
-    const ocrResponse = await fetch('https://api.mistral.ai/v1/ocr', {
+    const ocrResponse = await fetch(CONFIG.getMistralUrl('ocr'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1745,14 +1811,14 @@ async function extractDataFromForm(file, uploadTabId) {
     // Wacht voor rate limiting
     await waitForMistralRateLimit();
 
-    const response = await fetch('https://api.mistral.ai/v1/chat/completions', {
+    const response = await fetch(CONFIG.getMistralUrl('chat/completions'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${mistralApiKey}`
       },
       body: JSON.stringify({
-        model: 'mistral-small-latest',
+        model: CONFIG.MISTRAL_MODELS.EXTRACTION,
         messages: [{
           role: 'user',
           content: `Extract the CUSTOMER information from this Dutch machtigingsformulier text.
@@ -1885,14 +1951,14 @@ Return ONLY JSON, no markdown.`
         // Wacht voor rate limiting
         await waitForMistralRateLimit();
 
-        const visionResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
+        const visionResponse = await fetch(CONFIG.getMistralUrl('chat/completions'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${mistralApiKey}`
           },
           body: JSON.stringify({
-            model: 'pixtral-12b-2409',
+            model: CONFIG.MISTRAL_MODELS.OCR,
             messages: [{
               role: 'user',
               content: [
@@ -2206,7 +2272,7 @@ async function loadConfiguration() {
         displayFileNameWithDelete('betaalbewijsName', savedDocuments.betaalbewijs.name, 'betaalbewijs');
       } else {
         betaalbewijsData = null;
-        const nameDiv = document.getElementById('betaalbewijsName');
+        const nameDiv = document.getElementById(POPUP_SELECTORS.betaalbewijsName);
         if (nameDiv) {
           nameDiv.style.display = 'none';
           nameDiv.innerHTML = '';
@@ -2219,7 +2285,7 @@ async function loadConfiguration() {
         displayFileNameWithDelete('factuurName', savedDocuments.factuur.name, 'factuur');
       } else {
         factuurData = null;
-        const nameDiv = document.getElementById('factuurName');
+        const nameDiv = document.getElementById(POPUP_SELECTORS.factuurName);
         if (nameDiv) {
           nameDiv.style.display = 'none';
           nameDiv.innerHTML = '';
@@ -2232,7 +2298,7 @@ async function loadConfiguration() {
         displayFileNameWithDelete('machtigingName', savedDocuments.machtigingsbewijs.name, 'machtigingsbewijs');
       } else {
         machtigingsbewijsData = null;
-        const nameDiv = document.getElementById('machtigingName');
+        const nameDiv = document.getElementById(POPUP_SELECTORS.machtigingName);
         if (nameDiv) {
           nameDiv.style.display = 'none';
           nameDiv.innerHTML = '';
@@ -2246,17 +2312,17 @@ async function loadConfiguration() {
       machtigingsbewijsData = null;
 
       // Reset file input velden
-      const betaalbewijsInput = document.getElementById('betaalbewijsDoc');
-      const factuurInput = document.getElementById('factuurDoc');
-      const machtigingsInput = document.getElementById('machtigingsformulier');
+      const betaalbewijsInput = document.getElementById(POPUP_SELECTORS.betaalbewijsDoc);
+      const factuurInput = document.getElementById(POPUP_SELECTORS.factuurDoc);
+      const machtigingsInput = document.getElementById(POPUP_SELECTORS.machtigingsformulier);
       if (betaalbewijsInput) betaalbewijsInput.value = '';
       if (factuurInput) factuurInput.value = '';
       if (machtigingsInput) machtigingsInput.value = '';
 
       // Verberg naam divs
-      const betaalbewijsName = document.getElementById('betaalbewijsName');
-      const factuurName = document.getElementById('factuurName');
-      const machtigingName = document.getElementById('machtigingName');
+      const betaalbewijsName = document.getElementById(POPUP_SELECTORS.betaalbewijsName);
+      const factuurName = document.getElementById(POPUP_SELECTORS.factuurName);
+      const machtigingName = document.getElementById(POPUP_SELECTORS.machtigingName);
       if (betaalbewijsName) {
         betaalbewijsName.style.display = 'none';
         betaalbewijsName.innerHTML = '';
@@ -2369,13 +2435,13 @@ function validateRequiredFields(highlightMissing = false) {
 
     // Markeer betaalbewijs upload sectie
     if (highlightMissing) {
-      const betaalbewijsSection = document.getElementById('betaalbewijsDoc');
+      const betaalbewijsSection = document.getElementById(POPUP_SELECTORS.betaalbewijsDoc);
       if (betaalbewijsSection) {
         betaalbewijsSection.classList.add('field-required-missing');
       }
     }
   } else if (highlightMissing) {
-    const betaalbewijsSection = document.getElementById('betaalbewijsDoc');
+    const betaalbewijsSection = document.getElementById(POPUP_SELECTORS.betaalbewijsDoc);
     if (betaalbewijsSection) {
       betaalbewijsSection.classList.remove('field-required-missing');
     }
@@ -2386,13 +2452,13 @@ function validateRequiredFields(highlightMissing = false) {
 
     // Markeer factuur upload sectie
     if (highlightMissing) {
-      const factuurSection = document.getElementById('factuurDoc');
+      const factuurSection = document.getElementById(POPUP_SELECTORS.factuurDoc);
       if (factuurSection) {
         factuurSection.classList.add('field-required-missing');
       }
     }
   } else if (highlightMissing) {
-    const factuurSection = document.getElementById('factuurDoc');
+    const factuurSection = document.getElementById(POPUP_SELECTORS.factuurDoc);
     if (factuurSection) {
       factuurSection.classList.remove('field-required-missing');
     }
@@ -2419,7 +2485,7 @@ function validateRequiredFields(highlightMissing = false) {
  * - Bij invoer in formuliervelden (via event listeners)
  */
 function updateStartButtonState() {
-  const startButton = document.getElementById('startAutomation');
+  const startButton = document.getElementById(POPUP_SELECTORS.startAutomation);
   const missingFields = validateRequiredFields();
 
   if (missingFields.length > 0) {
@@ -2444,7 +2510,7 @@ function updateStartButtonState() {
  */
 function revalidateAllFields() {
   // Valideer BSN
-  const bsnField = document.getElementById('bsn');
+  const bsnField = document.getElementById(POPUP_SELECTORS.bsn);
   if (bsnField && bsnField.value) {
     const sanitized = sanitizeBSN(bsnField.value);
     if (!sanitized) {
@@ -2453,7 +2519,7 @@ function revalidateAllFields() {
   }
 
   // Valideer IBAN
-  const ibanField = document.getElementById('iban');
+  const ibanField = document.getElementById(POPUP_SELECTORS.iban);
   if (ibanField && ibanField.value) {
     const sanitized = sanitizeIBAN(ibanField.value);
     if (!sanitized) {
@@ -2462,7 +2528,7 @@ function revalidateAllFields() {
   }
 
   // Valideer telefoon
-  const phoneField = document.getElementById('phone');
+  const phoneField = document.getElementById(POPUP_SELECTORS.phone);
   if (phoneField && phoneField.value) {
     const sanitized = sanitizePhone(phoneField.value);
     if (!sanitized) {
@@ -2471,7 +2537,7 @@ function revalidateAllFields() {
   }
 
   // Valideer email
-  const emailField = document.getElementById('email');
+  const emailField = document.getElementById(POPUP_SELECTORS.email);
   if (emailField && emailField.value) {
     const sanitized = sanitizeEmail(emailField.value);
     if (!sanitized) {
@@ -2480,7 +2546,7 @@ function revalidateAllFields() {
   }
 
   // Valideer voorletters
-  const initialsField = document.getElementById('initials');
+  const initialsField = document.getElementById(POPUP_SELECTORS.initials);
   if (initialsField && initialsField.value) {
     const sanitized = sanitizeInitials(initialsField.value);
     if (!sanitized) {
@@ -2490,7 +2556,7 @@ function revalidateAllFields() {
 
   // Valideer geslacht - maar toon waarschuwing NIET als veld nog niet is "touched"
   // Waarschuwing wordt alleen getoond via blur event of bij submit attempt
-  const genderField = document.getElementById('gender');
+  const genderField = document.getElementById(POPUP_SELECTORS.gender);
   if (genderField && genderField.value) {
     // Als er een waarde is, check of het een geldige waarde is
     const hasValidGender = genderField.value !== '' &&
@@ -2568,7 +2634,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Automatically sanitize field values when user leaves the field (blur event)
 
   // BSN sanitization
-  const bsnField = document.getElementById('bsn');
+  const bsnField = document.getElementById(POPUP_SELECTORS.bsn);
   if (bsnField) {
     bsnField.addEventListener('blur', function() {
       if (this.value) {
@@ -2592,7 +2658,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // IBAN sanitization
-  const ibanField = document.getElementById('iban');
+  const ibanField = document.getElementById(POPUP_SELECTORS.iban);
   if (ibanField) {
     ibanField.addEventListener('blur', function() {
       if (this.value) {
@@ -2615,7 +2681,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Phone sanitization
-  const phoneField = document.getElementById('phone');
+  const phoneField = document.getElementById(POPUP_SELECTORS.phone);
   if (phoneField) {
     phoneField.addEventListener('blur', function() {
       if (this.value) {
@@ -2638,7 +2704,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Email sanitization
-  const emailField = document.getElementById('email');
+  const emailField = document.getElementById(POPUP_SELECTORS.email);
   if (emailField) {
     emailField.addEventListener('blur', function() {
       if (this.value) {
@@ -2661,7 +2727,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Initials sanitization
-  const initialsField = document.getElementById('initials');
+  const initialsField = document.getElementById(POPUP_SELECTORS.initials);
   if (initialsField) {
     initialsField.addEventListener('blur', function() {
       if (this.value) {
@@ -2681,7 +2747,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // LastName sanitization
-  const lastNameField = document.getElementById('lastName');
+  const lastNameField = document.getElementById(POPUP_SELECTORS.lastName);
   if (lastNameField) {
     lastNameField.addEventListener('blur', function() {
       if (this.value) {
@@ -2701,7 +2767,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Gender selection validation
-  const genderField = document.getElementById('gender');
+  const genderField = document.getElementById(POPUP_SELECTORS.gender);
   if (genderField) {
     // On change: validate and show/hide warning
     genderField.addEventListener('change', function() {
@@ -2732,7 +2798,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Street sanitization
-  const streetField = document.getElementById('street');
+  const streetField = document.getElementById(POPUP_SELECTORS.street);
   if (streetField) {
     streetField.addEventListener('blur', function() {
       if (this.value) {
@@ -2752,8 +2818,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // HouseNumber sanitization
-  const houseNumberField = document.getElementById('houseNumber');
-  const houseAdditionField = document.getElementById('houseAddition');
+  const houseNumberField = document.getElementById(POPUP_SELECTORS.houseNumber);
+  const houseAdditionField = document.getElementById(POPUP_SELECTORS.houseAddition);
   if (houseNumberField) {
     houseNumberField.addEventListener('blur', function() {
       if (this.value) {
@@ -2769,7 +2835,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // PostalCode sanitization
-  const postalCodeField = document.getElementById('postalCode');
+  const postalCodeField = document.getElementById(POPUP_SELECTORS.postalCode);
   if (postalCodeField) {
     postalCodeField.addEventListener('blur', function() {
       if (this.value) {
@@ -2789,7 +2855,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // City sanitization
-  const cityField = document.getElementById('city');
+  const cityField = document.getElementById(POPUP_SELECTORS.city);
   if (cityField) {
     cityField.addEventListener('blur', function() {
       if (this.value) {
@@ -2809,7 +2875,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // MeldCode sanitization
-  const meldCodeField = document.getElementById('meldCode');
+  const meldCodeField = document.getElementById(POPUP_SELECTORS.meldCode);
   if (meldCodeField) {
     meldCodeField.addEventListener('blur', function() {
       if (this.value) {
@@ -2820,7 +2886,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // InstallationDate sanitization
-  const installationDateField = document.getElementById('installationDate');
+  const installationDateField = document.getElementById(POPUP_SELECTORS.installationDate);
   if (installationDateField) {
     installationDateField.addEventListener('blur', function() {
       if (this.value) {
@@ -2831,7 +2897,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // PurchaseDate sanitization (with installationDate validation)
-  const purchaseDateField = document.getElementById('purchaseDate');
+  const purchaseDateField = document.getElementById(POPUP_SELECTORS.purchaseDate);
   if (purchaseDateField) {
     purchaseDateField.addEventListener('blur', function() {
       if (this.value) {
@@ -2854,7 +2920,7 @@ document.addEventListener('DOMContentLoaded', () => {
  *
  * PROCES:
  * 1. Valideer alle verplichte velden opnieuw
- * 2. Controleer of gebruiker op juiste website is (eloket.dienstuitvoering.nl)
+ * 2. Controleer of gebruiker op juiste website is (CONFIG.TARGET_DOMAIN)
  * 3. Haal bedrijfsgegevens op uit instellingen
  * 4. Bouw configuratie object met alle data
  * 5. Sla documenten op in Chrome storage met uniek sessie ID
@@ -2872,7 +2938,7 @@ document.addEventListener('DOMContentLoaded', () => {
  * - Voorkomt conflicten bij meerdere tabbladen
  * - Documenten worden opgeruimd na gebruik door content script
  */
-document.getElementById('startAutomation').addEventListener('click', () => {
+document.getElementById(POPUP_SELECTORS.startAutomation).addEventListener('click', () => {
   // Valideer alle verplichte velden EN markeer ze visueel
   const missingFields = validateRequiredFields(true);
 
@@ -2880,7 +2946,7 @@ document.getElementById('startAutomation').addEventListener('click', () => {
     showStatus(`Vul eerst alle verplichte velden in: ${missingFields.join(', ')}`, 'error');
 
     // Scroll naar het eerste lege veld
-    const firstMissingField = document.querySelector('.field-required-missing');
+    const firstMissingField = document.querySelector(POPUP_SELECTORS.fieldRequiredMissing);
     if (firstMissingField) {
       firstMissingField.scrollIntoView({ behavior: 'smooth', block: 'center' });
       // Focus op het veld na scroll
@@ -2910,8 +2976,8 @@ document.getElementById('startAutomation').addEventListener('click', () => {
     }
 
     // Controleer of we op de juiste website zijn
-    if (!currentTab.url || !currentTab.url.includes('eloket.dienstuitvoering.nl')) {
-      showStatus('Ga eerst naar https://eloket.dienstuitvoering.nl', 'error');
+    if (!currentTab.url || !CONFIG.isTargetDomain(currentTab.url)) {
+      showStatus(`Ga eerst naar ${CONFIG.TARGET_URL}`, 'error');
       return;
     }
 
@@ -2962,27 +3028,27 @@ document.getElementById('startAutomation').addEventListener('click', () => {
         console.log('📝 Building config for automation:');
         console.log(`   Target tab ID: ${currentTab.id}`);
         console.log(`   Tracked tab ID: ${currentTrackedTabId}`);
-        console.log(`   BSN: ${document.getElementById('bsn').value?.substring(0, 3)}... (first 3 digits)`);
-        console.log(`   Name: ${document.getElementById('initials').value} ${document.getElementById('lastName').value}`);
+        console.log(`   BSN: ${document.getElementById(POPUP_SELECTORS.bsn).value?.substring(0, 3)}... (first 3 digits)`);
+        console.log(`   Name: ${document.getElementById(POPUP_SELECTORS.initials).value} ${document.getElementById(POPUP_SELECTORS.lastName).value}`);
 
         const config = {
         // Klantgegevens uit formulier
-        bsn: document.getElementById('bsn').value,
-        initials: document.getElementById('initials').value,
-        lastName: document.getElementById('lastName').value,
-        gender: document.getElementById('gender').value,
-        phone: document.getElementById('phone').value,
-        email: document.getElementById('email').value,
-        iban: document.getElementById('iban').value,
-        street: document.getElementById('street').value,
-        postalCode: document.getElementById('postalCode').value,
-        city: document.getElementById('city').value,
-        houseNumber: document.getElementById('houseNumber').value,
-        houseAddition: document.getElementById('houseAddition').value,
-        purchaseDate: document.getElementById('purchaseDate').value,
-        installationDate: document.getElementById('installationDate').value,
-        meldCode: document.getElementById('meldCode').value,
-        gasUsage: document.getElementById('gasUsage').value,
+        bsn: document.getElementById(POPUP_SELECTORS.bsn).value,
+        initials: document.getElementById(POPUP_SELECTORS.initials).value,
+        lastName: document.getElementById(POPUP_SELECTORS.lastName).value,
+        gender: document.getElementById(POPUP_SELECTORS.gender).value,
+        phone: document.getElementById(POPUP_SELECTORS.phone).value,
+        email: document.getElementById(POPUP_SELECTORS.email).value,
+        iban: document.getElementById(POPUP_SELECTORS.iban).value,
+        street: document.getElementById(POPUP_SELECTORS.street).value,
+        postalCode: document.getElementById(POPUP_SELECTORS.postalCode).value,
+        city: document.getElementById(POPUP_SELECTORS.city).value,
+        houseNumber: document.getElementById(POPUP_SELECTORS.houseNumber).value,
+        houseAddition: document.getElementById(POPUP_SELECTORS.houseAddition).value,
+        purchaseDate: document.getElementById(POPUP_SELECTORS.purchaseDate).value,
+        installationDate: document.getElementById(POPUP_SELECTORS.installationDate).value,
+        meldCode: document.getElementById(POPUP_SELECTORS.meldCode).value,
+        gasUsage: document.getElementById(POPUP_SELECTORS.gasUsage).value,
 
         // Bedrijfsgegevens uit instellingen
         companyName: result.isdeConfig?.companyName || '',
@@ -3039,6 +3105,12 @@ document.getElementById('startAutomation').addEventListener('click', () => {
         console.log('📦 Files stored in chrome.storage.local for session:', sessionId);
         console.log('   Files:', Object.keys(filesToStore));
 
+        // 📊 Statistics: Save start timestamp en increment started counter
+        const startTime = Date.now();
+        sessionStorage.setItem(CONFIG.STORAGE_KEYS.AUTOMATION_START_TIME, startTime.toString());
+        incrementStarted();
+        console.log('📊 Automation started, timestamp saved:', startTime);
+
         // Stuur bericht naar background script om automatisering te starten
         chrome.runtime.sendMessage({
           action: 'startAutomationFromPopup',
@@ -3070,7 +3142,7 @@ document.getElementById('startAutomation').addEventListener('click', () => {
  * NOTE: Alleen de data van de HUIDIGE tab wordt gewist.
  * Andere tabs behouden hun opgeslagen data.
  */
-document.getElementById('resetInfo').addEventListener('click', async () => {
+document.getElementById(POPUP_SELECTORS.resetInfo).addEventListener('click', async () => {
   try {
     // Gebruik tracked tab ID (consistent met andere functies)
     const tabId = currentTrackedTabId;
@@ -3107,17 +3179,17 @@ document.getElementById('resetInfo').addEventListener('click', async () => {
     machtigingsbewijsData = null;
 
     // Reset file input velden (anders kun je dezelfde file niet opnieuw uploaden)
-    const betaalbewijsInput = document.getElementById('betaalbewijsDoc');
-    const factuurInput = document.getElementById('factuurDoc');
-    const machtigingsInput = document.getElementById('machtigingsformulier');
+    const betaalbewijsInput = document.getElementById(POPUP_SELECTORS.betaalbewijsDoc);
+    const factuurInput = document.getElementById(POPUP_SELECTORS.factuurDoc);
+    const machtigingsInput = document.getElementById(POPUP_SELECTORS.machtigingsformulier);
     if (betaalbewijsInput) betaalbewijsInput.value = '';
     if (factuurInput) factuurInput.value = '';
     if (machtigingsInput) machtigingsInput.value = '';
 
     // Verberg document namen in de UI
-    const betaalbewijsName = document.getElementById('betaalbewijsName');
-    const factuurName = document.getElementById('factuurName');
-    const machtigingName = document.getElementById('machtigingName');
+    const betaalbewijsName = document.getElementById(POPUP_SELECTORS.betaalbewijsName);
+    const factuurName = document.getElementById(POPUP_SELECTORS.factuurName);
+    const machtigingName = document.getElementById(POPUP_SELECTORS.machtigingName);
     if (betaalbewijsName) {
       betaalbewijsName.style.display = 'none';
       betaalbewijsName.innerHTML = '';
@@ -3132,21 +3204,21 @@ document.getElementById('resetInfo').addEventListener('click', async () => {
     }
 
     // Verberg alle validatie waarschuwingen
-    const allWarnings = document.querySelectorAll('.field-warning');
+    const allWarnings = document.querySelectorAll(POPUP_SELECTORS.fieldWarning);
     allWarnings.forEach(warning => {
       warning.classList.remove('visible');
       warning.textContent = '';
     });
 
     // Verwijder warning styling van alle input velden
-    const allInputs = document.querySelectorAll('.field-input');
+    const allInputs = document.querySelectorAll(POPUP_SELECTORS.fieldInput);
     allInputs.forEach(input => {
       input.classList.remove('has-warning');
     });
 
     // Verberg OCR status berichten
-    const factuurStatus = document.getElementById('factuurExtractionStatus');
-    const machtigingStatus = document.getElementById('extractionStatus');
+    const factuurStatus = document.getElementById(POPUP_SELECTORS.factuurExtractionStatus);
+    const machtigingStatus = document.getElementById(POPUP_SELECTORS.extractionStatus);
     if (factuurStatus) factuurStatus.style.display = 'none';
     if (machtigingStatus) machtigingStatus.style.display = 'none';
 
@@ -3177,7 +3249,7 @@ document.getElementById('resetInfo').addEventListener('click', async () => {
  * - Verbergt bericht automatisch na 3 seconden
  */
 function showStatus(message, type) {
-  const statusDiv = document.getElementById('status');
+  const statusDiv = document.getElementById(POPUP_SELECTORS.status);
   statusDiv.textContent = message;
   statusDiv.className = 'status ' + type;
   setTimeout(() => {
@@ -3200,7 +3272,7 @@ function showStatus(message, type) {
  */
 function showView(viewId) {
   // Verberg alle weergaven
-  document.querySelectorAll('.view').forEach(view => {
+  document.querySelectorAll(POPUP_SELECTORS.view).forEach(view => {
     view.classList.remove('active');
   });
 
@@ -3208,7 +3280,7 @@ function showView(viewId) {
   document.getElementById(viewId).classList.add('active');
 
   // Toon/verberg terug knop
-  const backBtn = document.getElementById('backBtn');
+  const backBtn = document.getElementById(POPUP_SELECTORS.backBtn);
   if (viewId === 'settingsView') {
     backBtn.classList.add('visible');
   } else {
@@ -3221,18 +3293,18 @@ function showView(viewId) {
 // ============================================================================
 
 /** Instellingen knop - toon instellingen weergave */
-document.getElementById('settingsBtn').addEventListener('click', () => {
+document.getElementById(POPUP_SELECTORS.settingsBtn).addEventListener('click', () => {
   loadSettings();
   showView('settingsView');
 });
 
 /** Terug knop - terug naar hoofdweergave */
-document.getElementById('backBtn').addEventListener('click', () => {
+document.getElementById(POPUP_SELECTORS.backBtn).addEventListener('click', () => {
   showView('mainView');
 });
 
 /** Opslaan knop - sla instellingen op */
-document.getElementById('saveSettingsBtn').addEventListener('click', () => {
+document.getElementById(POPUP_SELECTORS.saveSettingsBtn).addEventListener('click', () => {
   saveSettings();
 });
 
@@ -3243,14 +3315,14 @@ document.getElementById('saveSettingsBtn').addEventListener('click', () => {
  * Sla instellingen automatisch op wanneer gebruiker een veld verlaat (blur event).
  * Dit zorgt voor een betere gebruikerservaring zonder handmatig opslaan.
  */
-document.getElementById('mistralApiKey').addEventListener('blur', saveSettings);
-document.getElementById('settingsCompanyName').addEventListener('blur', saveSettings);
-document.getElementById('settingsKvkNumber').addEventListener('blur', saveSettings);
-document.getElementById('settingsContactInitials').addEventListener('blur', saveSettings);
-document.getElementById('settingsContactLastName').addEventListener('blur', saveSettings);
-document.getElementById('settingsContactGender').addEventListener('change', saveSettings);
-document.getElementById('settingsContactPhone').addEventListener('blur', saveSettings);
-document.getElementById('settingsContactEmail').addEventListener('blur', saveSettings);
+document.getElementById(POPUP_SELECTORS.mistralApiKey).addEventListener('blur', saveSettings);
+document.getElementById(POPUP_SELECTORS.settingsCompanyName).addEventListener('blur', saveSettings);
+document.getElementById(POPUP_SELECTORS.settingsKvkNumber).addEventListener('blur', saveSettings);
+document.getElementById(POPUP_SELECTORS.settingsContactInitials).addEventListener('blur', saveSettings);
+document.getElementById(POPUP_SELECTORS.settingsContactLastName).addEventListener('blur', saveSettings);
+document.getElementById(POPUP_SELECTORS.settingsContactGender).addEventListener('change', saveSettings);
+document.getElementById(POPUP_SELECTORS.settingsContactPhone).addEventListener('blur', saveSettings);
+document.getElementById(POPUP_SELECTORS.settingsContactEmail).addEventListener('blur', saveSettings);
 
 // ============================================================================
 // INSTELLINGEN LADEN
@@ -3278,22 +3350,22 @@ function loadSettings() {
   chrome.storage.local.get(['mistralApiKey', 'isdeConfig'], (result) => {
     // Laad API key
     if (result.mistralApiKey) {
-      document.getElementById('mistralApiKey').value = result.mistralApiKey;
+      document.getElementById(POPUP_SELECTORS.mistralApiKey).value = result.mistralApiKey;
     }
 
     // Laad bedrijfsgegevens uit config met standaard waarden voor contactpersoon
     const config = result.isdeConfig || {};
 
     // Bedrijfsgegevens
-    document.getElementById('settingsCompanyName').value = config.companyName || '';
-    document.getElementById('settingsKvkNumber').value = config.kvkNumber || '';
+    document.getElementById(POPUP_SELECTORS.settingsCompanyName).value = config.companyName || '';
+    document.getElementById(POPUP_SELECTORS.settingsKvkNumber).value = config.kvkNumber || '';
 
     // Laad contactpersoon details met standaard waarden
-    document.getElementById('settingsContactInitials').value = config.contactInitials || 'A';
-    document.getElementById('settingsContactLastName').value = config.contactLastName || 'de Vlieger';
-    document.getElementById('settingsContactGender').value = config.contactGender || 'female';
-    document.getElementById('settingsContactPhone').value = config.contactPhone || '0682795068';
-    document.getElementById('settingsContactEmail').value = config.contactEmail || 'administratie@saman.nl';
+    document.getElementById(POPUP_SELECTORS.settingsContactInitials).value = config.contactInitials || 'A';
+    document.getElementById(POPUP_SELECTORS.settingsContactLastName).value = config.contactLastName || 'de Vlieger';
+    document.getElementById(POPUP_SELECTORS.settingsContactGender).value = config.contactGender || 'female';
+    document.getElementById(POPUP_SELECTORS.settingsContactPhone).value = config.contactPhone || '0682795068';
+    document.getElementById(POPUP_SELECTORS.settingsContactEmail).value = config.contactEmail || 'administratie@saman.nl';
   });
 }
 
@@ -3314,14 +3386,14 @@ function loadSettings() {
  * Toont succesbericht voor 3 seconden na opslaan.
  */
 function saveSettings() {
-  const mistralApiKey = document.getElementById('mistralApiKey').value;
-  const companyName = document.getElementById('settingsCompanyName').value;
-  const kvkNumber = document.getElementById('settingsKvkNumber').value;
-  const contactInitials = document.getElementById('settingsContactInitials').value;
-  const contactLastName = document.getElementById('settingsContactLastName').value;
-  const contactGender = document.getElementById('settingsContactGender').value;
-  const contactPhone = document.getElementById('settingsContactPhone').value;
-  const contactEmail = document.getElementById('settingsContactEmail').value;
+  const mistralApiKey = document.getElementById(POPUP_SELECTORS.mistralApiKey).value;
+  const companyName = document.getElementById(POPUP_SELECTORS.settingsCompanyName).value;
+  const kvkNumber = document.getElementById(POPUP_SELECTORS.settingsKvkNumber).value;
+  const contactInitials = document.getElementById(POPUP_SELECTORS.settingsContactInitials).value;
+  const contactLastName = document.getElementById(POPUP_SELECTORS.settingsContactLastName).value;
+  const contactGender = document.getElementById(POPUP_SELECTORS.settingsContactGender).value;
+  const contactPhone = document.getElementById(POPUP_SELECTORS.settingsContactPhone).value;
+  const contactEmail = document.getElementById(POPUP_SELECTORS.settingsContactEmail).value;
 
   // Sla API key op
   chrome.storage.local.set({ mistralApiKey: mistralApiKey });
@@ -3338,7 +3410,7 @@ function saveSettings() {
     config.contactEmail = contactEmail;
 
     chrome.storage.local.set({ isdeConfig: config }, () => {
-      const statusDiv = document.getElementById('settingsStatus');
+      const statusDiv = document.getElementById(POPUP_SELECTORS.settingsStatus);
       statusDiv.textContent = 'Instellingen opgeslagen!';
       statusDiv.className = 'status success';
 
@@ -3347,6 +3419,158 @@ function saveSettings() {
       }, 3000);
     });
   });
+}
+
+// ============================================================================
+// USAGE STATISTICS
+// ============================================================================
+
+/**
+ * Haalt usage statistics op uit Chrome storage.
+ * @returns {Promise<Object>} Statistics object
+ */
+async function getUsageStats() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get([CONFIG.STORAGE_KEYS.USAGE_STATS], (result) => {
+      const stats = result[CONFIG.STORAGE_KEYS.USAGE_STATS] || {
+        totalCompleted: 0,
+        totalStarted: 0,
+        firstUseDate: null,
+        lastUseDate: null,
+        totalDurationMs: 0  // Som van alle durations
+      };
+      resolve(stats);
+    });
+  });
+}
+
+/**
+ * Update usage statistics in Chrome storage.
+ * @param {Object} updates - Partial updates object
+ */
+async function updateUsageStats(updates) {
+  const stats = await getUsageStats();
+  const updatedStats = { ...stats, ...updates };
+
+  chrome.storage.local.set({
+    [CONFIG.STORAGE_KEYS.USAGE_STATS]: updatedStats
+  }, () => {
+    console.log('📊 Usage stats updated:', updatedStats);
+  });
+}
+
+/**
+ * Increment completed counter en update gemiddelde tijd.
+ * @param {number} durationMs - Tijd in milliseconden voor dit formulier
+ */
+async function incrementCompleted(durationMs) {
+  const stats = await getUsageStats();
+
+  const updates = {
+    totalCompleted: stats.totalCompleted + 1,
+    totalDurationMs: stats.totalDurationMs + durationMs,
+    lastUseDate: new Date().toISOString()
+  };
+
+  // Set firstUseDate als dit de eerste keer is
+  if (!stats.firstUseDate) {
+    updates.firstUseDate = new Date().toISOString();
+  }
+
+  await updateUsageStats(updates);
+
+  // Update UI als deze open is
+  displayUsageStats();
+}
+
+/**
+ * Increment started counter.
+ */
+async function incrementStarted() {
+  const stats = await getUsageStats();
+
+  const updates = {
+    totalStarted: stats.totalStarted + 1,
+    lastUseDate: new Date().toISOString()
+  };
+
+  // Set firstUseDate als dit de eerste keer is
+  if (!stats.firstUseDate) {
+    updates.firstUseDate = new Date().toISOString();
+  }
+
+  await updateUsageStats(updates);
+}
+
+/**
+ * Reset alle statistics naar 0.
+ */
+async function resetUsageStats() {
+  const confirmed = confirm('Weet je zeker dat je alle statistieken wilt resetten?');
+  if (!confirmed) return;
+
+  chrome.storage.local.set({
+    [CONFIG.STORAGE_KEYS.USAGE_STATS]: {
+      totalCompleted: 0,
+      totalStarted: 0,
+      firstUseDate: null,
+      lastUseDate: null,
+      totalDurationMs: 0
+    }
+  }, () => {
+    console.log('📊 Usage stats reset');
+    displayUsageStats();
+  });
+}
+
+/**
+ * Format duration in milliseconds naar leesbare string.
+ * @param {number} ms - Milliseconden
+ * @returns {string} Formatted string (bijv. "5 min 30 sec")
+ */
+function formatDuration(ms) {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes === 0) {
+    return `${seconds} sec`;
+  }
+  return `${minutes} min ${seconds} sec`;
+}
+
+/**
+ * Format date naar Nederlandse korte datum.
+ * @param {string} isoDate - ISO date string
+ * @returns {string} Formatted date (bijv. "6 nov 2025")
+ */
+function formatShortDate(isoDate) {
+  if (!isoDate) return '-';
+
+  const date = new Date(isoDate);
+  const months = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
+
+  return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+/**
+ * Display usage statistics in de Settings tab.
+ */
+async function displayUsageStats() {
+  const stats = await getUsageStats();
+
+  // Bereken gemiddelde tijd
+  let avgDuration = 0;
+  if (stats.totalCompleted > 0) {
+    avgDuration = stats.totalDurationMs / stats.totalCompleted;
+  }
+
+  // Update UI elements
+  document.getElementById('statsCompleted').textContent = stats.totalCompleted;
+  document.getElementById('statsStarted').textContent = stats.totalStarted;
+  document.getElementById('statsFirstUse').textContent = formatShortDate(stats.firstUseDate);
+  document.getElementById('statsLastUse').textContent = formatShortDate(stats.lastUseDate);
+  document.getElementById('statsAvgTime').textContent = stats.totalCompleted > 0 ? formatDuration(avgDuration) : '-';
 }
 
 // ============================================================================
@@ -3401,20 +3625,20 @@ async function reloadFormDataForTab(tabId, windowId = undefined) {
       return false;
     };
     // Verberg alle OCR status berichten (deze zijn tab-specifiek)
-    const factuurStatus = document.getElementById('factuurExtractionStatus');
-    const machtigingStatus = document.getElementById('extractionStatus');
+    const factuurStatus = document.getElementById(POPUP_SELECTORS.factuurExtractionStatus);
+    const machtigingStatus = document.getElementById(POPUP_SELECTORS.extractionStatus);
     if (factuurStatus) factuurStatus.style.display = 'none';
     if (machtigingStatus) machtigingStatus.style.display = 'none';
 
     // Verberg alle validatie waarschuwingen (deze zijn tab-specifiek)
-    const allWarnings = document.querySelectorAll('.field-warning');
+    const allWarnings = document.querySelectorAll(POPUP_SELECTORS.fieldWarning);
     allWarnings.forEach(warning => {
       warning.classList.remove('visible');
       warning.textContent = '';
     });
 
     // Verwijder warning styling van alle input velden
-    const allInputs = document.querySelectorAll('.field-input');
+    const allInputs = document.querySelectorAll(POPUP_SELECTORS.fieldInput);
     allInputs.forEach(input => {
       input.classList.remove('has-warning');
     });
@@ -3480,7 +3704,7 @@ async function reloadFormDataForTab(tabId, windowId = undefined) {
         console.log(`  → Showing betaalbewijs: ${savedDocuments.betaalbewijs.name}`);
       } else {
         betaalbewijsData = null;
-        const nameDiv = document.getElementById('betaalbewijsName');
+        const nameDiv = document.getElementById(POPUP_SELECTORS.betaalbewijsName);
         if (nameDiv) {
           nameDiv.style.display = 'none';
           nameDiv.innerHTML = '';
@@ -3498,7 +3722,7 @@ async function reloadFormDataForTab(tabId, windowId = undefined) {
         console.log(`  → Showing factuur: ${savedDocuments.factuur.name}`);
       } else {
         factuurData = null;
-        const nameDiv = document.getElementById('factuurName');
+        const nameDiv = document.getElementById(POPUP_SELECTORS.factuurName);
         if (nameDiv) {
           nameDiv.style.display = 'none';
           nameDiv.innerHTML = '';
@@ -3516,7 +3740,7 @@ async function reloadFormDataForTab(tabId, windowId = undefined) {
         console.log(`  → Showing machtigingsbewijs: ${savedDocuments.machtigingsbewijs.name}`);
       } else {
         machtigingsbewijsData = null;
-        const nameDiv = document.getElementById('machtigingName');
+        const nameDiv = document.getElementById(POPUP_SELECTORS.machtigingName);
         if (nameDiv) {
           nameDiv.style.display = 'none';
           nameDiv.innerHTML = '';
@@ -3531,17 +3755,17 @@ async function reloadFormDataForTab(tabId, windowId = undefined) {
       machtigingsbewijsData = null;
 
       // Reset file input velden
-      const betaalbewijsInput = document.getElementById('betaalbewijsDoc');
-      const factuurInput = document.getElementById('factuurDoc');
-      const machtigingsInput = document.getElementById('machtigingsformulier');
+      const betaalbewijsInput = document.getElementById(POPUP_SELECTORS.betaalbewijsDoc);
+      const factuurInput = document.getElementById(POPUP_SELECTORS.factuurDoc);
+      const machtigingsInput = document.getElementById(POPUP_SELECTORS.machtigingsformulier);
       if (betaalbewijsInput) betaalbewijsInput.value = '';
       if (factuurInput) factuurInput.value = '';
       if (machtigingsInput) machtigingsInput.value = '';
 
       // Verberg document namen
-      const betaalbewijsName = document.getElementById('betaalbewijsName');
-      const factuurName = document.getElementById('factuurName');
-      const machtigingName = document.getElementById('machtigingName');
+      const betaalbewijsName = document.getElementById(POPUP_SELECTORS.betaalbewijsName);
+      const factuurName = document.getElementById(POPUP_SELECTORS.factuurName);
+      const machtigingName = document.getElementById(POPUP_SELECTORS.machtigingName);
       if (betaalbewijsName) {
         betaalbewijsName.style.display = 'none';
         betaalbewijsName.innerHTML = '';
@@ -3646,6 +3870,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Sla de initiële tab ID op
   const tabId = await getCurrentTabId();
   currentTrackedTabId = tabId;
+
+  // Load en display usage statistics
+  await displayUsageStats();
+
+  // Wire up reset statistics button
+  document.getElementById('resetStatsBtn')?.addEventListener('click', resetUsageStats);
 
   console.log('✅ Side panel initialization complete, tracking tab:', tabId);
 });

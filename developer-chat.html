@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ISDE Developer Chat</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', 'Consolas', monospace;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 20px;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    header {
+      background: #252526;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      border-left: 4px solid #569cd6;
+    }
+
+    h1 {
+      color: #569cd6;
+      font-size: 24px;
+      margin-bottom: 5px;
+    }
+
+    .subtitle {
+      color: #858585;
+      font-size: 14px;
+    }
+
+    .api-key-section {
+      background: #2d2d30;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+
+    .api-key-section label {
+      display: block;
+      color: #cccccc;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .api-key-section input {
+      width: 100%;
+      padding: 10px;
+      background: #3c3c3c;
+      border: 1px solid #555;
+      border-radius: 4px;
+      color: #d4d4d4;
+      font-family: 'Consolas', monospace;
+      font-size: 13px;
+    }
+
+    .api-key-section input:focus {
+      outline: none;
+      border-color: #569cd6;
+    }
+
+    .api-key-section .help {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #858585;
+    }
+
+    .api-key-section a {
+      color: #569cd6;
+      text-decoration: none;
+    }
+
+    .api-key-section a:hover {
+      text-decoration: underline;
+    }
+
+    .quick-actions {
+      background: #2d2d30;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+
+    .quick-actions-title {
+      color: #cccccc;
+      font-size: 13px;
+      margin-bottom: 10px;
+      font-weight: bold;
+    }
+
+    .quick-btn {
+      background: #3c3c3c;
+      border: 1px solid #555;
+      color: #d4d4d4;
+      padding: 8px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      margin-right: 10px;
+      margin-bottom: 8px;
+      display: inline-block;
+      transition: all 0.2s;
+    }
+
+    .quick-btn:hover {
+      background: #569cd6;
+      border-color: #569cd6;
+      color: #fff;
+    }
+
+    .chat-container {
+      background: #252526;
+      border-radius: 8px;
+      padding: 20px;
+      min-height: 500px;
+      max-height: 600px;
+      overflow-y: auto;
+      margin-bottom: 20px;
+      border: 1px solid #3c3c3c;
+    }
+
+    .chat-container::-webkit-scrollbar {
+      width: 10px;
+    }
+
+    .chat-container::-webkit-scrollbar-track {
+      background: #1e1e1e;
+    }
+
+    .chat-container::-webkit-scrollbar-thumb {
+      background: #555;
+      border-radius: 5px;
+    }
+
+    .message {
+      margin-bottom: 20px;
+      padding: 15px;
+      border-radius: 8px;
+      animation: fadeIn 0.3s;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .message-user {
+      background: #2d2d30;
+      border-left: 3px solid #4ec9b0;
+    }
+
+    .message-assistant {
+      background: #1e3a5f;
+      border-left: 3px solid #569cd6;
+    }
+
+    .message-error {
+      background: #5a1d1d;
+      border-left: 3px solid #f48771;
+    }
+
+    .message-role {
+      font-weight: bold;
+      margin-bottom: 8px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .message-user .message-role {
+      color: #4ec9b0;
+    }
+
+    .message-assistant .message-role {
+      color: #569cd6;
+    }
+
+    .message-error .message-role {
+      color: #f48771;
+    }
+
+    .message-content {
+      color: #d4d4d4;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .message-content code {
+      background: #1e1e1e;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Consolas', monospace;
+      font-size: 12px;
+      color: #ce9178;
+    }
+
+    .message-content pre {
+      background: #1e1e1e;
+      padding: 12px;
+      border-radius: 4px;
+      overflow-x: auto;
+      margin: 10px 0;
+      border-left: 3px solid #569cd6;
+    }
+
+    .message-content pre code {
+      background: none;
+      padding: 0;
+      color: #d4d4d4;
+    }
+
+    .input-area {
+      background: #2d2d30;
+      padding: 15px;
+      border-radius: 8px;
+      border: 1px solid #3c3c3c;
+    }
+
+    .input-area textarea {
+      width: 100%;
+      min-height: 100px;
+      background: #3c3c3c;
+      border: 1px solid #555;
+      border-radius: 4px;
+      padding: 12px;
+      color: #d4d4d4;
+      font-family: 'Segoe UI', sans-serif;
+      font-size: 14px;
+      resize: vertical;
+      margin-bottom: 10px;
+    }
+
+    .input-area textarea:focus {
+      outline: none;
+      border-color: #569cd6;
+    }
+
+    .input-area button {
+      background: #569cd6;
+      color: #fff;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+      transition: background 0.2s;
+    }
+
+    .input-area button:hover {
+      background: #4a8bc2;
+    }
+
+    .input-area button:disabled {
+      background: #555;
+      cursor: not-allowed;
+    }
+
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 20px;
+      color: #858585;
+    }
+
+    .loading.active {
+      display: block;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #858585;
+    }
+
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: 15px;
+    }
+
+    .empty-state-title {
+      font-size: 18px;
+      color: #cccccc;
+      margin-bottom: 10px;
+    }
+
+    .empty-state-text {
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>ISDE Developer Chat</h1>
+      <div class="subtitle">AI assistant voor de ISDE Chrome Extension codebase</div>
+    </header>
+
+    <div class="api-key-section">
+      <label for="mistralKey">Mistral API Key</label>
+      <input
+        type="password"
+        id="mistralKey"
+        placeholder="Voer je Mistral API key in..."
+        autocomplete="off"
+      >
+      <div class="help">
+        Krijg een API key op <a href="https://console.mistral.ai/" target="_blank">console.mistral.ai</a>
+      </div>
+    </div>
+
+    <div class="quick-actions">
+      <div class="quick-actions-title">Quick Actions</div>
+      <button class="quick-btn" data-q="Hoe voeg ik een nieuw formulier veld toe?">
+        Nieuw veld toevoegen
+      </button>
+      <button class="quick-btn" data-q="Hoe update ik een selector na website wijziging?">
+        Selector updaten
+      </button>
+      <button class="quick-btn" data-q="Waar wordt IBAN validatie gedaan?">
+        Code vinden
+      </button>
+      <button class="quick-btn" data-q="Hoe fix ik een loop detection error?">
+        Loop detection fix
+      </button>
+      <button class="quick-btn" data-q="Hoe voeg ik een nieuwe sanitization functie toe?">
+        Sanitization toevoegen
+      </button>
+      <button class="quick-btn" data-q="Hoe verbeter ik OCR extractie door de prompt aan te passen?">
+        OCR verbeteren
+      </button>
+      <button class="quick-btn" data-q="Wat is de project structuur?">
+        Project overzicht
+      </button>
+    </div>
+
+    <div class="chat-container" id="chatHistory">
+      <div class="empty-state">
+        <div class="empty-state-icon">💬</div>
+        <div class="empty-state-title">Stel een vraag over de codebase</div>
+        <div class="empty-state-text">
+          Gebruik quick actions hierboven of type je eigen vraag hieronder
+        </div>
+      </div>
+    </div>
+
+    <div class="loading" id="loading">
+      <div>⏳ AI aan het denken...</div>
+    </div>
+
+    <div class="input-area">
+      <textarea
+        id="userInput"
+        placeholder="Stel een vraag over de ISDE codebase... (bijv. 'Hoe voeg ik een veld toe?' of 'Waar wordt OCR gedaan?')"
+      ></textarea>
+      <button id="sendBtn">Verstuur</button>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="developer-knowledge.js"></script>
+  <script src="developer-chat.js"></script>
+</body>
+</html>
