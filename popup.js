@@ -54,9 +54,11 @@ const POPUP_SELECTORS = {
   // Document uploads
   betaalbewijsDoc: 'betaalbewijsDoc',
   factuurDoc: 'factuurDoc',
+  aankoopbewijsDoc: 'aankoopbewijsDoc',
   machtigingsformulier: 'machtigingsformulier',
   betaalbewijsName: 'betaalbewijsName',
   factuurName: 'factuurName',
+  aankoopbewijsName: 'aankoopbewijsName',
   machtigingName: 'machtigingName',
   extractionStatus: 'extractionStatus',
   factuurExtractionStatus: 'factuurExtractionStatus',
@@ -711,9 +713,8 @@ document.getElementById(POPUP_SELECTORS.machtigingsformulier).addEventListener('
     }
 
     try {
-      // Voer OCR extractie uit op het machtigingsformulier
-      const extractedData = await extractDataFromForm(file, uploadTabId);
-      console.log('Extracted data result:', extractedData);
+      // Voer OCR extractie uit op het machtigingsformulier (gebruik opgeslagen base64 data)
+      const extractedData = await extractDataFromForm(fileData.data, file.type, uploadTabId);
 
       // Check if user switched tabs during OCR
       const tabSwitched = (currentTrackedTabId !== uploadTabId);
@@ -886,8 +887,8 @@ document.getElementById(POPUP_SELECTORS.factuurDoc).addEventListener('change', a
     }
 
     try {
-      // Voer meldcode en datum extractie uit
-      const { meldcode, installationDate } = await extractMeldcodeFromFactuur(file);
+      // Voer meldcode en datum extractie uit (gebruik opgeslagen base64 data)
+      const { meldcode, installationDate } = await extractMeldcodeFromFactuur(fileData.data, file.type, file.name);
 
       // Check if user switched tabs during OCR
       const tabSwitched = (currentTrackedTabId !== uploadTabId);
@@ -971,6 +972,32 @@ document.getElementById(POPUP_SELECTORS.factuurDoc).addEventListener('change', a
         console.warn(`⚠️ Factuur extraction failed for tab ${uploadTabId}, but user is now in tab ${currentTrackedTabId}. Error not shown in UI.`);
       }
     }
+  }
+});
+
+// ============================================================================
+// EVENT LISTENER: BEWIJS VAN AANKOOPDATUM UPLOAD (ALLEEN VOOR 2024)
+// ============================================================================
+/**
+ * Behandelt het uploaden van het bewijs van aankoopdatum document.
+ * Dit document is alleen vereist voor aanvragen met aankoopdatum in 2024.
+ */
+document.getElementById(POPUP_SELECTORS.aankoopbewijsDoc).addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    const uploadTabId = currentTrackedTabId;
+
+    // Converteer bestand naar base64
+    const fileData = await fileToBase64(file);
+
+    // Sla op voor deze specifieke tab
+    await saveDocumentForTab(uploadTabId, 'aankoopbewijs', fileData);
+
+    // Toon bestandsnaam met delete button in de UI
+    displayFileNameWithDelete('aankoopbewijsName', file.name, 'aankoopbewijs');
+
+    // Update de status van de "Start Automatisering" knop
+    updateStartButtonState();
   }
 });
 
@@ -1251,22 +1278,30 @@ function fileToBase64(file) {
  * Gebruikt voor Vision AI OCR wanneer PDF geen extracteerbare tekst bevat
  * (gescande documenten). Hogere schaal (2.0) zorgt voor betere OCR resultaten.
  */
-async function pdfToBase64Image(file) {
-  console.log('Starting PDF conversion, file type:', file.type);
-  const arrayBuffer = await file.arrayBuffer();
-  console.log('ArrayBuffer size:', arrayBuffer.byteLength);
+async function pdfToBase64Image(base64FileData) {
+  // Converteer base64 naar ArrayBuffer
+  const base64Content = base64FileData.includes(',') ? base64FileData.split(',')[1] : base64FileData;
+  const binaryString = atob(base64Content);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  const arrayBuffer = bytes.buffer;
 
   // Laad PDF document met PDF.js
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  console.log('PDF loaded, pages:', pdf.numPages);
+  const pdf = await pdfjsLib.getDocument({
+    data: arrayBuffer,
+    useSystemFonts: true,
+    standardFontDataUrl: null,
+    cMapUrl: null,
+    cMapPacked: false
+  }).promise;
 
   // Haal eerste pagina op
   const page = await pdf.getPage(1);
-  console.log('Page loaded');
 
   // Bepaal viewport met 2x schaal voor betere kwaliteit
   const viewport = page.getViewport({ scale: 2.0 });
-  console.log('Viewport:', viewport.width, 'x', viewport.height);
 
   // Maak canvas element aan voor rendering
   const canvas = document.createElement('canvas');
@@ -1280,11 +1315,8 @@ async function pdfToBase64Image(file) {
     viewport: viewport
   }).promise;
 
-  console.log('PDF rendered to canvas successfully');
-
   // Converteer canvas naar base64 PNG
-  const base64 = canvas.toDataURL('image/png');
-  return base64;
+  return canvas.toDataURL('image/png');
 }
 
 // ============================================================================
@@ -1328,17 +1360,27 @@ async function imageToBase64(file) {
  * Als geëxtraheerde tekst < 10 karakters, is het waarschijnlijk een
  * gescande PDF zonder embedded tekst. Dan wordt Vision AI OCR gebruikt.
  */
-async function extractTextFromPDF(file, firstPageOnly = false) {
-  console.log('Extracting text from PDF...');
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  console.log('Total pages in PDF:', pdf.numPages);
+async function extractTextFromPDF(base64FileData, firstPageOnly = false) {
+  // Converteer base64 naar ArrayBuffer
+  const base64Content = base64FileData.includes(',') ? base64FileData.split(',')[1] : base64FileData;
+  const binaryStr = atob(base64Content);
+  const bytesArr = new Uint8Array(binaryStr.length);
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytesArr[i] = binaryStr.charCodeAt(i);
+  }
+  const arrayBuffer = bytesArr.buffer;
+  const pdf = await pdfjsLib.getDocument({
+    data: arrayBuffer,
+    useSystemFonts: true,
+    standardFontDataUrl: null,
+    cMapUrl: null,
+    cMapPacked: false
+  }).promise;
 
   let fullText = '';
 
   // Bepaal hoeveel pagina's te extraheren
   const maxPage = firstPageOnly ? 1 : pdf.numPages;
-  console.log('Will extract from page(s):', maxPage);
 
   // Loop door alle te extraheren pagina's
   for (let i = 1; i <= maxPage; i++) {
@@ -1346,11 +1388,8 @@ async function extractTextFromPDF(file, firstPageOnly = false) {
     const textContent = await page.getTextContent();
     const pageText = textContent.items.map(item => item.str).join(' ');
     fullText += pageText + '\n';
-    console.log(`Page ${i} text length:`, pageText.length);
   }
 
-  console.log(`Extracted text from ${maxPage} page(s), total length:`, fullText.length);
-  console.log('First 500 chars of extracted text:', fullText.substring(0, 500));
   return fullText;
 }
 
@@ -1384,10 +1423,7 @@ async function extractTextFromPDF(file, firstPageOnly = false) {
  * - Rate limit (429): wacht 30-60 seconden melding
  * - Andere API fouten: status code en bericht
  */
-async function extractMeldcodeFromFactuur(file) {
-  console.log('=== Starting meldcode and date extraction with Mistral ===');
-  console.log('File:', file.name, 'Type:', file.type, 'Size:', file.size);
-
+async function extractMeldcodeFromFactuur(base64FileData, fileType, fileName = 'unknown') {
   try {
     // Haal Mistral API key op uit Chrome storage
     const { mistralApiKey } = await chrome.storage.local.get(['mistralApiKey']);
@@ -1398,16 +1434,14 @@ async function extractMeldcodeFromFactuur(file) {
     let textContent;
 
     // Bepaal extractie methode op basis van bestandstype
-    if (file.type === 'application/pdf') {
-      console.log('Extracting text from PDF...');
-      textContent = await extractTextFromPDF(file);
+    if (fileType === 'application/pdf') {
+      textContent = await extractTextFromPDF(base64FileData);
 
       // Controleer of PDF extracteerbare tekst bevat (niet gescand)
       if (!textContent || textContent.trim().length < 10) {
-        console.log('⚠️ PDF has no extractable text, using Vision AI OCR...');
 
         // Converteer PDF naar afbeelding voor Vision AI
-        const pdfImage = await pdfToBase64Image(file);
+        const pdfImage = await pdfToBase64Image(base64FileData);
         const base64Data = pdfImage.split(',')[1];
 
         // Wacht voor rate limiting
@@ -1459,13 +1493,11 @@ Extract ALL text but pay special attention to these two critical pieces of infor
 
         const data = await response.json();
         textContent = data.choices[0].message.content;
-        console.log('✅ Text extracted via Vision AI OCR');
       }
     } else {
       // Voor afbeeldingen: gebruik Vision AI OCR
-      console.log('Converting image to base64 for OCR...');
-      const base64Image = await imageToBase64(file);
-      const base64Data = base64Image.split(',')[1];
+      // base64FileData is al in data URL formaat, haal alleen het base64 deel
+      const base64Data = base64FileData.includes(',') ? base64FileData.split(',')[1] : base64FileData;
 
       // Wacht voor rate limiting
       await waitForMistralRateLimit();
@@ -1517,8 +1549,6 @@ Extract ALL text but pay special attention to these two critical pieces of infor
       textContent = data.choices[0].message.content;
     }
 
-    console.log('Text extracted, searching for meldcode and installation date...');
-
     // Zoek meldcode patroon in geëxtraheerde tekst (KA + 5 cijfers)
     const meldcodeMatch = textContent.match(/KA\d{5}/i);
     let meldcode = null;
@@ -1526,7 +1556,6 @@ Extract ALL text but pay special attention to these two critical pieces of infor
 
     if (meldcodeMatch) {
       meldcode = meldcodeMatch[0].toUpperCase();
-      console.log('✅ Meldcode found in text:', meldcode);
     }
 
     // Zoek installatiedatum patronen
@@ -1546,15 +1575,12 @@ Extract ALL text but pay special attention to these two critical pieces of infor
         }
         // Normaliseer scheidingsteken naar streepje
         installationDate = installationDate.replace(/\//g, '-');
-        console.log('✅ Installation date found in text:', installationDate);
         break;
       }
     }
 
     // Als niet alle data gevonden via regex, gebruik AI extractie
     if (!meldcode || !installationDate) {
-      console.log('Not all data found via regex, asking AI...');
-
       // Wacht voor rate limiting
       await waitForMistralRateLimit();
 
@@ -1600,7 +1626,6 @@ Return ONLY JSON, no markdown.`
 
       const data = await response.json();
       let content = data.choices[0].message.content.trim();
-      console.log('AI response:', content);
 
       // Verwijder markdown code blocks indien aanwezig
       content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
@@ -1611,28 +1636,21 @@ Return ONLY JSON, no markdown.`
         // Gebruik AI geëxtraheerde meldcode als niet gevonden via regex
         if (!meldcode && extracted.meldcode && extracted.meldcode !== 'null') {
           meldcode = extracted.meldcode.toUpperCase();
-          console.log('✅ Meldcode extracted by AI:', meldcode);
         }
 
         // Gebruik AI geëxtraheerde datum als niet gevonden via regex
         if (!installationDate && extracted.installationDate && extracted.installationDate !== 'null') {
           installationDate = extracted.installationDate;
-          console.log('✅ Installation date extracted by AI:', installationDate);
         }
       } catch (parseError) {
-        console.warn('Could not parse AI JSON response:', parseError);
+        // JSON parse fout - AI response was geen geldig JSON
       }
     }
 
-    // ========================================================================
-    // APPLY SANITIZATION TO EXTRACTED FACTUUR DATA
-    // ========================================================================
-    console.log('=== Applying sanitization to factuur data ===');
-
+    // Sanitize extracted data
     if (meldcode) meldcode = sanitizeMeldCode(meldcode);
     if (installationDate) installationDate = sanitizeInstallationDate(installationDate);
 
-    console.log('=== Final factuur data (after sanitization) ===', { meldcode, installationDate });
     return { meldcode, installationDate };
 
   } catch (error) {
@@ -1690,10 +1708,7 @@ Return ONLY JSON, no markdown.`
  * - Gekruist/doorgestreept = NIET geselecteerd
  * - Omcirkeld/aangevinkt = WEL geselecteerd
  */
-async function extractDataFromForm(file, uploadTabId) {
-  console.log('=== Starting extraction with Mistral ===');
-  console.log('File:', file.name, 'Type:', file.type, 'Size:', file.size);
-
+async function extractDataFromForm(base64FileData, fileType, uploadTabId) {
   try {
     // Haal Mistral API key op uit Chrome storage
     const { mistralApiKey } = await chrome.storage.local.get(['mistralApiKey']);
@@ -1704,27 +1719,23 @@ async function extractDataFromForm(file, uploadTabId) {
     let textContent;
 
     // Gebruik Mistral Document AI OCR voor betere extractie
-    console.log('Using Mistral Document AI OCR...');
     if (currentTrackedTabId === uploadTabId) {
       showExtractionStatus('🔄 Document OCR met Mistral AI...', 'extractionStatus', 'processing', 0);
     }
 
-    // Converteer bestand naar base64 voor OCR API
+    // Bepaal document type en key op basis van bestandstype
     let base64Document;
     let documentType;
     let documentKey;
 
-    if (file.type === 'application/pdf') {
-      // Voor PDF: converteer naar base64
-      const arrayBuffer = await file.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
-      const binary = bytes.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
-      base64Document = `data:application/pdf;base64,${btoa(binary)}`;
+    if (fileType === 'application/pdf') {
+      // Voor PDF: data is al in base64 formaat
+      base64Document = base64FileData;
       documentType = 'document_url';
       documentKey = 'document_url';
     } else {
-      // Voor afbeeldingen: converteer naar base64
-      base64Document = await imageToBase64(file);
+      // Voor afbeeldingen: data is al in base64 formaat
+      base64Document = base64FileData;
       documentType = 'image_url';
       documentKey = 'image_url';
     }
@@ -1734,9 +1745,6 @@ async function extractDataFromForm(file, uploadTabId) {
     }
 
     // Stap 1: Extraheer tekst met Mistral OCR
-    console.log('Calling Mistral OCR API...');
-    console.log('Document type:', documentType);
-
     const ocrRequestBody = {
       model: 'mistral-ocr-latest',
       document: {
@@ -1788,7 +1796,6 @@ async function extractDataFromForm(file, uploadTabId) {
     }
 
     const ocrData = await ocrResponse.json();
-    console.log('OCR response:', ocrData);
 
     // Extraheer tekst uit OCR response (alleen eerste pagina)
     let extractedText = '';
@@ -1796,17 +1803,11 @@ async function extractDataFromForm(file, uploadTabId) {
       extractedText = ocrData.pages[0].markdown || '';
     }
 
-    console.log('Extracted text from OCR (first 500 chars):', extractedText.substring(0, 500));
-    console.log('=== FULL OCR TEXT FOR DEBUGGING ===');
-    console.log(extractedText);
-    console.log('=== END FULL OCR TEXT ===');
-
     if (currentTrackedTabId === uploadTabId) {
       showExtractionStatus('🔄 Gegevens extraheren met AI...', 'extractionStatus', 'processing', 0);
     }
 
     // Stap 2: Gebruik text model voor gestructureerde data extractie
-    console.log('Calling Mistral text model for structured extraction...');
 
     // Wacht voor rate limiting
     await waitForMistralRateLimit();
@@ -1877,21 +1878,16 @@ Return ONLY JSON, no markdown.`
     }
 
     const data = await response.json();
-    console.log('Mistral API response:', data);
-
     let content = data.choices[0].message.content;
-    console.log('Extracted content:', content);
 
     // Verwijder markdown code blocks indien aanwezig
     content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-    console.log('Cleaned content:', content);
 
     // Parse JSON response naar object
     let extractedData = JSON.parse(content);
 
     // Pas regex fallbacks toe voor gemiste velden
     extractedData = applyRegexFallbacks(extractedData, extractedText);
-    console.log('🔍 After regex fallbacks:', extractedData);
 
     // ========================================================================
     // EXTRA VALIDATIE: VISION AI VOOR AARDGAS CHECKBOX DETECTIE
@@ -1910,19 +1906,27 @@ Return ONLY JSON, no markdown.`
      * 5. Als Vision AI faalt, fallback naar tekst-gebaseerde detectie
      */
     if (!extractedData.gasUsage || extractedData.gasUsage === 'null') {
-      console.log('Gas usage not found by AI, using Vision AI to detect checkbox...');
-
       if (currentTrackedTabId === uploadTabId) {
         showExtractionStatus('🔄 Aardgas checkbox detecteren met Vision AI...', 'extractionStatus', 'processing', 0);
       }
 
       // Converteer document naar afbeelding voor vision analyse
       let visionBase64;
-      if (file.type === 'application/pdf') {
-        console.log('Converting PDF to image for vision analysis...');
-        // Gebruik lagere kwaliteit JPEG voor Vision AI om bestandsgrootte te verminderen
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      if (fileType === 'application/pdf') {
+        // Converteer PDF naar afbeelding voor Vision AI
+        const base64Content = base64FileData.includes(',') ? base64FileData.split(',')[1] : base64FileData;
+        const binaryString = atob(base64Content);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const pdf = await pdfjsLib.getDocument({
+          data: bytes.buffer,
+          useSystemFonts: true,
+          standardFontDataUrl: null,
+          cMapUrl: null,
+          cMapPacked: false
+        }).promise;
         const page = await pdf.getPage(1);
         const viewport = page.getViewport({ scale: 1.2 }); // Lagere schaal voor kleinere afbeelding
 
@@ -1938,10 +1942,9 @@ Return ONLY JSON, no markdown.`
 
         // Converteer naar JPEG met compressie voor kleinere bestandsgrootte
         visionBase64 = canvas.toDataURL('image/jpeg', 0.8);
-        console.log('PDF converted to JPEG for Vision AI, size:', visionBase64.length, 'chars');
       } else {
-        // Voor afbeeldingen: converteer naar base64
-        visionBase64 = await imageToBase64(file);
+        // Voor afbeeldingen: data is al in base64 formaat
+        visionBase64 = base64FileData;
       }
 
       const visionData = visionBase64.split(',')[1];
@@ -2004,10 +2007,6 @@ Return ONLY one word: "yes", "no", or "unknown"`
         if (visionResponse.ok) {
           const visionDataResponse = await visionResponse.json();
           const visionAnswer = visionDataResponse.choices[0].message.content.toLowerCase().trim();
-          console.log('=== VISION AI RESPONSE ===');
-          console.log('Raw response:', visionDataResponse.choices[0].message.content);
-          console.log('Lowercase trimmed:', visionAnswer);
-          console.log('=========================');
 
           // Controleer of Vision AI onzeker is over het antwoord
           const isUncertain = visionAnswer.includes('unknown') ||
@@ -2017,41 +2016,22 @@ Return ONLY one word: "yes", "no", or "unknown"`
                             visionAnswer.includes('not sure');
 
           if (isUncertain) {
-            console.log('⚠️ Vision AI is uncertain about gas usage, skipping...');
             // Stel gasUsage niet in, laat null voor handmatig invullen
           } else if (visionAnswer.includes('yes') || visionAnswer === 'ja') {
             extractedData.gasUsage = 'yes';
-            console.log('✅ Gas usage "Ja" detected via Vision AI');
           } else if (visionAnswer.includes('no') || visionAnswer === 'nee') {
             extractedData.gasUsage = 'no';
-            console.log('✅ Gas usage "Nee" detected via Vision AI');
-            console.log('⚠️ WARNING: Vision AI chose "Nee" - verify this is correct!');
-          } else {
-            console.log('⚠️ Vision AI returned unexpected response, skipping...');
           }
-        } else {
-          console.error('Vision AI request failed:', visionResponse.status, visionResponse.statusText);
         }
       } catch (visionError) {
-        console.warn('Vision AI failed, falling back to text patterns:', visionError);
-
         // Fallback naar tekst-gebaseerde detectie
         const gasQuestionRegex = /gebruikt.*warmtepomp.*aardgas.*ruimte.*verwarming/i;
         if (gasQuestionRegex.test(extractedText)) {
-          console.log('✅ Gas usage question found in text');
-
-          // Log de context rondom de vraag voor debugging
-          const questionMatch = extractedText.match(/(gebruikt.*warmtepomp.*aardgas.*ruimte.*verwarming.{0,100})/i);
-          if (questionMatch) {
-            console.log('Question context:', questionMatch[1]);
-          }
-
           // Probeer "Ja" of "Nee" te vinden binnen 100 karakters na de vraag
           const gasAnswerMatch = extractedText.match(/gebruikt.*warmtepomp.*aardgas.*ruimte.*verwarming.{0,100}(ja|nee)/i);
           if (gasAnswerMatch) {
             const answer = gasAnswerMatch[1].toLowerCase();
             extractedData.gasUsage = answer === 'ja' ? 'yes' : 'no';
-            console.log('✅ Gas usage answer found via regex fallback:', extractedData.gasUsage);
           }
         }
       }
@@ -2067,7 +2047,6 @@ Return ONLY one word: "yes", "no", or "unknown"`
     // ========================================================================
     // APPLY SANITIZATION TO ALL EXTRACTED FIELDS
     // ========================================================================
-    console.log('=== Applying sanitization to extracted data ===');
 
     // Object om validatie warnings bij te houden
     const validationWarnings = {};
@@ -2195,9 +2174,6 @@ Return ONLY one word: "yes", "no", or "unknown"`
         extractedData.gasUsage = sanitized;
       }
     }
-
-    console.log('=== Final extracted data (after sanitization) ===', extractedData);
-    console.log('=== Validation warnings ===', validationWarnings);
 
     // Voeg validationWarnings toe aan extractedData zodat fillFormFields het kan gebruiken
     extractedData._validationWarnings = validationWarnings;
@@ -3098,6 +3074,12 @@ document.getElementById(POPUP_SELECTORS.startAutomation).addEventListener('click
         filesToStore[`file_machtigingsbewijs_${sessionId}`] = config.machtigingsbewijs;
         config.machtigingsbewijsKey = `file_machtigingsbewijs_${sessionId}`;
         delete config.machtigingsbewijs; // Verwijder grote data uit config
+      }
+
+      if (config.aankoopbewijs) {
+        filesToStore[`file_aankoopbewijs_${sessionId}`] = config.aankoopbewijs;
+        config.aankoopbewijsKey = `file_aankoopbewijs_${sessionId}`;
+        delete config.aankoopbewijs; // Verwijder grote data uit config
       }
 
       // Sla bestanden eerst op, dan verstuur bericht

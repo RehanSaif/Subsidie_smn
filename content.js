@@ -836,6 +836,66 @@ function cloneAutomationConfig(config) {
   }
 }
 
+/**
+ * Maakt een "lichte" versie van de config voor sessionStorage.
+ * Verwijdert grote bestandsdata maar behoudt de keys zodat bestanden
+ * later opnieuw kunnen worden opgehaald uit chrome.storage.local.
+ *
+ * @param {Object} config - De volledige config met bestandsdata
+ * @returns {Object} Een lichte versie zonder bestandsdata maar met keys
+ */
+function createLightConfig(config) {
+  if (!config) return null;
+
+  // Maak een shallow copy
+  const lightConfig = { ...config };
+
+  // Verwijder grote bestandsdata (maar behoud keys als die er zijn)
+  if (lightConfig.betaalbewijs) {
+    // Zorg dat we de key hebben voor later ophalen
+    if (!lightConfig.betaalbewijsKey && lightConfig._storageKeyMap?.betaalbewijs) {
+      lightConfig.betaalbewijsKey = lightConfig._storageKeyMap.betaalbewijs;
+    }
+    delete lightConfig.betaalbewijs;
+  }
+  if (lightConfig.factuur) {
+    if (!lightConfig.factuurKey && lightConfig._storageKeyMap?.factuur) {
+      lightConfig.factuurKey = lightConfig._storageKeyMap.factuur;
+    }
+    delete lightConfig.factuur;
+  }
+  if (lightConfig.machtigingsbewijs) {
+    if (!lightConfig.machtigingsbewijsKey && lightConfig._storageKeyMap?.machtigingsbewijs) {
+      lightConfig.machtigingsbewijsKey = lightConfig._storageKeyMap.machtigingsbewijs;
+    }
+    delete lightConfig.machtigingsbewijs;
+  }
+  if (lightConfig.aankoopbewijs) {
+    if (!lightConfig.aankoopbewijsKey && lightConfig._storageKeyMap?.aankoopbewijs) {
+      lightConfig.aankoopbewijsKey = lightConfig._storageKeyMap.aankoopbewijs;
+    }
+    delete lightConfig.aankoopbewijs;
+  }
+
+  // Verwijder interne tracking data
+  delete lightConfig._storageCleanupKeys;
+
+  return lightConfig;
+}
+
+/**
+ * Slaat de config veilig op in sessionStorage (zonder grote bestandsdata).
+ * @param {Object} config - De config om op te slaan
+ */
+function saveConfigToSession(config) {
+  try {
+    const lightConfig = createLightConfig(config);
+    sessionStorage.setItem('automationConfig', JSON.stringify(lightConfig));
+  } catch (error) {
+    console.error('Fout bij opslaan config naar sessionStorage:', error);
+  }
+}
+
 async function resolveAutomationConfigFromRequest(request) {
   // Voorkeursroute: laad config via sleutel uit chrome.storage.local (tab-specifiek)
   if (request.configKey) {
@@ -897,9 +957,9 @@ function startAutomationWithConfig(config) {
     console.log(`🧹 Oude recovery data verwijderd voor tab ${currentTabId} (verse start)`);
   });
 
-  // Sla nieuwe config op IN SESSIONSTORAGE VOORDAT we oude data wissen
-  // Dit voorkomt dat recovery modal verschijnt bij page navigation
-  sessionStorage.setItem('automationConfig', JSON.stringify(config));
+  // Sla LICHTE config op (zonder bestandsdata) om quota errors te voorkomen
+  // Bestanden blijven in chrome.storage.local en worden opgehaald via keys
+  saveConfigToSession(config);
 
   // Als we op een bekende pagina zijn (niet start/unknown), begin daar
   if (currentDetectedStep !== 'start' && currentDetectedStep !== 'unknown') {
@@ -939,34 +999,42 @@ function startAutomationWithConfig(config) {
   if (config.betaalbewijsKey) filesToRetrieve.push(config.betaalbewijsKey);
   if (config.factuurKey) filesToRetrieve.push(config.factuurKey);
   if (config.machtigingsbewijsKey) filesToRetrieve.push(config.machtigingsbewijsKey);
+  if (config.aankoopbewijsKey) filesToRetrieve.push(config.aankoopbewijsKey);
 
   const storageKeyMap = {};
   if (config.betaalbewijsKey) storageKeyMap.betaalbewijs = config.betaalbewijsKey;
   if (config.factuurKey) storageKeyMap.factuur = config.factuurKey;
   if (config.machtigingsbewijsKey) storageKeyMap.machtigingsbewijs = config.machtigingsbewijsKey;
+  if (config.aankoopbewijsKey) storageKeyMap.aankoopbewijs = config.aankoopbewijsKey;
 
   if (filesToRetrieve.length > 0) {
-    console.log('📥 Retrieving files from chrome.storage.local:', filesToRetrieve);
     chrome.storage.local.get(filesToRetrieve, (result) => {
-      // Vervang keys met daadwerkelijke bestandsgegevens
+      // Voeg bestandsgegevens toe aan config
       if (config.betaalbewijsKey) {
-          config.betaalbewijs = result[config.betaalbewijsKey];
-          delete config.betaalbewijsKey;
-        }
+        config.betaalbewijs = result[config.betaalbewijsKey];
+      }
       if (config.factuurKey) {
         config.factuur = result[config.factuurKey];
-        delete config.factuurKey;
       }
       if (config.machtigingsbewijsKey) {
         config.machtigingsbewijs = result[config.machtigingsbewijsKey];
-        delete config.machtigingsbewijsKey;
+      }
+      if (config.aankoopbewijsKey) {
+        config.aankoopbewijs = result[config.aankoopbewijsKey];
       }
 
-        console.log('✅ Files retrieved successfully for session:', config.sessionId);
-        config._storageKeyMap = storageKeyMap;
-        config._storageCleanupKeys = Object.values(storageKeyMap);
-        startFullAutomation(config);
-      });
+      // Waarschuw als verplichte bestanden ontbreken
+      if (config.betaalbewijsKey && !config.betaalbewijs) {
+        updateStatus('❌ Betaalbewijs niet gevonden in opslag!', 'BESTAND FOUT');
+      }
+      if (config.factuurKey && !config.factuur) {
+        updateStatus('❌ Factuur niet gevonden in opslag!', 'BESTAND FOUT');
+      }
+
+      config._storageKeyMap = storageKeyMap;
+      config._storageCleanupKeys = Object.values(storageKeyMap);
+      startFullAutomation(config);
+    });
     } else {
       config._storageKeyMap = storageKeyMap;
       config._storageCleanupKeys = [];
@@ -1446,10 +1514,6 @@ function fillCurrentPage(config) {
  * @returns {string} De gedetecteerde stap naam
  */
 function detectCurrentStep() {
-  console.log('🔍 === STARTING PAGE DETECTION ===');
-  console.log('Current URL:', window.location.href);
-  console.log('Page title:', document.title);
-
   // Controleer van meest specifiek naar minst specifiek om false matches te voorkomen
 
   // -------------------------------------------------------------------------
@@ -1983,7 +2047,7 @@ async function startFullAutomation(config) {
         // Markeer dat we geklikt hebben om loops te voorkomen
         sessionStorage.setItem('lastNieuweAanvraagClick', now.toString());
         sessionStorage.setItem('automationStep', 'nieuwe_aanvraag_clicked');
-        sessionStorage.setItem('automationConfig', JSON.stringify(config));
+        saveConfigToSession(config); // Gebruik lichte versie om quota error te voorkomen
 
         await clickElement(startLink);
 
@@ -3238,6 +3302,32 @@ async function startFullAutomation(config) {
         } else if (config.factuur && factuurAlreadyUploaded) {
           console.log('✅ Factuur already uploaded, skipping');
         }
+
+        // Upload bewijs van aankoopdatum - derde document (ALLEEN VOOR 2024 AANKOPEN)
+        // Check eerst of de derde upload knop bestaat op de pagina
+        const aankoopbewijsButton = document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.2\\.btn_ToevoegenBijlage');
+
+        if (aankoopbewijsButton) {
+          // Check of aankoopbewijs al geüpload is
+          const aankoopbewijsFilename = config.aankoopbewijs ? config.aankoopbewijs.name.toLowerCase() : '';
+          const aankoopbewijsAlreadyUploaded = aankoopbewijsFilename && pageText.includes(aankoopbewijsFilename);
+
+          if (config.aankoopbewijs && !aankoopbewijsAlreadyUploaded) {
+            console.log('📤 Uploading aankoopbewijs:', config.aankoopbewijs.name);
+            await clickElement('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.2\\.btn_ToevoegenBijlage');
+            await unthrottledDelay(2000);
+            await uploadFile(config.aankoopbewijs);
+            await unthrottledDelay(2000);
+          } else if (config.aankoopbewijs && aankoopbewijsAlreadyUploaded) {
+            console.log('✅ Aankoopbewijs already uploaded, skipping');
+          } else if (!config.aankoopbewijs) {
+            // 2024 aanvraag maar geen aankoopbewijs geüpload - stop en waarschuw
+            console.log('⚠️ Bewijs van aankoopdatum vereist maar niet geüpload');
+            updateStatus('⚠️ Upload "Bewijs van aankoopdatum" en herstart automatisering', '18 - Aankoopbewijs ontbreekt');
+            automationStopped = true;
+            return;
+          }
+        }
       }
 
       // Click the Volgende button to proceed
@@ -3714,25 +3804,53 @@ window.addEventListener('load', async () => {
 
   if (automationConfig) {
     const config = JSON.parse(automationConfig);
-    console.log('Automatisering doorgaan na pagina laden, stap:', currentStep);
 
     // Recreate status panel after page load
     createStatusPanel();
-
     updateStatus('Pagina geladen, automatisering doorgaan...', currentStep);
 
-    // Use unthrottledDelay instead of setTimeout to avoid background tab throttling
-    // Verhoogd naar 3500ms voor langzame page loads (voorkomt loop detectie)
-    unthrottledDelay(3500).then(() => {
-      console.log('Starting automation after page load');
-      startFullAutomation(config);
-    }).catch(err => {
-      if (err.message === 'Automation stopped') {
-        console.log('❌ Automation stopped during page load delay');
-      } else {
-        console.error('Error during page load delay:', err);
-      }
-    });
+    // Haal bestandsdata op uit chrome.storage.local als er keys zijn
+    const filesToRetrieve = [];
+    if (config.betaalbewijsKey) filesToRetrieve.push(config.betaalbewijsKey);
+    if (config.factuurKey) filesToRetrieve.push(config.factuurKey);
+    if (config.machtigingsbewijsKey) filesToRetrieve.push(config.machtigingsbewijsKey);
+    if (config.aankoopbewijsKey) filesToRetrieve.push(config.aankoopbewijsKey);
+
+    if (filesToRetrieve.length > 0) {
+      chrome.storage.local.get(filesToRetrieve, (result) => {
+        // Voeg bestandsdata toe aan config
+        if (config.betaalbewijsKey && result[config.betaalbewijsKey]) {
+          config.betaalbewijs = result[config.betaalbewijsKey];
+        }
+        if (config.factuurKey && result[config.factuurKey]) {
+          config.factuur = result[config.factuurKey];
+        }
+        if (config.machtigingsbewijsKey && result[config.machtigingsbewijsKey]) {
+          config.machtigingsbewijs = result[config.machtigingsbewijsKey];
+        }
+        if (config.aankoopbewijsKey && result[config.aankoopbewijsKey]) {
+          config.aankoopbewijs = result[config.aankoopbewijsKey];
+        }
+
+        // Start automatisering na bestanden ophalen
+        unthrottledDelay(3500).then(() => {
+          startFullAutomation(config);
+        }).catch(err => {
+          if (err.message !== 'Automation stopped') {
+            console.error('Error during page load delay:', err);
+          }
+        });
+      });
+    } else {
+      // Geen bestanden nodig, start direct
+      unthrottledDelay(3500).then(() => {
+        startFullAutomation(config);
+      }).catch(err => {
+        if (err.message !== 'Automation stopped') {
+          console.error('Error during page load delay:', err);
+        }
+      });
+    }
   }
 });
 
@@ -3760,17 +3878,46 @@ document.addEventListener('DOMContentLoaded', () => {
     updateStatus('Wachten...', currentStep, detectedStep);
 
     if (currentStep && currentStep !== 'start') {
-      // Use unthrottledDelay instead of setTimeout to avoid background tab throttling
-      // Verhoogd naar 3500ms voor langzame page loads (voorkomt loop detectie)
-      unthrottledDelay(3500).then(() => {
-        startFullAutomation(config);
-      }).catch(err => {
-        if (err.message === 'Automation stopped') {
-          console.log('❌ Automation stopped during DOMContentLoaded delay');
-        } else {
-          console.error('Error during DOMContentLoaded delay:', err);
-        }
-      });
+      // Haal bestandsdata op uit chrome.storage.local als er keys zijn
+      const filesToRetrieve = [];
+      if (config.betaalbewijsKey) filesToRetrieve.push(config.betaalbewijsKey);
+      if (config.factuurKey) filesToRetrieve.push(config.factuurKey);
+      if (config.machtigingsbewijsKey) filesToRetrieve.push(config.machtigingsbewijsKey);
+      if (config.aankoopbewijsKey) filesToRetrieve.push(config.aankoopbewijsKey);
+
+      if (filesToRetrieve.length > 0) {
+        chrome.storage.local.get(filesToRetrieve, (result) => {
+          if (config.betaalbewijsKey && result[config.betaalbewijsKey]) {
+            config.betaalbewijs = result[config.betaalbewijsKey];
+          }
+          if (config.factuurKey && result[config.factuurKey]) {
+            config.factuur = result[config.factuurKey];
+          }
+          if (config.machtigingsbewijsKey && result[config.machtigingsbewijsKey]) {
+            config.machtigingsbewijs = result[config.machtigingsbewijsKey];
+          }
+          if (config.aankoopbewijsKey && result[config.aankoopbewijsKey]) {
+            config.aankoopbewijs = result[config.aankoopbewijsKey];
+          }
+          unthrottledDelay(3500).then(() => {
+            startFullAutomation(config);
+          }).catch(err => {
+            if (err.message !== 'Automation stopped') {
+              console.error('Error during DOMContentLoaded delay:', err);
+            }
+          });
+        });
+      } else {
+        unthrottledDelay(3500).then(() => {
+          startFullAutomation(config);
+        }).catch(err => {
+          if (err.message === 'Automation stopped') {
+            console.log('❌ Automation stopped during DOMContentLoaded delay');
+          } else {
+            console.error('Error during DOMContentLoaded delay:', err);
+          }
+        });
+      }
     }
   }
 });

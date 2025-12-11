@@ -400,6 +400,17 @@
       </div>
 
       <div class="field-group">
+        <label class="field-label">Bewijs van aankoopdatum (Alleen voor 2024)</label>
+        <div class="file-upload">
+          <input type="file" class="file-upload-input" id="aankoopbewijsDoc" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
+          <div class="file-upload-label">
+            <span>Kies aankoopbewijs...</span>
+          </div>
+        </div>
+        <div id="aankoopbewijsName" class="file-name" style="display: none;"></div>
+      </div>
+
+      <div class="field-group">
         <label class="field-label">Machtigingsformulier (Optioneel)</label>
         <div class="file-upload">
           <input type="file" class="file-upload-input" id="machtigingsformulier" accept=".pdf,.jpg,.jpeg,.png">
@@ -641,6 +652,8 @@
   <script>
     // Configure PDF.js worker
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js';
+    // Disable external font/cmap loading to prevent "file not found" errors in extensions
+    pdfjsLib.GlobalWorkerOptions.isEvalSupported = false;
   </script>
   <script src="config.js"></script>
   <script src="sanitization.js"></script>

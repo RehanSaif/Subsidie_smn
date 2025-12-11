@@ -1,0 +1,1042 @@
+{
+    "title": "Recording 4-12-2025 at 15:47:04",
+    "steps": [
+        {
+            "type": "setViewport",
+            "width": 971,
+            "height": 896,
+            "deviceScaleFactor": 1,
+            "isMobile": false,
+            "hasTouch": false,
+            "isLandscape": false
+        },
+        {
+            "type": "navigate",
+            "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=85A66667E891E9D18323",
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=85A66667E891E9D18323",
+                    "title": "eLoket"
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/⏹ Stop"
+                ],
+                [
+                    "#stop-automation"
+                ],
+                [
+                    "xpath///*[@id=\"stop-automation\"]"
+                ],
+                [
+                    "pierce/#stop-automation"
+                ],
+                [
+                    "text/⏹ Stop"
+                ]
+            ],
+            "offsetY": 24,
+            "offsetX": 141
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/⏹ Stop"
+                ],
+                [
+                    "#stop-automation"
+                ],
+                [
+                    "xpath///*[@id=\"stop-automation\"]"
+                ],
+                [
+                    "pierce/#stop-automation"
+                ],
+                [
+                    "text/⏹ Stop"
+                ]
+            ],
+            "offsetY": 24,
+            "offsetX": 179
+        },
+        {
+            "type": "change",
+            "value": "",
+            "selectors": [
+                [
+                    "aria/edHuisnummer2"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edHuisnummer2"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edHuisnummer2\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edHuisnummer2"
+                ],
+                [
+                    "text/42"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyDown",
+            "target": "main",
+            "key": "Tab"
+        },
+        {
+            "type": "keyUp",
+            "key": "Tab",
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/edPostcode"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edPostcode\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPostcode"
+                ],
+                [
+                    "text/3962 EZ"
+                ]
+            ],
+            "offsetY": 12,
+            "offsetX": 52
+        },
+        {
+            "type": "keyDown",
+            "target": "main",
+            "key": "Tab"
+        },
+        {
+            "type": "keyUp",
+            "key": "Tab",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "42",
+            "selectors": [
+                [
+                    "aria/edHuisnummer2"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edHuisnummer2"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edHuisnummer2\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edHuisnummer2"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyDown",
+            "target": "main",
+            "key": "Tab"
+        },
+        {
+            "type": "keyUp",
+            "key": "Tab",
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/edStraat"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edStraat"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edStraat\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edStraat"
+                ]
+            ],
+            "offsetY": 13,
+            "offsetX": 98
+        },
+        {
+            "type": "change",
+            "value": "Keizer",
+            "selectors": [
+                [
+                    "aria/edStraat"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edStraat"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edStraat\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edStraat"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "keyDown",
+            "target": "main",
+            "key": "Tab"
+        },
+        {
+            "type": "keyUp",
+            "key": "Tab",
+            "target": "main"
+        },
+        {
+            "type": "change",
+            "value": "Wijk bij Duurstede",
+            "selectors": [
+                [
+                    "aria/edPlaats"
+                ],
+                [
+                    "#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPlaats"
+                ],
+                [
+                    "xpath///*[@id=\"link_aanv.0.link_aanv_adres_vst.0.edPlaats\"]"
+                ],
+                [
+                    "pierce/#link_aanv\\.0\\.link_aanv_adres_vst\\.0\\.edPlaats"
+                ]
+            ],
+            "target": "main"
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#btnVolgendeTab"
+                ],
+                [
+                    "xpath///*[@id=\"btnVolgendeTab\"]"
+                ],
+                [
+                    "pierce/#btnVolgendeTab"
+                ]
+            ],
+            "offsetY": 14,
+            "offsetX": 53
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/⏹ Stop"
+                ],
+                [
+                    "#stop-automation"
+                ],
+                [
+                    "xpath///*[@id=\"stop-automation\"]"
+                ],
+                [
+                    "pierce/#stop-automation"
+                ],
+                [
+                    "text/⏹ Stop"
+                ]
+            ],
+            "offsetY": 21,
+            "offsetX": 159
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "#lip_modalWindow"
+                ],
+                [
+                    "xpath///*[@id=\"lip_modalWindow\"]"
+                ],
+                [
+                    "pierce/#lip_modalWindow"
+                ]
+            ],
+            "offsetY": 626,
+            "offsetX": 695
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "#lip_modalWindow"
+                ],
+                [
+                    "xpath///*[@id=\"lip_modalWindow\"]"
+                ],
+                [
+                    "pierce/#lip_modalWindow"
+                ]
+            ],
+            "offsetY": 626,
+            "offsetX": 695
+        },
+        {
+            "type": "navigate",
+            "url": "https://eloket.dienstuitvoering.nl/eloket/error/display.do?%24context=3C5B9CD1EF9CE9D6DABF",
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/error/display.do?%24context=3C5B9CD1EF9CE9D6DABF",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "div.contentPanel"
+                ],
+                [
+                    "xpath//html/body/div[2]"
+                ],
+                [
+                    "pierce/div.contentPanel"
+                ]
+            ],
+            "offsetY": 102,
+            "offsetX": 20
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Sluiten"
+                ],
+                [
+                    "span > input"
+                ],
+                [
+                    "xpath///*[@id=\"form_appError\"]/span/input"
+                ],
+                [
+                    "pierce/span > input"
+                ],
+                [
+                    "text/Sluiten"
+                ]
+            ],
+            "offsetY": 7,
+            "offsetX": 32,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=38652CE87322E9DBAF63",
+                    "title": "eLoket"
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Mijn aanvragen"
+                ],
+                [
+                    "#navigation_2"
+                ],
+                [
+                    "xpath///*[@id=\"navigation_2\"]"
+                ],
+                [
+                    "pierce/#navigation_2"
+                ]
+            ],
+            "offsetY": 19,
+            "offsetX": 118
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/A.J.  Van Vliet"
+                ],
+                [
+                    "#catalog_MijnOverzicht\\.0\\.page_2_navigation_link_Naam"
+                ],
+                [
+                    "xpath///*[@id=\"catalog_MijnOverzicht.0.page_2_navigation_link_Naam\"]"
+                ],
+                [
+                    "pierce/#catalog_MijnOverzicht\\.0\\.page_2_navigation_link_Naam"
+                ]
+            ],
+            "offsetY": 10,
+            "offsetX": 13
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Openen aanvraag"
+                ],
+                [
+                    "#catalog_MijnOverzicht\\.0\\.Dossier\\.0\\.AanvraagDetails\\.0\\.OpenAanvraag"
+                ],
+                [
+                    "xpath///*[@id=\"catalog_MijnOverzicht.0.Dossier.0.AanvraagDetails.0.OpenAanvraag\"]"
+                ],
+                [
+                    "pierce/#catalog_MijnOverzicht\\.0\\.Dossier\\.0\\.AanvraagDetails\\.0\\.OpenAanvraag"
+                ]
+            ],
+            "offsetY": 14,
+            "offsetX": 1,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=4F6EF2210095E9DBDC7E",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "#lip_segment-instance\\:Page2\\:body\\:FormulierTabSwitch"
+                ],
+                [
+                    "xpath///*[@id=\"lip_segment-instance:Page2:body:FormulierTabSwitch\"]"
+                ],
+                [
+                    "pierce/#lip_segment-instance\\:Page2\\:body\\:FormulierTabSwitch"
+                ]
+            ],
+            "offsetY": 50,
+            "offsetX": 557
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#btnVolgendeTab"
+                ],
+                [
+                    "xpath///*[@id=\"btnVolgendeTab\"]"
+                ],
+                [
+                    "pierce/#btnVolgendeTab"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 14,
+            "offsetX": 43,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=4F6EF2210095E9DBDC7E",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#btnVolgendeTab"
+                ],
+                [
+                    "xpath///*[@id=\"btnVolgendeTab\"]"
+                ],
+                [
+                    "pierce/#btnVolgendeTab"
+                ]
+            ],
+            "offsetY": 7,
+            "offsetX": 39,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=4F6EF2210095E9DBDC7E",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#btnVolgendeTab"
+                ],
+                [
+                    "xpath///*[@id=\"btnVolgendeTab\"]"
+                ],
+                [
+                    "pierce/#btnVolgendeTab"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 15,
+            "offsetX": 30,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=4F6EF2210095E9DBDC7E",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Adresafwijkend_J"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.Adresafwijkend_J"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.Adresafwijkend_J\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.Adresafwijkend_J"
+                ]
+            ],
+            "offsetY": 9.234375,
+            "offsetX": 11
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.next"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.next\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.next"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 4.234375,
+            "offsetX": 86,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=4F6EF2210095E9DBDC7E",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "main"
+                ],
+                [
+                    "xpath///*[@id=\"lip_formBean\"]/main"
+                ],
+                [
+                    "pierce/main"
+                ]
+            ],
+            "offsetY": 693,
+            "offsetX": 699
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/⏹ Stop"
+                ],
+                [
+                    "#stop-automation"
+                ],
+                [
+                    "xpath///*[@id=\"stop-automation\"]"
+                ],
+                [
+                    "pierce/#stop-automation"
+                ],
+                [
+                    "text/⏹ Stop"
+                ]
+            ],
+            "offsetY": 27,
+            "offsetX": 238
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Sluiten"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.next3"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.next3\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.next3"
+                ],
+                [
+                    "text/Sluiten"
+                ]
+            ],
+            "offsetY": 8.734375,
+            "offsetX": 6
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Sluiten"
+                ],
+                [
+                    "#btnSluiten4"
+                ],
+                [
+                    "xpath///*[@id=\"btnSluiten4\"]"
+                ],
+                [
+                    "pierce/#btnSluiten4"
+                ],
+                [
+                    "text/Sluiten"
+                ]
+            ],
+            "offsetY": 14,
+            "offsetX": 14,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=4F6EF2210095E9DBDC7E",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Ja"
+                ],
+                [
+                    "#btnConfirmYes"
+                ],
+                [
+                    "xpath///*[@id=\"btnConfirmYes\"]"
+                ],
+                [
+                    "pierce/#btnConfirmYes"
+                ]
+            ],
+            "offsetY": 18,
+            "offsetX": 52,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=4F6EF2210095E9DBDC7E",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "navigate",
+            "url": "file://saman-atrium02/data/ExterneDocumenten/post/DOCS/405646/1_EX25324677.PDF",
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "file://saman-atrium02/data/ExterneDocumenten/post/DOCS/405646/1_EX25324677.PDF",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/OK"
+                ],
+                [
+                    "#btnConfirmOK"
+                ],
+                [
+                    "xpath///*[@id=\"btnConfirmOK\"]"
+                ],
+                [
+                    "pierce/#btnConfirmOK"
+                ],
+                [
+                    "text/OK"
+                ]
+            ],
+            "offsetY": 4,
+            "offsetX": 62,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=66952838E782E9DDE471",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/> Terug naar Mijn aanvragen"
+                ],
+                [
+                    "#catalog_MijnOverzicht\\.0\\.Dossier\\.0\\.page_2_navigation_link_togleDetails"
+                ],
+                [
+                    "xpath///*[@id=\"catalog_MijnOverzicht.0.Dossier.0.page_2_navigation_link_togleDetails\"]"
+                ],
+                [
+                    "pierce/#catalog_MijnOverzicht\\.0\\.Dossier\\.0\\.page_2_navigation_link_togleDetails"
+                ],
+                [
+                    "text/> Terug naar"
+                ]
+            ],
+            "offsetY": 3,
+            "offsetX": 153
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Home"
+                ],
+                [
+                    "#navigation_1"
+                ],
+                [
+                    "xpath///*[@id=\"navigation_1\"]"
+                ],
+                [
+                    "pierce/#navigation_1"
+                ],
+                [
+                    "text/Home"
+                ]
+            ],
+            "offsetY": 16,
+            "offsetX": 57,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=E7E78A5C759CE9DF9EB0",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/⏹ Stop"
+                ],
+                [
+                    "#stop-automation"
+                ],
+                [
+                    "xpath///*[@id=\"stop-automation\"]"
+                ],
+                [
+                    "pierce/#stop-automation"
+                ],
+                [
+                    "text/⏹ Stop"
+                ]
+            ],
+            "offsetY": 27,
+            "offsetX": 189
+        },
+        {
+            "type": "navigate",
+            "url": "file://saman-atrium02/data/ExterneDocumenten/post/DOCS/405646/1_EX25324677.PDF",
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "file://saman-atrium02/data/ExterneDocumenten/post/DOCS/405646/1_EX25324677.PDF",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "div.selectize-input"
+                ],
+                [
+                    "xpath///*[@id=\"lip_segment-instance:FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.Page2:body:woning_bag_data\"]/div[4]/div[1]"
+                ],
+                [
+                    "pierce/div.selectize-input"
+                ]
+            ],
+            "offsetY": 15.734375,
+            "offsetX": 85
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Volgende"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.next"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.next\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.next"
+                ],
+                [
+                    "text/Volgende"
+                ]
+            ],
+            "offsetY": 3.234375,
+            "offsetX": 22,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=40232CE33DDAE9DFE96D",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/⏹ Stop"
+                ],
+                [
+                    "#stop-automation"
+                ],
+                [
+                    "xpath///*[@id=\"stop-automation\"]"
+                ],
+                [
+                    "pierce/#stop-automation"
+                ],
+                [
+                    "text/⏹ Stop"
+                ]
+            ],
+            "offsetY": 35,
+            "offsetX": 226
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.2\\.btn_ToevoegenBijlage"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.Bijlagen_NogToevoegen_ISDEPA_Meldcode.2.btn_ToevoegenBijlage\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.2\\.btn_ToevoegenBijlage"
+                ]
+            ],
+            "offsetY": 14.734375,
+            "offsetX": 102
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Klik op deze knop om de bestanden te selecteren via een bestandsbeheerder, of sleep de bestanden naar dit veld.",
+                    "aria/[role=\"generic\"]"
+                ],
+                [
+                    "div.dropZone > div"
+                ],
+                [
+                    "xpath///*[@id=\"lip_attachments_resumable\"]/div[1]/div"
+                ],
+                [
+                    "pierce/div.dropZone > div"
+                ],
+                [
+                    "text/Drop bestanden"
+                ]
+            ],
+            "offsetY": 30,
+            "offsetX": 420
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "#attachmentClose_header > span"
+                ],
+                [
+                    "xpath///*[@id=\"attachmentClose_header\"]/span"
+                ],
+                [
+                    "pierce/#attachmentClose_header > span"
+                ]
+            ],
+            "offsetY": 19.5,
+            "offsetX": 14
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Sluiten"
+                ],
+                [
+                    "#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_sluit"
+                ],
+                [
+                    "xpath///*[@id=\"FWS_Object.0.FWS_Objectlokatie.0.FWS_Objectlokatie_ISDEPA.0.FWS_ObjectLocatie_ISDEPA_Meldcode.0.wizard_investering_sluit\"]"
+                ],
+                [
+                    "pierce/#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.wizard_investering_sluit"
+                ]
+            ],
+            "offsetY": 11.734375,
+            "offsetX": 16
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Sluiten"
+                ],
+                [
+                    "#btnSluiten4"
+                ],
+                [
+                    "xpath///*[@id=\"btnSluiten4\"]"
+                ],
+                [
+                    "pierce/#btnSluiten4"
+                ],
+                [
+                    "text/Sluiten"
+                ]
+            ],
+            "offsetY": 19,
+            "offsetX": 28,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=40232CE33DDAE9DFE96D",
+                    "title": ""
+                }
+            ]
+        },
+        {
+            "type": "click",
+            "target": "main",
+            "selectors": [
+                [
+                    "aria/Ja"
+                ],
+                [
+                    "#btnConfirmYes"
+                ],
+                [
+                    "xpath///*[@id=\"btnConfirmYes\"]"
+                ],
+                [
+                    "pierce/#btnConfirmYes"
+                ]
+            ],
+            "offsetY": 10,
+            "offsetX": 81,
+            "assertedEvents": [
+                {
+                    "type": "navigation",
+                    "url": "https://eloket.dienstuitvoering.nl/eloket/form/display.do?%24context=40232CE33DDAE9DFE96D",
+                    "title": ""
+                }
+            ]
+        }
+    ]
+}
