@@ -131,7 +131,7 @@ const SELECTORS = {
 
   // Checkboxes
   naarWaarheid: '#NaarWaarheid',
-  akkoord: '#cbAccoord',
+  akkoord: '#cbAccoord, input[type="checkbox"][id*="verkla"], input[type="checkbox"][id*="Verkla"]',
   infoRead: '#FWS_Aanvraag_ISDEPA\\.0\\.InfoGelezen_JN',
 
   // Modals
@@ -142,7 +142,7 @@ const SELECTORS = {
   startLink: '#page_1_navigation_3_link',
   catalogLink: 'a[id^="catalog_NieuweAanvraag"], a[id^="catalog_nieuweaanvraag"]',
   finalConfirmation: '#QuestionEmbedding_585_default',
-  submitButton: 'input[value="Indienen"]',
+  submitButton: 'input[value="Indienen"], input[value="Ondertekenen en verzenden"], button[value="Ondertekenen en verzenden"]',
 
   // Status Panel (custom automation UI)
   automationPanel: 'isde-automation-panel',
@@ -3304,10 +3304,12 @@ async function startFullAutomation(config) {
         }
 
         // Upload bewijs van aankoopdatum - derde document (ALLEEN VOOR 2024 AANKOPEN)
-        // Check eerst of de derde upload knop bestaat op de pagina
-        const aankoopbewijsButton = document.querySelector('#FWS_Object\\.0\\.FWS_Objectlokatie\\.0\\.FWS_Objectlokatie_ISDEPA\\.0\\.FWS_ObjectLocatie_ISDEPA_Meldcode\\.0\\.Bijlagen_NogToevoegen_ISDEPA_Meldcode\\.2\\.btn_ToevoegenBijlage');
+        // Check of aankoopdatum in 2024 valt (formaat: DD-MM-YYYY)
+        const is2024Purchase = config.purchaseDate && config.purchaseDate.endsWith('-2024');
 
-        if (aankoopbewijsButton) {
+        if (is2024Purchase) {
+          console.log('📅 2024 aankoop gedetecteerd, aankoopbewijs is vereist');
+
           // Check of aankoopbewijs al geüpload is
           const aankoopbewijsFilename = config.aankoopbewijs ? config.aankoopbewijs.name.toLowerCase() : '';
           const aankoopbewijsAlreadyUploaded = aankoopbewijsFilename && pageText.includes(aankoopbewijsFilename);
@@ -3327,6 +3329,8 @@ async function startFullAutomation(config) {
             automationStopped = true;
             return;
           }
+        } else {
+          console.log('📅 Geen 2024 aankoop, aankoopbewijs niet vereist');
         }
       }
 
@@ -3641,57 +3645,21 @@ async function startFullAutomation(config) {
       }
     }
 
-    // Step 19.5: Final review page (Verzenden tab)
-    if (currentStep === 'final_review_page' || detectedStep === 'final_review_page') {
-      console.log('Step 19.5: Op eindcontrole pagina, scroll naar beneden en klik Volgende');
-      updateStatus('Gegevens controleren', '19.5 - Eindcontrole', detectedStep);
-
-      // Scroll naar beneden om alle gegevens te tonen
-      window.scrollTo({
-        top: document.body.scrollHeight,
-        behavior: 'smooth'
-      });
-
-      await unthrottledDelay(1500);
-
-      // Zoek en klik de Volgende knop
-      const volgendeButton = document.querySelector(SELECTORS.continueTabButton) ||
-                            document.querySelector('input[value="Volgende"]');
-
-      if (volgendeButton) {
-        console.log('✅ Volgende knop gevonden, doorgaan naar bevestiging');
-        await clickElement(volgendeButton);
-        sessionStorage.setItem('automationStep', 'final_review_done');
-        return;
-      } else {
-        console.log('⚠️ Volgende knop niet gevonden');
-        updateStatus('Klik handmatig op Volgende', '19.5 - Handmatige actie vereist');
-        return;
-      }
-    }
-
-    // Step 19: Final confirmation - "Ja, volgende" button
-    if (document.querySelector(SELECTORS.finalConfirmation) &&
-        (currentStep === 'files_handled' || currentStep === 'measure_overview_done' || currentStep === 'measure_confirmed' || currentStep === 'measure_already_exists_clicked_volgende' || currentStep === 'final_measure_overview_done' || currentStep === 'final_review_done')) {
-      console.log('Step 19: Final confirmation');
-      updateStatus('Laatste bevestiging', '19 - Bevestiging', detectedStep);
-      await clickElement('#QuestionEmbedding_585_default');
-      await clickElement('#btnVolgendeTab');
-      sessionStorage.setItem('automationStep', 'final_confirmed');
-      return;
-    }
-
     // =========================================================================
-    // STAP 20: Eindvoorwaarden accepteren - LAATSTE STAP
+    // STAP 19: Eindvoorwaarden accepteren - LAATSTE STAP
     // =========================================================================
     // Dit is de LAATSTE stap van de automatisering.
     // We scrollen naar beneden zodat de gebruiker de voorwaarden kan controleren.
     // De gebruiker moet HANDMATIG de checkbox aanvinken en op "Indienen" klikken
     // voor de finale verzending. Dit is opzettelijk handmatig om de gebruiker
     // volledige controle te geven over de uiteindelijke indiening.
-    if (document.querySelector(SELECTORS.akkoord) && (currentStep === 'final_confirmed' || detectedStep === 'final_confirmed')) {
-      console.log('Step 20: Laatste pagina bereikt, scrollen naar beneden voor handmatige controle');
-      updateStatus('✅ Voltooid! Controleer en verstuur', '20 - Eindcontrole', detectedStep);
+    const isFinalPage = currentStep === 'final_confirmed' || detectedStep === 'final_confirmed' ||
+                        currentStep === 'final_review_page' || detectedStep === 'final_review_page';
+    const hasAkkoordCheckbox = document.querySelector(SELECTORS.akkoord);
+    console.log('📊 Step 19 check - isFinalPage:', isFinalPage, 'hasAkkoordCheckbox:', !!hasAkkoordCheckbox);
+    if (hasAkkoordCheckbox && isFinalPage) {
+      console.log('Step 19: Laatste pagina bereikt, scrollen naar beneden voor handmatige controle');
+      updateStatus('Voltooid! Controleer en verstuur', '19 - Eindcontrole', detectedStep);
 
       // Scroll naar beneden zodat gebruiker voorwaarden kan zien
       window.scrollTo({
@@ -3703,7 +3671,7 @@ async function startFullAutomation(config) {
       await unthrottledDelay(1000);
 
       // Houd het automatiseringspaneel zichtbaar maar geef voltooiing aan
-      updateStatus('✅ Klaar voor verzending - Controleer het formulier hieronder en klik op Indienen wanneer u klaar bent', 'KLAAR', detectedStep);
+      updateStatus('Klaar voor verzending - Controleer het formulier hieronder', 'KLAAR', detectedStep);
 
       // Verwijder sessionStorage niet voor het geval gebruiker moet doorgaan
       // sessionStorage.clear();
@@ -3711,24 +3679,7 @@ async function startFullAutomation(config) {
       // Stop keep-alive audio nu automatisering klaar is
       stopKeepAlive();
 
-      // 📊 Statistics: Bereken duration en stuur naar background voor tracking
-      const startTime = sessionStorage.getItem(CONFIG.STORAGE_KEYS.AUTOMATION_START_TIME);
-      if (startTime) {
-        const endTime = Date.now();
-        const durationMs = endTime - parseInt(startTime);
-        console.log(`📊 Automation completed in ${Math.round(durationMs / 1000)} seconds`);
-
-        // Stuur message naar background om statistics te updaten
-        chrome.runtime.sendMessage({
-          action: 'automationCompleted',
-          durationMs: durationMs
-        });
-
-        // Clear start time
-        sessionStorage.removeItem(CONFIG.STORAGE_KEYS.AUTOMATION_START_TIME);
-      }
-
-      console.log('✅ Automatisering voltooid - wacht op handmatige verzending');
+      console.log('Automatisering voltooid - wacht op handmatige verzending');
       return;
     }
 

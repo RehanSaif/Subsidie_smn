@@ -1558,24 +1558,57 @@ Extract ALL text but pay special attention to these two critical pieces of infor
       meldcode = meldcodeMatch[0].toUpperCase();
     }
 
-    // Zoek installatiedatum patronen
-    const datePatterns = [
-      /(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/,  // DD-MM-YYYY or DD/MM/YYYY
-      /(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/   // YYYY-MM-DD or YYYY/MM/DD
-    ];
+    // Nederlandse maanden mapping
+    const dutchMonths = {
+      'januari': '01', 'februari': '02', 'maart': '03', 'april': '04',
+      'mei': '05', 'juni': '06', 'juli': '07', 'augustus': '08',
+      'september': '09', 'oktober': '10', 'november': '11', 'december': '12'
+    };
 
-    for (const pattern of datePatterns) {
-      const dateMatch = textContent.match(pattern);
-      if (dateMatch) {
-        installationDate = dateMatch[1];
-        // Converteer YYYY-MM-DD naar DD-MM-YYYY formaat indien nodig
-        if (installationDate.match(/\d{4}[-\/]\d{1,2}[-\/]\d{1,2}/)) {
-          const parts = installationDate.split(/[-\/]/);
-          installationDate = `${parts[2].padStart(2, '0')}-${parts[1].padStart(2, '0')}-${parts[0]}`;
+    // Zoek eerst specifiek naar "Datum:" (niet Vervaldatum/Factuurdatum) met Nederlandse maandnaam
+    // Match "Datum:" gevolgd door optionele whitespace en dan de datum
+    const datumLabelPattern = /(?<!Verval|Factuur)Datum\s*:\s*(\d{1,2})\s+(januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december)\s+(\d{4})/i;
+    const datumLabelMatch = textContent.match(datumLabelPattern);
+
+    if (datumLabelMatch) {
+      const day = datumLabelMatch[1].padStart(2, '0');
+      const month = dutchMonths[datumLabelMatch[2].toLowerCase()];
+      const year = datumLabelMatch[3];
+      installationDate = `${day}-${month}-${year}`;
+    }
+
+    // Als niet gevonden, probeer los staande Nederlandse datum (zonder "Datum:" label)
+    if (!installationDate) {
+      const dutchDatePattern = /(\d{1,2})\s+(januari|februari|maart|april|mei|juni|juli|augustus|september|oktober|november|december)\s+(\d{4})/i;
+      const dutchDateMatch = textContent.match(dutchDatePattern);
+      if (dutchDateMatch) {
+        const day = dutchDateMatch[1].padStart(2, '0');
+        const month = dutchMonths[dutchDateMatch[2].toLowerCase()];
+        const year = dutchDateMatch[3];
+        installationDate = `${day}-${month}-${year}`;
+      }
+    }
+
+    // Fallback naar numerieke datum patronen
+    if (!installationDate) {
+      const datePatterns = [
+        /(\d{1,2}[-\/]\d{1,2}[-\/]\d{4})/,  // DD-MM-YYYY or DD/MM/YYYY
+        /(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})/   // YYYY-MM-DD or YYYY/MM/DD
+      ];
+
+      for (const pattern of datePatterns) {
+        const dateMatch = textContent.match(pattern);
+        if (dateMatch) {
+          installationDate = dateMatch[1];
+          // Converteer YYYY-MM-DD naar DD-MM-YYYY formaat indien nodig
+          if (installationDate.match(/\d{4}[-\/]\d{1,2}[-\/]\d{1,2}/)) {
+            const parts = installationDate.split(/[-\/]/);
+            installationDate = `${parts[2].padStart(2, '0')}-${parts[1].padStart(2, '0')}-${parts[0]}`;
+          }
+          // Normaliseer scheidingsteken naar streepje
+          installationDate = installationDate.replace(/\//g, '-');
+          break;
         }
-        // Normaliseer scheidingsteken naar streepje
-        installationDate = installationDate.replace(/\//g, '-');
-        break;
       }
     }
 
@@ -2989,13 +3022,15 @@ document.getElementById(POPUP_SELECTORS.startAutomation).addEventListener('click
       const documentsToUse = {
         betaalbewijs: savedDocuments?.betaalbewijs || betaalbewijsData,
         factuur: savedDocuments?.factuur || factuurData,
-        machtigingsbewijs: savedDocuments?.machtigingsbewijs || machtigingsbewijsData
+        machtigingsbewijs: savedDocuments?.machtigingsbewijs || machtigingsbewijsData,
+        aankoopbewijs: savedDocuments?.aankoopbewijs || null
       };
 
       console.log('📂 Final documents to use:', {
         betaalbewijs: documentsToUse.betaalbewijs ? documentsToUse.betaalbewijs.name : 'NOT SET',
         factuur: documentsToUse.factuur ? documentsToUse.factuur.name : 'NOT SET',
-        machtigingsbewijs: documentsToUse.machtigingsbewijs ? documentsToUse.machtigingsbewijs.name : 'NOT SET'
+        machtigingsbewijs: documentsToUse.machtigingsbewijs ? documentsToUse.machtigingsbewijs.name : 'NOT SET',
+        aankoopbewijs: documentsToUse.aankoopbewijs ? documentsToUse.aankoopbewijs.name : 'NOT SET'
       });
 
       // Haal volledige config op inclusief bedrijfsgegevens en contactpersoon uit storage
@@ -3027,20 +3062,21 @@ document.getElementById(POPUP_SELECTORS.startAutomation).addEventListener('click
         gasUsage: document.getElementById(POPUP_SELECTORS.gasUsage).value,
 
         // Bedrijfsgegevens uit instellingen
-        companyName: result.isdeConfig?.companyName || '',
-        kvkNumber: result.isdeConfig?.kvkNumber || '',
+        companyName: result.isdeConfig?.companyName || 'Saman Groep',
+        kvkNumber: result.isdeConfig?.kvkNumber || '72017376',
 
         // Contactpersoon details uit instellingen (met standaard waarden)
         contactInitials: result.isdeConfig?.contactInitials || 'A',
         contactLastName: result.isdeConfig?.contactLastName || 'de Vlieger',
         contactGender: result.isdeConfig?.contactGender || 'female',
         contactPhone: result.isdeConfig?.contactPhone || '0682795068',
-        contactEmail: result.isdeConfig?.contactEmail || 'administratie@saman.nl',
+        contactEmail: result.isdeConfig?.contactEmail || 'administratie@samangroep.nl',
 
         // Document data (geladen uit storage, blijft beschikbaar na Stop/herstart)
         betaalbewijs: documentsToUse.betaalbewijs,
         factuur: documentsToUse.factuur,
-        machtigingsbewijs: documentsToUse.machtigingsbewijs
+        machtigingsbewijs: documentsToUse.machtigingsbewijs,
+        aankoopbewijs: documentsToUse.aankoopbewijs
       };
 
       // Log welke documenten worden verzonden
@@ -3048,6 +3084,7 @@ document.getElementById(POPUP_SELECTORS.startAutomation).addEventListener('click
       console.log('  - Betaalbewijs:', config.betaalbewijs ? config.betaalbewijs.name : 'Not uploaded');
       console.log('  - Factuur:', config.factuur ? config.factuur.name : 'Not uploaded');
       console.log('  - Machtigingsbewijs:', config.machtigingsbewijs ? config.machtigingsbewijs.name : 'Not uploaded');
+      console.log('  - Aankoopbewijs (2024):', config.aankoopbewijs ? config.aankoopbewijs.name : 'Not uploaded');
 
       // Sla bestanden op in chrome.storage.local om bericht grootte limiet te vermijden
       // Gebruik timestamp + random string voor uniek sessie ID (zelfs met meerdere tabs)
@@ -3086,12 +3123,6 @@ document.getElementById(POPUP_SELECTORS.startAutomation).addEventListener('click
       chrome.storage.local.set(filesToStore, () => {
         console.log('📦 Files stored in chrome.storage.local for session:', sessionId);
         console.log('   Files:', Object.keys(filesToStore));
-
-        // 📊 Statistics: Save start timestamp en increment started counter
-        const startTime = Date.now();
-        sessionStorage.setItem(CONFIG.STORAGE_KEYS.AUTOMATION_START_TIME, startTime.toString());
-        incrementStarted();
-        console.log('📊 Automation started, timestamp saved:', startTime);
 
         // Stuur bericht naar background script om automatisering te starten
         chrome.runtime.sendMessage({
@@ -3164,9 +3195,11 @@ document.getElementById(POPUP_SELECTORS.resetInfo).addEventListener('click', asy
     const betaalbewijsInput = document.getElementById(POPUP_SELECTORS.betaalbewijsDoc);
     const factuurInput = document.getElementById(POPUP_SELECTORS.factuurDoc);
     const machtigingsInput = document.getElementById(POPUP_SELECTORS.machtigingsformulier);
+    const aankoopbewijsInput = document.getElementById(POPUP_SELECTORS.aankoopbewijsDoc);
     if (betaalbewijsInput) betaalbewijsInput.value = '';
     if (factuurInput) factuurInput.value = '';
     if (machtigingsInput) machtigingsInput.value = '';
+    if (aankoopbewijsInput) aankoopbewijsInput.value = '';
 
     // Verberg document namen in de UI
     const betaalbewijsName = document.getElementById(POPUP_SELECTORS.betaalbewijsName);
@@ -3183,6 +3216,11 @@ document.getElementById(POPUP_SELECTORS.resetInfo).addEventListener('click', asy
     if (machtigingName) {
       machtigingName.style.display = 'none';
       machtigingName.innerHTML = '';
+    }
+    const aankoopbewijsName = document.getElementById(POPUP_SELECTORS.aankoopbewijsName);
+    if (aankoopbewijsName) {
+      aankoopbewijsName.style.display = 'none';
+      aankoopbewijsName.innerHTML = '';
     }
 
     // Verberg alle validatie waarschuwingen
@@ -3326,7 +3364,7 @@ document.getElementById(POPUP_SELECTORS.settingsContactEmail).addEventListener('
  *
  * STANDAARD WAARDEN:
  * Als contactpersoon details niet zijn opgeslagen, worden standaard waarden
- * gebruikt (A de Vlieger, administratie@saman.nl, etc.)
+ * gebruikt (A de Vlieger, administratie@samangroep.nl, etc.)
  */
 function loadSettings() {
   chrome.storage.local.get(['mistralApiKey', 'isdeConfig'], (result) => {
@@ -3339,15 +3377,15 @@ function loadSettings() {
     const config = result.isdeConfig || {};
 
     // Bedrijfsgegevens
-    document.getElementById(POPUP_SELECTORS.settingsCompanyName).value = config.companyName || '';
-    document.getElementById(POPUP_SELECTORS.settingsKvkNumber).value = config.kvkNumber || '';
+    document.getElementById(POPUP_SELECTORS.settingsCompanyName).value = config.companyName || 'Saman Groep';
+    document.getElementById(POPUP_SELECTORS.settingsKvkNumber).value = config.kvkNumber || '72017376';
 
     // Laad contactpersoon details met standaard waarden
     document.getElementById(POPUP_SELECTORS.settingsContactInitials).value = config.contactInitials || 'A';
     document.getElementById(POPUP_SELECTORS.settingsContactLastName).value = config.contactLastName || 'de Vlieger';
     document.getElementById(POPUP_SELECTORS.settingsContactGender).value = config.contactGender || 'female';
     document.getElementById(POPUP_SELECTORS.settingsContactPhone).value = config.contactPhone || '0682795068';
-    document.getElementById(POPUP_SELECTORS.settingsContactEmail).value = config.contactEmail || 'administratie@saman.nl';
+    document.getElementById(POPUP_SELECTORS.settingsContactEmail).value = config.contactEmail || 'administratie@samangroep.nl';
   });
 }
 
@@ -3401,158 +3439,6 @@ function saveSettings() {
       }, 3000);
     });
   });
-}
-
-// ============================================================================
-// USAGE STATISTICS
-// ============================================================================
-
-/**
- * Haalt usage statistics op uit Chrome storage.
- * @returns {Promise<Object>} Statistics object
- */
-async function getUsageStats() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get([CONFIG.STORAGE_KEYS.USAGE_STATS], (result) => {
-      const stats = result[CONFIG.STORAGE_KEYS.USAGE_STATS] || {
-        totalCompleted: 0,
-        totalStarted: 0,
-        firstUseDate: null,
-        lastUseDate: null,
-        totalDurationMs: 0  // Som van alle durations
-      };
-      resolve(stats);
-    });
-  });
-}
-
-/**
- * Update usage statistics in Chrome storage.
- * @param {Object} updates - Partial updates object
- */
-async function updateUsageStats(updates) {
-  const stats = await getUsageStats();
-  const updatedStats = { ...stats, ...updates };
-
-  chrome.storage.local.set({
-    [CONFIG.STORAGE_KEYS.USAGE_STATS]: updatedStats
-  }, () => {
-    console.log('📊 Usage stats updated:', updatedStats);
-  });
-}
-
-/**
- * Increment completed counter en update gemiddelde tijd.
- * @param {number} durationMs - Tijd in milliseconden voor dit formulier
- */
-async function incrementCompleted(durationMs) {
-  const stats = await getUsageStats();
-
-  const updates = {
-    totalCompleted: stats.totalCompleted + 1,
-    totalDurationMs: stats.totalDurationMs + durationMs,
-    lastUseDate: new Date().toISOString()
-  };
-
-  // Set firstUseDate als dit de eerste keer is
-  if (!stats.firstUseDate) {
-    updates.firstUseDate = new Date().toISOString();
-  }
-
-  await updateUsageStats(updates);
-
-  // Update UI als deze open is
-  displayUsageStats();
-}
-
-/**
- * Increment started counter.
- */
-async function incrementStarted() {
-  const stats = await getUsageStats();
-
-  const updates = {
-    totalStarted: stats.totalStarted + 1,
-    lastUseDate: new Date().toISOString()
-  };
-
-  // Set firstUseDate als dit de eerste keer is
-  if (!stats.firstUseDate) {
-    updates.firstUseDate = new Date().toISOString();
-  }
-
-  await updateUsageStats(updates);
-}
-
-/**
- * Reset alle statistics naar 0.
- */
-async function resetUsageStats() {
-  const confirmed = confirm('Weet je zeker dat je alle statistieken wilt resetten?');
-  if (!confirmed) return;
-
-  chrome.storage.local.set({
-    [CONFIG.STORAGE_KEYS.USAGE_STATS]: {
-      totalCompleted: 0,
-      totalStarted: 0,
-      firstUseDate: null,
-      lastUseDate: null,
-      totalDurationMs: 0
-    }
-  }, () => {
-    console.log('📊 Usage stats reset');
-    displayUsageStats();
-  });
-}
-
-/**
- * Format duration in milliseconds naar leesbare string.
- * @param {number} ms - Milliseconden
- * @returns {string} Formatted string (bijv. "5 min 30 sec")
- */
-function formatDuration(ms) {
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  if (minutes === 0) {
-    return `${seconds} sec`;
-  }
-  return `${minutes} min ${seconds} sec`;
-}
-
-/**
- * Format date naar Nederlandse korte datum.
- * @param {string} isoDate - ISO date string
- * @returns {string} Formatted date (bijv. "6 nov 2025")
- */
-function formatShortDate(isoDate) {
-  if (!isoDate) return '-';
-
-  const date = new Date(isoDate);
-  const months = ['jan', 'feb', 'mrt', 'apr', 'mei', 'jun', 'jul', 'aug', 'sep', 'okt', 'nov', 'dec'];
-
-  return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
-}
-
-/**
- * Display usage statistics in de Settings tab.
- */
-async function displayUsageStats() {
-  const stats = await getUsageStats();
-
-  // Bereken gemiddelde tijd
-  let avgDuration = 0;
-  if (stats.totalCompleted > 0) {
-    avgDuration = stats.totalDurationMs / stats.totalCompleted;
-  }
-
-  // Update UI elements
-  document.getElementById('statsCompleted').textContent = stats.totalCompleted;
-  document.getElementById('statsStarted').textContent = stats.totalStarted;
-  document.getElementById('statsFirstUse').textContent = formatShortDate(stats.firstUseDate);
-  document.getElementById('statsLastUse').textContent = formatShortDate(stats.lastUseDate);
-  document.getElementById('statsAvgTime').textContent = stats.totalCompleted > 0 ? formatDuration(avgDuration) : '-';
 }
 
 // ============================================================================
@@ -3852,12 +3738,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   // Sla de initiële tab ID op
   const tabId = await getCurrentTabId();
   currentTrackedTabId = tabId;
-
-  // Load en display usage statistics
-  await displayUsageStats();
-
-  // Wire up reset statistics button
-  document.getElementById('resetStatsBtn')?.addEventListener('click', resetUsageStats);
 
   console.log('✅ Side panel initialization complete, tracking tab:', tabId);
 });
